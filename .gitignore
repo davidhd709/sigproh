@@ -22,3 +22,10 @@ npm-debug.log*
 # Operating system
 .DS_Store
 Thumbs.db
+*.tsbuildinfo
+
+# Prisma generated AI skills
+apps/api/.agents/
+apps/api/.claude/
+apps/api/.windsurf/
+apps/api/skills-lock.json
