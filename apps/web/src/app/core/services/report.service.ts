@@ -2,10 +2,19 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
+  CreateDistributionDto,
+  CreateInstitutionalTemplateDto,
+  CreateNewVersionDto,
   CreateReportDraftDto,
+  InstitutionalTemplate,
+  PropertyReportConfig,
   ReportDetail,
+  ReportDistributionItem,
   ReportFilter,
   ReportListItem,
+  ReportVersionItem,
+  ReviewReportDto,
+  UpdatePropertyReportConfigDto,
   UpdateReportDraftDto,
 } from '../models/report.model';
 import { getApiBaseUrl } from './auth.service';
@@ -75,8 +84,81 @@ export class ReportService {
     });
   }
 
+  // =========================================================================
+  // GOBERNANZA DE PLANTILLAS Y CONFIGURACIÓN (RF-044 a RF-046, CP-29 a CP-31)
+  // =========================================================================
+
+  createInstitutionalTemplate(dto: CreateInstitutionalTemplateDto): Observable<InstitutionalTemplate> {
+    return this.http.post<InstitutionalTemplate>(`${this.apiUrl}/reports/templates/institutional`, dto, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  getPublishedInstitutionalTemplate(): Observable<InstitutionalTemplate> {
+    return this.http.get<InstitutionalTemplate>(`${this.apiUrl}/reports/templates/institutional/published`, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  updatePropertyReportConfig(propertyId: string, dto: UpdatePropertyReportConfigDto): Observable<PropertyReportConfig> {
+    return this.http.put<PropertyReportConfig>(`${this.apiUrl}/reports/properties/${propertyId}/config`, dto, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  getPropertyReportConfig(propertyId: string): Observable<PropertyReportConfig> {
+    return this.http.get<PropertyReportConfig>(`${this.apiUrl}/reports/properties/${propertyId}/config`, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  // =========================================================================
+  // FLUJO DE REVISIÓN, APROBACIÓN Y VERSIONES (RF-037 a RF-041, CP-21 a CP-26)
+  // =========================================================================
+
+  sendToReview(id: string): Observable<ReportDetail> {
+    return this.http.post<ReportDetail>(`${this.apiUrl}/reports/${id}/send-review`, {}, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  reviewReport(id: string, dto: ReviewReportDto): Observable<ReportDetail> {
+    return this.http.post<ReportDetail>(`${this.apiUrl}/reports/${id}/review`, dto, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  createNewVersion(id: string, dto?: CreateNewVersionDto): Observable<ReportDetail> {
+    return this.http.post<ReportDetail>(`${this.apiUrl}/reports/${id}/new-version`, dto || {}, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  getVersionHistory(id: string): Observable<ReportVersionItem[]> {
+    return this.http.get<ReportVersionItem[]>(`${this.apiUrl}/reports/${id}/versions`, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  // =========================================================================
+  // REGISTRO DE DISTRIBUCIÓN OFICIAL (RF-042, CP-27, CP-28)
+  // =========================================================================
+
+  distributeReport(id: string, dto: CreateDistributionDto): Observable<ReportDistributionItem> {
+    return this.http.post<ReportDistributionItem>(`${this.apiUrl}/reports/${id}/distribute`, dto, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
+  getDistributions(id: string): Observable<ReportDistributionItem[]> {
+    return this.http.get<ReportDistributionItem[]>(`${this.apiUrl}/reports/${id}/distributions`, {
+      headers: this.getAuthHeaders(),
+    });
+  }
+
   private getAuthHeaders(): { [header: string]: string } {
     const token = localStorage.getItem('sigproh_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 }
+

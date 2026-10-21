@@ -99,6 +99,8 @@ model Organization {
   notifications Notification[]
   reports       Report[]
   reportSequences ReportSequence[]
+  institutionalTemplates InstitutionalTemplate[]
+  propertyReportConfigs PropertyReportConfig[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -133,8 +135,14 @@ model User {
   activitiesCreated   IssueActivity[]      @relation("ActivityCreatedBy")
   issueComments       IssueComment[]
   attachmentsUploaded IssueAttachment[]    @relation("AttachmentUploadedBy")
-  reportsCreated      Report[]             @relation("ReportCreatedBy")
-  reportsApproved     Report[]             @relation("ReportApprovedBy")
+  reportsCreated         Report[]                @relation("ReportCreatedBy")
+  reportsApproved        Report[]                @relation("ReportApprovedBy")
+  templatesCreated       InstitutionalTemplate[] @relation("TemplateCreatedBy")
+  propertyConfigsUpdated PropertyReportConfig[]  @relation("PropertyConfigUpdatedBy")
+  reportVersionsCreated  ReportVersion[]         @relation("ReportVersionCreatedBy")
+  reportVersionsApproved ReportVersion[]         @relation("ReportVersionApprovedBy")
+  reportReviews          ReportReview[]          @relation("ReportReviewer")
+  reportDistributions    ReportDistribution[]    @relation("ReportDistributedBy")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -174,6 +182,7 @@ model Property {
   assignments  PropertyAssignment[]
   issues       Issue[]
   reports      Report[]
+  reportConfig PropertyReportConfig?
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -514,6 +523,11 @@ model Report {
   approvedAt     DateTime?
   approvalNotes  String?
 
+  templateVersion       Int                  @default(1)
+  propertyConfigVersion Int?
+  pdfStorageKey         String?
+  pdfSha256             String?
+
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -522,6 +536,9 @@ model Report {
   internalArea   InternalArea? @relation(fields: [internalAreaId], references: [id], onDelete: Restrict)
   createdBy      User          @relation("ReportCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   approvedBy     User?         @relation("ReportApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+  versions       ReportVersion[]
+  reviews        ReportReview[]
+  distributions  ReportDistribution[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -547,6 +564,115 @@ model ReportSequence {
   @@index([organizationId])
   @@map("report_sequences")
 }
+
+model InstitutionalTemplate {
+  id                      String   @id @default(uuid())
+  organizationId          String
+  name                    String   @default("Plantilla Institucional Estándar")
+  version                 Int      @default(1)
+  isPublished             Boolean  @default(true)
+  headerTitle             String   @default("EG S.A.S. — PLATAFORMA SIGPROH")
+  headerSubtitle          String   @default("GESTIÓN Y CONTROL DE NOVEDADES OPERATIVAS")
+  primaryColor            String   @default("#1E3A8A")
+  secondaryColor          String   @default("#2563EB")
+  footerText              String   @default("Documento oficial generado por la Plataforma SIGPROH — EG S.A.S.")
+  mandatorySections       String[] @default(["header", "metadata", "kpis", "audit"])
+  allowedOptionalSections String[] @default(["introduction", "issuesList", "activities", "evidences", "observations", "recommendations", "finalComments"])
+  createdById             String
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  createdBy    User         @relation("TemplateCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, version])
+  @@index([organizationId])
+  @@map("institutional_templates")
+}
+
+model PropertyReportConfig {
+  id                    String   @id @default(uuid())
+  organizationId        String
+  propertyId            String   @unique
+  logoUrl               String?
+  customSubtitle        String?
+  contactInfo           String?
+  address               String?
+  optionalSectionsOrder String[] @default([])
+  version               Int      @default(1)
+  isPublished           Boolean  @default(true)
+  updatedById           String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  property     Property     @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  updatedBy    User         @relation("PropertyConfigUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([propertyId])
+  @@map("property_report_configs")
+}
+
+model ReportVersion {
+  id            String       @id @default(uuid())
+  reportId      String
+  versionNumber Int
+  status        ReportStatus
+  title         String
+  snapshotData  Json
+  pdfStorageKey String?
+  pdfSha256     String?
+  approvedById  String?
+  approvedAt    DateTime?
+  approvalNotes String?
+  createdById   String
+  createdAt     DateTime     @default(now())
+
+  report     Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  createdBy  User   @relation("ReportVersionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy User?  @relation("ReportVersionApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@unique([reportId, versionNumber])
+  @@index([reportId])
+  @@map("report_versions")
+}
+
+model ReportReview {
+  id            String       @id @default(uuid())
+  reportId      String
+  reportVersion Int
+  reviewerId    String
+  decision      ReportStatus
+  notes         String
+  createdAt     DateTime     @default(now())
+
+  report   Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reviewer User   @relation("ReportReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([reportId])
+  @@index([reviewerId])
+  @@map("report_reviews")
+}
+
+model ReportDistribution {
+  id              String   @id @default(uuid())
+  reportId        String
+  reportVersion   Int
+  recipient       String
+  channel         String
+  deliveryDate    DateTime
+  distributedById String
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  report        Report @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  distributedBy User   @relation("ReportDistributedBy", fields: [distributedById], references: [id], onDelete: Restrict)
+
+  @@index([reportId])
+  @@index([distributedById])
+  @@map("report_distributions")
+}
+
 
 
 

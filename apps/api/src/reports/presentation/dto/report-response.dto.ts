@@ -117,6 +117,15 @@ export interface ReportResponseDto {
   approvedAt: string | null;
   approvalNotes: string | null;
 
+  templateVersion?: number;
+  propertyConfigVersion?: number | null;
+  pdfStorageKey?: string | null;
+  pdfSha256?: string | null;
+
+  versions?: ReportVersionDto[];
+  reviews?: ReportReviewDto[];
+  distributions?: ReportDistributionDto[];
+
   createdAt: string;
   updatedAt: string;
 }
@@ -137,3 +146,81 @@ export interface ReportListItemDto {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface InstitutionalTemplateDto {
+  id: string;
+  organizationId: string;
+  name: string;
+  version: number;
+  isPublished: boolean;
+  headerTitle: string;
+  headerSubtitle: string;
+  primaryColor: string;
+  secondaryColor: string;
+  footerText: string;
+  mandatorySections: string[];
+  allowedOptionalSections: string[];
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PropertyReportConfigDto {
+  id: string;
+  organizationId: string;
+  propertyId: string;
+  propertyName?: string;
+  logoUrl: string | null;
+  customSubtitle: string | null;
+  contactInfo: string | null;
+  address: string | null;
+  optionalSectionsOrder: string[];
+  version: number;
+  isPublished: boolean;
+  updatedById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReportVersionDto {
+  id: string;
+  reportId: string;
+  versionNumber: number;
+  status: ReportStatus;
+  title: string;
+  snapshotData: any;
+  pdfStorageKey: string | null;
+  pdfSha256: string | null;
+  approvedById: string | null;
+  approvedByName?: string | null;
+  approvedAt: string | null;
+  approvalNotes: string | null;
+  createdById: string;
+  createdByName?: string | null;
+  createdAt: string;
+}
+
+export interface ReportReviewDto {
+  id: string;
+  reportId: string;
+  reportVersion: number;
+  reviewerId: string;
+  reviewerName?: string | null;
+  decision: ReportStatus;
+  notes: string;
+  createdAt: string;
+}
+
+export interface ReportDistributionDto {
+  id: string;
+  reportId: string;
+  reportVersion: number;
+  recipient: string;
+  channel: string;
+  deliveryDate: string;
+  distributedById: string;
+  distributedByName?: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+

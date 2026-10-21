@@ -14,12 +14,12 @@ export class CreateReportDraftDto {
   @IsEnum(ReportScope, {
     message: 'El ámbito del informe debe ser PROPIEDAD, INTERNA o CONSOLIDADO',
   })
-  scope: ReportScope;
+  scope!: ReportScope;
 
   @IsString()
   @IsNotEmpty({ message: 'El título del informe es obligatorio' })
   @MaxLength(200)
-  title: string;
+  title!: string;
 
   @IsOptional()
   @IsValidUuid({ message: 'propertyId debe ser un UUID válido' })
@@ -30,10 +30,10 @@ export class CreateReportDraftDto {
   internalAreaId?: string;
 
   @IsDateString({}, { message: 'periodStart debe ser una fecha ISO válida (YYYY-MM-DD)' })
-  periodStart: string;
+  periodStart!: string;
 
   @IsDateString({}, { message: 'periodEnd debe ser una fecha ISO válida (YYYY-MM-DD)' })
-  periodEnd: string;
+  periodEnd!: string;
 
   @IsOptional()
   @IsDateString({}, { message: 'cutoffDate debe ser una fecha ISO válida (YYYY-MM-DD)' })

@@ -147,6 +147,92 @@ export interface ReportDetail {
   approvedAt: string | null;
   approvalNotes: string | null;
 
+  templateVersion?: number;
+  propertyConfigVersion?: number | null;
+  pdfStorageKey?: string | null;
+  pdfSha256?: string | null;
+
+  versions?: ReportVersionItem[];
+  reviews?: ReportReviewItem[];
+  distributions?: ReportDistributionItem[];
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReportVersionItem {
+  id: string;
+  reportId: string;
+  versionNumber: number;
+  status: ReportStatus;
+  title: string;
+  snapshotData: any;
+  pdfStorageKey: string | null;
+  pdfSha256: string | null;
+  approvedById: string | null;
+  approvedByName?: string | null;
+  approvedAt: string | null;
+  approvalNotes: string | null;
+  createdById: string;
+  createdByName?: string | null;
+  createdAt: string;
+}
+
+export interface ReportReviewItem {
+  id: string;
+  reportId: string;
+  reportVersion: number;
+  reviewerId: string;
+  reviewerName?: string | null;
+  decision: ReportStatus;
+  notes: string;
+  createdAt: string;
+}
+
+export interface ReportDistributionItem {
+  id: string;
+  reportId: string;
+  reportVersion: number;
+  recipient: string;
+  channel: string;
+  deliveryDate: string;
+  distributedById: string;
+  distributedByName?: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface InstitutionalTemplate {
+  id: string;
+  organizationId: string;
+  name: string;
+  version: number;
+  isPublished: boolean;
+  headerTitle: string;
+  headerSubtitle: string;
+  primaryColor: string;
+  secondaryColor: string;
+  footerText: string;
+  mandatorySections: string[];
+  allowedOptionalSections: string[];
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PropertyReportConfig {
+  id: string;
+  organizationId: string;
+  propertyId: string;
+  propertyName?: string;
+  logoUrl: string | null;
+  customSubtitle: string | null;
+  contactInfo: string | null;
+  address: string | null;
+  optionalSectionsOrder: string[];
+  version: number;
+  isPublished: boolean;
+  updatedById: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -210,6 +296,43 @@ export interface UpdateReportDraftDto {
   showFinalComments?: boolean;
 }
 
+export interface CreateInstitutionalTemplateDto {
+  name?: string;
+  headerTitle?: string;
+  headerSubtitle?: string;
+  primaryColor?: string;
+  secondaryColor?: string;
+  footerText?: string;
+  mandatorySections?: string[];
+  allowedOptionalSections?: string[];
+  isPublished?: boolean;
+}
+
+export interface UpdatePropertyReportConfigDto {
+  logoUrl?: string;
+  customSubtitle?: string;
+  contactInfo?: string;
+  address?: string;
+  optionalSectionsOrder?: string[];
+  isPublished?: boolean;
+}
+
+export interface ReviewReportDto {
+  decision: 'APROBADO' | 'DEVUELTO';
+  notes: string;
+}
+
+export interface CreateNewVersionDto {
+  reason?: string;
+}
+
+export interface CreateDistributionDto {
+  recipient: string;
+  channel: string;
+  deliveryDate: string;
+  notes?: string;
+}
+
 export interface ReportFilter {
   scope?: ReportScope;
   status?: ReportStatus;
@@ -217,3 +340,4 @@ export interface ReportFilter {
   internalAreaId?: string;
   search?: string;
 }
+

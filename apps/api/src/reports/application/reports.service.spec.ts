@@ -43,6 +43,7 @@ describe('ReportsService', () => {
   beforeEach(() => {
     prismaMock = {
       $queryRaw: vi.fn().mockResolvedValue([{ lastValue: 1 }]),
+      $transaction: vi.fn(async (cb) => cb(prismaMock)),
       report: {
         create: vi.fn(),
         findMany: vi.fn(),
@@ -50,6 +51,32 @@ describe('ReportsService', () => {
         update: vi.fn(),
         delete: vi.fn(),
         count: vi.fn().mockResolvedValue(0),
+      },
+      institutionalTemplate: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn(),
+        updateMany: vi.fn(),
+      },
+      propertyReportConfig: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+      property: {
+        findUnique: vi.fn(),
+      },
+      reportVersion: {
+        create: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      reportReview: {
+        create: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
+      },
+      reportDistribution: {
+        create: vi.fn(),
+        findMany: vi.fn().mockResolvedValue([]),
       },
       issue: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -306,4 +333,299 @@ describe('ReportsService', () => {
       expect(excelGeneratorMock.generateReportExcel).toHaveBeenCalledOnce();
     });
   });
+
+  // =========================================================================
+  // PRUEBAS DE FASE 8: GOBERNANZA, REVISIÓN, APROBACIÓN, VERSIONES Y DISTRIBUCIÓN
+  // =========================================================================
+
+  describe('Gobernanza Institucional de Plantillas (RF-044, CP-29, CP-31)', () => {
+    it('debe permitir solo al Administrador crear plantillas institucionales', async () => {
+      await expect(
+        service.createInstitutionalTemplate(mockDirectorUser, {
+          name: 'Plantilla No Autorizada',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('debe rechazar la omisión de secciones obligatorias (CP-31)', async () => {
+      await expect(
+        service.createInstitutionalTemplate(mockAdminUser, {
+          name: 'Plantilla Incompleta',
+          mandatorySections: ['header', 'metadata'], // falta 'kpis' y 'audit'
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debe crear exitosamente la plantilla con versión incremental y marcar anteriores no publicadas', async () => {
+      prismaMock.institutionalTemplate.findFirst.mockResolvedValue({ version: 1 });
+      prismaMock.institutionalTemplate.create.mockResolvedValue({
+        id: 'tmpl-2',
+        organizationId: mockAdminUser.organizationId,
+        name: 'Plantilla v2',
+        version: 2,
+        isPublished: true,
+        headerTitle: 'EG S.A.S.',
+        headerSubtitle: 'GESTIÓN',
+        primaryColor: '#1E3A8A',
+        secondaryColor: '#2563EB',
+        footerText: 'Doc oficial',
+        mandatorySections: ['header', 'metadata', 'kpis', 'audit'],
+        allowedOptionalSections: ['introduction'],
+        createdById: mockAdminUser.userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.createInstitutionalTemplate(mockAdminUser, {
+        name: 'Plantilla v2',
+      });
+
+      expect(res.version).toBe(2);
+      expect(res.isPublished).toBe(true);
+      expect(prismaMock.institutionalTemplate.updateMany).toHaveBeenCalledWith({
+        where: { organizationId: mockAdminUser.organizationId },
+        data: { isPublished: false },
+      });
+    });
+  });
+
+  describe('Personalización por Copropiedad (RF-045, CP-30, CP-31)', () => {
+    it('debe permitir solo al Director Operativo personalizar la copropiedad', async () => {
+      await expect(
+        service.updatePropertyReportConfig(mockCoordinatorUser, 'prop-1', {
+          customSubtitle: 'Edificio Exclusivo',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('debe rechazar si la copropiedad intenta alterar o incluir secciones obligatorias (CP-31)', async () => {
+      prismaMock.property.findUnique.mockResolvedValue({
+        id: 'prop-1',
+        organizationId: mockDirectorUser.organizationId,
+      });
+
+      await expect(
+        service.updatePropertyReportConfig(mockDirectorUser, 'prop-1', {
+          optionalSectionsOrder: ['header', 'kpis'], // no se pueden modificar secciones mandatorias
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debe crear o actualizar la configuración de copropiedad con éxito', async () => {
+      prismaMock.property.findUnique.mockResolvedValue({
+        id: 'prop-1',
+        name: 'Edificio Central',
+        organizationId: mockDirectorUser.organizationId,
+      });
+      prismaMock.propertyReportConfig.findUnique.mockResolvedValue(null);
+      prismaMock.propertyReportConfig.create.mockResolvedValue({
+        id: 'cfg-1',
+        organizationId: mockDirectorUser.organizationId,
+        propertyId: 'prop-1',
+        customSubtitle: 'Gestión Inmobiliaria Integral',
+        contactInfo: 'contacto@central.com',
+        address: 'Calle 100 # 15-20',
+        logoUrl: 'https://cdn.example.com/logo.png',
+        optionalSectionsOrder: ['observations', 'recommendations'],
+        version: 1,
+        isPublished: true,
+        updatedById: mockDirectorUser.userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.updatePropertyReportConfig(mockDirectorUser, 'prop-1', {
+        customSubtitle: 'Gestión Inmobiliaria Integral',
+        contactInfo: 'contacto@central.com',
+        optionalSectionsOrder: ['observations', 'recommendations'],
+      });
+
+      expect(res.customSubtitle).toBe('Gestión Inmobiliaria Integral');
+      expect(res.version).toBe(1);
+    });
+  });
+
+  describe('Flujo de Revisión Formal (RF-037 a RF-039, CP-21 a CP-24)', () => {
+    it('debe congelar snapshot y pasar de BORRADOR a EN_REVISION (RF-037, CP-21)', async () => {
+      prismaMock.report.findUnique.mockResolvedValue({
+        id: 'rep-rev-1',
+        organizationId: mockCoordinatorUser.organizationId,
+        scope: ReportScope.PROPIEDAD,
+        status: ReportStatus.BORRADOR,
+        createdById: mockCoordinatorUser.userId,
+      });
+
+      prismaMock.report.update.mockResolvedValue({
+        id: 'rep-rev-1',
+        code: 'INF-2026-0001',
+        organizationId: mockCoordinatorUser.organizationId,
+        scope: ReportScope.PROPIEDAD,
+        title: 'Informe a Revisar',
+        status: ReportStatus.EN_REVISION,
+        version: 1,
+        templateVersion: 1,
+        createdBy: { firstName: 'Juan', lastName: 'Coord' },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.sendToReview(mockCoordinatorUser, 'rep-rev-1');
+      expect(res.status).toBe(ReportStatus.EN_REVISION);
+      expect(prismaMock.report.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: ReportStatus.EN_REVISION,
+          }),
+        }),
+      );
+    });
+
+    it('debe exigir observaciones al DEVOLVER un informe (RN-130, RN-145, CP-23)', async () => {
+      prismaMock.report.findUnique.mockResolvedValue({
+        id: 'rep-rev-1',
+        organizationId: mockDirectorUser.organizationId,
+        status: ReportStatus.EN_REVISION,
+      });
+
+      await expect(
+        service.reviewReport(mockDirectorUser, 'rep-rev-1', {
+          decision: 'DEVUELTO',
+          notes: '', // notas vacías
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debe aprobar el informe, generar PDF y calcular hash SHA-256 inmutable (CP-24)', async () => {
+      const baseReport = {
+        id: 'rep-rev-1',
+        code: 'INF-2026-0001',
+        organizationId: mockDirectorUser.organizationId,
+        scope: ReportScope.PROPIEDAD,
+        title: 'Informe para Aprobación',
+        status: ReportStatus.EN_REVISION,
+        version: 1,
+        periodStart: new Date('2026-05-01'),
+        periodEnd: new Date('2026-05-31'),
+        cutoffDate: new Date('2026-05-31'),
+        createdById: mockCoordinatorUser.userId,
+        createdBy: { firstName: 'Juan', lastName: 'Coord' },
+        approvedBy: { firstName: 'Carlos', lastName: 'Director' },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      prismaMock.report.findUnique
+        .mockResolvedValueOnce(baseReport)
+        .mockResolvedValueOnce({
+          ...baseReport,
+          status: ReportStatus.APROBADO,
+          pdfSha256: 'a1b2c3d4e5f67890abcdef1234567890abcdef1234567890abcdef1234567890',
+        });
+
+      const res = await service.reviewReport(mockDirectorUser, 'rep-rev-1', {
+        decision: 'APROBADO',
+        notes: 'Aprobado sin objeciones',
+      });
+
+      expect(prismaMock.reportVersion.create).toHaveBeenCalledOnce();
+      expect(prismaMock.reportReview.create).toHaveBeenCalledOnce();
+      expect(res.status).toBe(ReportStatus.APROBADO);
+    });
+
+  });
+
+  describe('Control de Versiones y Distribución Oficial (RF-040 a RF-042, CP-25 a CP-28)', () => {
+    it('debe permitir crear una nueva versión solo a partir de un informe APROBADO (RF-040, CP-26)', async () => {
+      prismaMock.report.findUnique.mockResolvedValue({
+        id: 'rep-app-1',
+        organizationId: mockDirectorUser.organizationId,
+        status: ReportStatus.BORRADOR, // no aprobado
+      });
+
+      await expect(
+        service.createNewVersion(mockDirectorUser, 'rep-app-1', {
+          reason: 'Ajuste de datos',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debe incrementar versión a v2 y retornar borrador editable conservando versión previa intacta (CP-25, CP-26)', async () => {
+      prismaMock.report.findUnique.mockResolvedValue({
+        id: 'rep-app-1',
+        organizationId: mockDirectorUser.organizationId,
+        status: ReportStatus.APROBADO,
+        version: 1,
+      });
+
+      prismaMock.report.update.mockResolvedValue({
+        id: 'rep-app-1',
+        code: 'INF-2026-0001',
+        organizationId: mockDirectorUser.organizationId,
+        scope: ReportScope.PROPIEDAD,
+        title: 'Informe V2',
+        status: ReportStatus.BORRADOR,
+        version: 2,
+        createdBy: { firstName: 'Carlos', lastName: 'Director' },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const res = await service.createNewVersion(mockDirectorUser, 'rep-app-1', {
+        reason: 'Ampliación solicitada por el cliente',
+      });
+
+      expect(res.version).toBe(2);
+      expect(res.status).toBe(ReportStatus.BORRADOR);
+    });
+
+    it('debe rechazar registrar distribución si el informe no está APROBADO (CP-28)', async () => {
+      prismaMock.report.findUnique.mockResolvedValue({
+        id: 'rep-dist-1',
+        organizationId: mockDirectorUser.organizationId,
+        status: ReportStatus.BORRADOR,
+      });
+
+      await expect(
+        service.distributeReport(mockDirectorUser, 'rep-dist-1', {
+          recipient: 'Consejo de Administración',
+          channel: 'CORREO_ELECTRONICO',
+          deliveryDate: '2026-06-01',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('debe registrar exitosamente la distribución de un informe APROBADO (CP-27)', async () => {
+      prismaMock.report.findUnique.mockResolvedValue({
+        id: 'rep-dist-1',
+        organizationId: mockDirectorUser.organizationId,
+        status: ReportStatus.APROBADO,
+        version: 1,
+      });
+
+      prismaMock.reportDistribution.create.mockResolvedValue({
+        id: 'dist-1',
+        reportId: 'rep-dist-1',
+        reportVersion: 1,
+        recipient: 'Consejo de Administración',
+        channel: 'CORREO_ELECTRONICO',
+        deliveryDate: new Date('2026-06-01'),
+        distributedById: mockDirectorUser.userId,
+        distributedBy: { firstName: 'Carlos', lastName: 'Director' },
+        notes: 'Envío formal por acta',
+        createdAt: new Date(),
+      });
+
+      const res = await service.distributeReport(mockDirectorUser, 'rep-dist-1', {
+        recipient: 'Consejo de Administración',
+        channel: 'CORREO_ELECTRONICO',
+        deliveryDate: '2026-06-01',
+        notes: 'Envío formal por acta',
+      });
+
+      expect(res.recipient).toBe('Consejo de Administración');
+      expect(res.distributedByName).toBe('Carlos Director');
+      expect(prismaMock.reportDistribution.create).toHaveBeenCalledOnce();
+    });
+  });
 });
+

@@ -7,7 +7,17 @@ export class PdfGeneratorService {
   /**
    * Genera el documento PDF oficial del informe utilizando PDFKit con protección contra cortes (CP-33, RF-036).
    */
-  async generateReportPdf(report: ReportResponseDto): Promise<Buffer> {
+  async generateReportPdf(
+    report: ReportResponseDto,
+    options?: {
+      headerTitle?: string;
+      headerSubtitle?: string;
+      primaryColor?: string;
+      secondaryColor?: string;
+      footerText?: string;
+      contactInfo?: string;
+    },
+  ): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
       try {
         const doc = new PDFDocument({
@@ -31,9 +41,12 @@ export class PdfGeneratorService {
         const opData = report.operationalData;
         const pageWidth = doc.page.width - 90; // 595.28 - 90 = 505.28 pt usable
 
-        // Colores de diseño institucional
-        const primaryColor = '#1E3A8A'; // Navy
-        const secondaryColor = '#2563EB'; // Blue
+        // Colores y textos de diseño institucional personalizables (RF-044, RF-045, RF-046)
+        const primaryColor = options?.primaryColor || '#1E3A8A'; // Navy institucional
+        const secondaryColor = options?.secondaryColor || '#2563EB'; // Blue
+        const headerTitle = options?.headerTitle || 'EG S.A.S. — PLATAFORMA SIGPROH';
+        const headerSubtitle = options?.headerSubtitle || 'GESTIÓN Y CONTROL DE NOVEDADES OPERATIVAS';
+        const globalFooterText = options?.footerText || 'EG S.A.S. — SIGPROH | Informe Oficial';
         const darkText = '#1F2937';
         const mutedText = '#6B7280';
         const lightBg = '#F3F4F6';
@@ -54,7 +67,7 @@ export class PdfGeneratorService {
             .fontSize(8)
             .fillColor(mutedText)
             .text(
-              `EG S.A.S. | ${report.code} - ${report.title.substring(0, 45)}...`,
+              `${headerTitle} | ${report.code} - ${report.title.substring(0, 45)}...`,
               45,
               30,
               { align: 'left', width: pageWidth / 2 },
@@ -87,15 +100,23 @@ export class PdfGeneratorService {
           .fontSize(16)
           .font('Helvetica-Bold')
           .fillColor(primaryColor)
-          .text('EG S.A.S. — PLATAFORMA SIGPROH', 45, doc.y, { align: 'left' });
+          .text(headerTitle, 45, doc.y, { align: 'left' });
 
         doc
           .fontSize(10)
           .font('Helvetica')
           .fillColor(secondaryColor)
-          .text('GESTIÓN Y CONTROL DE NOVEDADES OPERATIVAS', 45, doc.y + 3);
+          .text(headerSubtitle, 45, doc.y + 3);
+
+        if (options?.contactInfo) {
+          doc
+            .fontSize(8)
+            .fillColor(mutedText)
+            .text(`Contacto: ${options.contactInfo}`, 45, doc.y + 2);
+        }
 
         doc.moveDown(0.8);
+
 
         // Título del informe y Código
         doc
@@ -494,7 +515,7 @@ export class PdfGeneratorService {
           );
 
         const approvalText = report.approvedByName
-          ? `Aprobado por: ${report.approvedByName} el ${report.approvedAt ? report.approvedAt.split('T')[0] : 'N/A'}`
+          ? `Aprobado por: ${report.approvedByName} el ${report.approvedAt ? report.approvedAt.split('T')[0] : 'N/A'}${report.pdfSha256 ? ` | Integridad SHA-256: ${report.pdfSha256.substring(0, 16)}...` : ''}`
           : 'Documento en estado Borrador / Revisión preliminar (No constituye aprobación oficial definitiva)';
 
         doc
@@ -519,7 +540,7 @@ export class PdfGeneratorService {
             .fontSize(8)
             .fillColor(mutedText)
             .text(
-              `EG S.A.S. — SIGPROH | Informe Oficial ${report.code}`,
+              `${globalFooterText} | ${report.code}`,
               45,
               doc.page.height - 25,
               { align: 'left', width: pageWidth / 2 },

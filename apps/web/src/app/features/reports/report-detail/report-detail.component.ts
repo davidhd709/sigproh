@@ -28,10 +28,11 @@ export class ReportDetailComponent implements OnInit {
   isSaving = signal<boolean>(false);
   isRefreshing = signal<boolean>(false);
   isDownloading = signal<boolean>(false);
+  isSubmittingAction = signal<boolean>(false);
   errorMessage = signal<string | null>(null);
   successMessage = signal<string | null>(null);
 
-  activeTab: 'PREVIEW' | 'EDIT_TEXTS' | 'EVIDENCES' = 'PREVIEW';
+  activeTab: 'PREVIEW' | 'EDIT_TEXTS' | 'EVIDENCES' | 'VERSIONS' | 'DISTRIBUTIONS' = 'PREVIEW';
   currentUser = this.authService.currentUser;
 
   // Textos editables
@@ -40,6 +41,21 @@ export class ReportDetailComponent implements OnInit {
   editObservations = '';
   editRecommendations = '';
   editFinalComments = '';
+
+  // Modales de flujo de gobernanza
+  showApprovalModal = signal<boolean>(false);
+  showReturnModal = signal<boolean>(false);
+  showVersionModal = signal<boolean>(false);
+  showDistributionModal = signal<boolean>(false);
+
+  // Campos de modales
+  approvalNotes = '';
+  returnNotes = '';
+  newVersionReason = '';
+  distributionRecipient = '';
+  distributionChannel = 'CORREO_ELECTRONICO';
+  distributionDate = new Date().toISOString().split('T')[0];
+  distributionNotes = '';
 
   // Evidencias seleccionadas
   selectedEvidences = signal<Set<string>>(new Set<string>());
@@ -56,6 +72,7 @@ export class ReportDetailComponent implements OnInit {
   showFinalComments = true;
 
   ngOnInit(): void {
+
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
       this.loadReport(id);
@@ -103,7 +120,7 @@ export class ReportDetailComponent implements OnInit {
     this.selectedEvidences.set(new Set(data.selectedAttachmentIds || []));
   }
 
-  setTab(tab: 'PREVIEW' | 'EDIT_TEXTS' | 'EVIDENCES'): void {
+  setTab(tab: 'PREVIEW' | 'EDIT_TEXTS' | 'EVIDENCES' | 'VERSIONS' | 'DISTRIBUTIONS'): void {
     this.activeTab = tab;
   }
 
@@ -282,4 +299,220 @@ export class ReportDetailComponent implements OnInit {
     if (!rep) return false;
     return rep.status === 'BORRADOR' || rep.status === 'DEVUELTO';
   }
+
+  canSendToReview(): boolean {
+    const rep = this.report();
+    if (!rep) return false;
+    return rep.status === 'BORRADOR' || rep.status === 'DEVUELTO';
+  }
+
+  isDirector(): boolean {
+    return this.currentUser()?.role === 'DIRECTOR_OPERATIVO';
+  }
+
+  canReview(): boolean {
+    const rep = this.report();
+    if (!rep) return false;
+    return rep.status === 'EN_REVISION' && this.isDirector();
+  }
+
+  isApproved(): boolean {
+    return this.report()?.status === 'APROBADO';
+  }
+
+  canCreateNewVersion(): boolean {
+    return this.isApproved();
+  }
+
+  canDistribute(): boolean {
+    return this.isApproved() && this.isDirector();
+  }
+
+  sendToReview(): void {
+    const rep = this.report();
+    if (!rep) return;
+
+    if (!confirm('¿Confirma enviar este informe a revisión formal por parte de la Dirección Operativa? Los datos y configuración quedarán congelados.')) {
+      return;
+    }
+
+    this.isSubmittingAction.set(true);
+    this.errorMessage.set(null);
+    this.successMessage.set(null);
+
+    this.reportService.sendToReview(rep.id).subscribe({
+      next: (updated) => {
+        this.report.set(updated);
+        this.syncEditableFields(updated);
+        this.isSubmittingAction.set(false);
+        this.successMessage.set('Informe enviado a revisión formal exitosamente.');
+        setTimeout(() => this.successMessage.set(null), 4000);
+      },
+      error: (err) => {
+        this.isSubmittingAction.set(false);
+        this.errorMessage.set(err.error?.message || 'Error al enviar a revisión.');
+      },
+    });
+  }
+
+  // --- Modal Aprobación ---
+  openApproveModal(): void {
+    this.approvalNotes = '';
+    this.showApprovalModal.set(true);
+  }
+
+  closeApproveModal(): void {
+    this.showApprovalModal.set(false);
+  }
+
+  submitApproval(): void {
+    const rep = this.report();
+    if (!rep) return;
+
+    this.isSubmittingAction.set(true);
+    this.errorMessage.set(null);
+
+    this.reportService.reviewReport(rep.id, {
+      decision: 'APROBADO',
+      notes: this.approvalNotes.trim(),
+    }).subscribe({
+      next: (approved) => {
+        this.report.set(approved);
+        this.syncEditableFields(approved);
+        this.isSubmittingAction.set(false);
+        this.closeApproveModal();
+        this.successMessage.set('Informe aprobado formalmente con firma digital y hash SHA-256 inmutable.');
+        setTimeout(() => this.successMessage.set(null), 5000);
+      },
+      error: (err) => {
+        this.isSubmittingAction.set(false);
+        this.errorMessage.set(err.error?.message || 'Error al aprobar el informe.');
+      },
+    });
+  }
+
+  // --- Modal Devolución ---
+  openReturnModal(): void {
+    this.returnNotes = '';
+    this.showReturnModal.set(true);
+  }
+
+  closeReturnModal(): void {
+    this.showReturnModal.set(false);
+  }
+
+  submitReturn(): void {
+    const rep = this.report();
+    if (!rep) return;
+
+    if (!this.returnNotes.trim()) {
+      alert('Las observaciones explicativas son obligatorias para devolver un informe (RN-130).');
+      return;
+    }
+
+    this.isSubmittingAction.set(true);
+    this.errorMessage.set(null);
+
+    this.reportService.reviewReport(rep.id, {
+      decision: 'DEVUELTO',
+      notes: this.returnNotes.trim(),
+    }).subscribe({
+      next: (returned) => {
+        this.report.set(returned);
+        this.syncEditableFields(returned);
+        this.isSubmittingAction.set(false);
+        this.closeReturnModal();
+        this.successMessage.set('Informe devuelto al autor con las observaciones registradas.');
+        setTimeout(() => this.successMessage.set(null), 4000);
+      },
+      error: (err) => {
+        this.isSubmittingAction.set(false);
+        this.errorMessage.set(err.error?.message || 'Error al devolver el informe.');
+      },
+    });
+  }
+
+  // --- Modal Nueva Versión ---
+  openNewVersionModal(): void {
+    this.newVersionReason = '';
+    this.showVersionModal.set(true);
+  }
+
+  closeNewVersionModal(): void {
+    this.showVersionModal.set(false);
+  }
+
+  submitNewVersion(): void {
+    const rep = this.report();
+    if (!rep) return;
+
+    this.isSubmittingAction.set(true);
+    this.errorMessage.set(null);
+
+    this.reportService.createNewVersion(rep.id, {
+      reason: this.newVersionReason.trim() || undefined,
+    }).subscribe({
+      next: (newVersion) => {
+        this.report.set(newVersion);
+        this.syncEditableFields(newVersion);
+        this.isSubmittingAction.set(false);
+        this.closeNewVersionModal();
+        this.successMessage.set(`Nueva versión v${newVersion.version} creada como borrador editable. La versión anterior se conserva intacta.`);
+        setTimeout(() => this.successMessage.set(null), 5000);
+      },
+      error: (err) => {
+        this.isSubmittingAction.set(false);
+        this.errorMessage.set(err.error?.message || 'Error al generar nueva versión.');
+      },
+    });
+  }
+
+  // --- Modal Distribución Oficial ---
+  openDistributionModal(): void {
+    this.distributionRecipient = '';
+    this.distributionChannel = 'CORREO_ELECTRONICO';
+    this.distributionDate = new Date().toISOString().split('T')[0];
+    this.distributionNotes = '';
+    this.showDistributionModal.set(true);
+  }
+
+  closeDistributionModal(): void {
+    this.showDistributionModal.set(false);
+  }
+
+  submitDistribution(): void {
+    const rep = this.report();
+    if (!rep) return;
+
+    if (!this.distributionRecipient.trim()) {
+      alert('El destinatario de la distribución es obligatorio.');
+      return;
+    }
+
+    this.isSubmittingAction.set(true);
+    this.errorMessage.set(null);
+
+    this.reportService.distributeReport(rep.id, {
+      recipient: this.distributionRecipient.trim(),
+      channel: this.distributionChannel,
+      deliveryDate: this.distributionDate,
+      notes: this.distributionNotes.trim() || undefined,
+    }).subscribe({
+      next: () => {
+        // Recargar informe para refrescar distribuciones
+        this.reportService.getReportById(rep.id).subscribe((updated) => {
+          this.report.set(updated);
+        });
+        this.isSubmittingAction.set(false);
+        this.closeDistributionModal();
+        this.successMessage.set('Distribución oficial registrada exitosamente en la bitácora auditada.');
+        setTimeout(() => this.successMessage.set(null), 4000);
+      },
+      error: (err) => {
+        this.isSubmittingAction.set(false);
+        this.errorMessage.set(err.error?.message || 'Error al registrar distribución.');
+      },
+    });
+  }
 }
+
