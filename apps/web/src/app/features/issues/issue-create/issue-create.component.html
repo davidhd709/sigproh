@@ -1,0 +1,250 @@
+<div class="form-container">
+  <div class="form-header">
+    <a routerLink="/issues" class="back-link">← Volver a Bandeja</a>
+    <h1 class="form-title">Registro de Nueva Novedad</h1>
+    <p class="form-subtitle">
+      Capture el reporte asegurando exclusividad de ámbito (F2/F3) y atención prioritaria según criticidad
+    </p>
+  </div>
+
+  @if (errorMessage()) {
+    <div class="alert-box error">
+      <span class="alert-icon">⚠️</span>
+      <div>{{ errorMessage() }}</div>
+    </div>
+  }
+
+  @if (successMessage()) {
+    <div class="alert-box success">
+      <span class="alert-icon">✅</span>
+      <div>{{ successMessage() }}</div>
+    </div>
+  }
+
+  <form (ngSubmit)="onSubmit()" class="issue-form">
+    <!-- 1. Selección de Ámbito Exclusivo (RN-003, RN-021, RN-022) -->
+    <div class="form-section">
+      <label class="section-label">1. Ámbito de la Novedad *</label>
+      <div class="scope-selector-grid">
+        <div
+          class="scope-card"
+          [class.selected]="scope === 'PROPIEDAD'"
+          (click)="onScopeChange('PROPIEDAD')"
+        >
+          <div class="scope-icon">🏢</div>
+          <div class="scope-details">
+            <span class="scope-name">Propiedad Horizontal</span>
+            <span class="scope-desc">Para conjuntos residenciales o edificios administrados</span>
+          </div>
+          <div class="radio-indicator"></div>
+        </div>
+
+        <div
+          class="scope-card"
+          [class.selected]="scope === 'INTERNA'"
+          (click)="onScopeChange('INTERNA')"
+        >
+          <div class="scope-icon">🏛️</div>
+          <div class="scope-details">
+            <span class="scope-name">Área Interna EG S.A.S.</span>
+            <span class="scope-desc">Para soporte interno de Operaciones, Sistemas, etc.</span>
+          </div>
+          <div class="radio-indicator"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Ubicación y Categoría -->
+    <div class="form-section">
+      <label class="section-label">2. Ubicación y Clasificación *</label>
+
+      <div class="form-grid">
+        <!-- Campos si es PROPIEDAD -->
+        @if (scope === 'PROPIEDAD') {
+          <div class="form-group">
+            <label for="propertyId">Propiedad Horizontal *</label>
+            <select
+              id="propertyId"
+              [(ngModel)]="propertyId"
+              name="propertyId"
+              class="form-control"
+              required
+            >
+              <option value="" disabled>Seleccione una propiedad...</option>
+              @for (prop of properties(); track prop.id) {
+                <option [value]="prop.id">{{ prop.name }} ({{ prop.code }})</option>
+              }
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="propertyZoneId">Zona / Ubicación Específica (Opcional)</label>
+            <select
+              id="propertyZoneId"
+              [(ngModel)]="propertyZoneId"
+              name="propertyZoneId"
+              class="form-control"
+              [disabled]="!propertyId"
+            >
+              <option value="">Todas las zonas / General</option>
+              @for (zone of getSelectedPropertyZones(); track zone.id) {
+                <option [value]="zone.id">{{ zone.name }}</option>
+              }
+            </select>
+          </div>
+        }
+
+        <!-- Campos si es INTERNA -->
+        @if (scope === 'INTERNA') {
+          <div class="form-group full-width">
+            <label for="internalAreaId">Área Interna *</label>
+            <select
+              id="internalAreaId"
+              [(ngModel)]="internalAreaId"
+              name="internalAreaId"
+              class="form-control"
+              required
+            >
+              <option value="" disabled>Seleccione un área interna...</option>
+              @for (area of internalAreas(); track area.id) {
+                <option [value]="area.id">{{ area.name }} ({{ area.code }})</option>
+              }
+            </select>
+          </div>
+        }
+
+        <!-- Categoría dependiente del ámbito -->
+        <div class="form-group full-width">
+          <label for="categoryId">Categoría Operativa *</label>
+          <select
+            id="categoryId"
+            [(ngModel)]="categoryId"
+            name="categoryId"
+            class="form-control"
+            required
+          >
+            <option value="" disabled>Seleccione una categoría para {{ scope === 'PROPIEDAD' ? 'propiedades' : 'áreas internas' }}...</option>
+            @for (cat of categories(); track cat.id) {
+              <option [value]="cat.id">{{ cat.name }}</option>
+            }
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Detalle de la Novedad -->
+    <div class="form-section">
+      <label class="section-label">3. Descripción del Evento *</label>
+
+      <div class="form-group">
+        <label for="title">Título Conciso *</label>
+        <input
+          type="text"
+          id="title"
+          [(ngModel)]="title"
+          name="title"
+          class="form-control"
+          placeholder="Ej: Fuga de agua en motobombas principales"
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="description">Descripción Detallada *</label>
+        <textarea
+          id="description"
+          [(ngModel)]="description"
+          name="description"
+          rows="4"
+          class="form-control"
+          placeholder="Describa claramente la anomalía detectada, personas o bienes afectados y contexto inicial..."
+          required
+        ></textarea>
+      </div>
+    </div>
+
+    <!-- 4. Prioridad y Medidas Urgentes (F3) -->
+    <div class="form-section">
+      <label class="section-label">4. Prioridad y Gestión Inmediata *</label>
+
+      <div class="priority-cards-grid">
+        <label class="priority-card low" [class.selected]="priority === 'BAJA'">
+          <input type="radio" [(ngModel)]="priority" name="priority" value="BAJA" />
+          <span class="p-title">Baja</span>
+          <span class="p-desc">Atención programable</span>
+        </label>
+
+        <label class="priority-card medium" [class.selected]="priority === 'MEDIA'">
+          <input type="radio" [(ngModel)]="priority" name="priority" value="MEDIA" />
+          <span class="p-title">Media</span>
+          <span class="p-desc">Atención estándar</span>
+        </label>
+
+        <label class="priority-card high" [class.selected]="priority === 'ALTA'">
+          <input type="radio" [(ngModel)]="priority" name="priority" value="ALTA" />
+          <span class="p-title">Alta</span>
+          <span class="p-desc">Afectación operativa</span>
+        </label>
+
+        <label
+          class="priority-card critical"
+          [class.selected]="priority === 'CRITICA'"
+          [class.disabled]="authService.isAuxiliar()"
+          title="{{ authService.isAuxiliar() ? 'Restringido para Auxiliar según PEN-03' : '' }}"
+        >
+          <input
+            type="radio"
+            [(ngModel)]="priority"
+            name="priority"
+            value="CRITICA"
+            [disabled]="authService.isAuxiliar()"
+          />
+          <span class="p-title">🚨 Crítica</span>
+          <span class="p-desc">Riesgo inminente</span>
+        </label>
+      </div>
+
+      @if (authService.isAuxiliar()) {
+        <div class="pen03-notice">
+          ℹ️ <strong>Nota PEN-03:</strong> El rol Auxiliar de Gerencia tiene restringida la prioridad crítica hasta definición formal de la Dirección.
+        </div>
+      }
+
+      <!-- Panel especial si es CRÍTICA (DEC-06 / RF-013 / RF-014) -->
+      @if (priority === 'CRITICA') {
+        <div class="critical-alert-box">
+          <div class="critical-header">
+            <span class="icon">🚨</span>
+            <div>
+              <strong>Novedad de Carácter Crítico</strong>
+              <p>Al guardar, el Director Operativo recibirá una alerta inmediata (RF-014). Si ya se realizaron actuaciones de contención previas, documéntelas aquí (opcional al registrar el riesgo recién detectado):</p>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="urgentMeasures">Medidas Urgentes Inmediatas Realizadas (DEC-06):</label>
+            <textarea
+              id="urgentMeasures"
+              [(ngModel)]="urgentMeasures"
+              name="urgentMeasures"
+              rows="3"
+              class="form-control"
+              placeholder="Ej: Se cerró la válvula de paso principal, se activó brigada y se notificó al técnico electricista..."
+            ></textarea>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Acciones del Formulario -->
+    <div class="form-actions">
+      <a routerLink="/issues" class="btn btn-secondary">Cancelar</a>
+      <button type="submit" class="btn btn-primary" [disabled]="loading()">
+        @if (loading()) {
+          <span class="mini-spinner"></span> Guardando...
+        } @else {
+          Registrar Novedad
+        }
+      </button>
+    </div>
+  </form>
+</div>

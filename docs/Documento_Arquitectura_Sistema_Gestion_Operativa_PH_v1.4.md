@@ -1,1117 +1,1314 @@
-# Sistema de Gestión Operativa para Propiedades Horizontales
-
-**Documento funcional y de arquitectura de software**  
-**Versión:** 1.4  
-**Fecha:** 10 de septiembre de 2026  
-**Estado:** Propuesta para definición del MVP
-
-## 1. Descripción del proyecto
-
-La empresa administra varias propiedades horizontales en la ciudad de Montería. Cada propiedad, por ejemplo el **Edificio Sol**, tiene un director y un coordinador encargados de su gestión operativa. La gerente supervisa todas las propiedades y necesita consultar su información sin depender de mensajes, llamadas o documentos separados.
-
-Durante las inspecciones se revisan luminarias, ascensores, electrobombas, piscinas, jardines, puertas eléctricas, sistemas eléctricos y otras zonas o equipos comunes. Cuando se encuentra un daño o una necesidad de mantenimiento, el coordinador toma fotografías y reporta la novedad. Actualmente, gran parte del seguimiento se realiza por WhatsApp, correo electrónico y comunicación directa.
-
-Se propone desarrollar una **aplicación web progresiva (PWA)** para centralizar las novedades, las actas, las reuniones, los comentarios y los informes de cada propiedad.
-
-### 1.1 Prototipo existente
-
-Existe un prototipo construido en React con Vite que muestra pantallas de inicio, propiedades, novedades, actas, agenda, informes y auditoría. **Ese prototipo se usará únicamente como referencia visual y de navegación.** Su código no forma parte del producto y no se reutilizará.
-
-En consecuencia:
-
-- La pila definitiva es la descrita en la sección 14: Angular para la PWA y NestJS para la API.
-- El prototipo aporta la disposición de pantallas, la jerarquía visual y el vocabulario de interfaz. No define el modelo de datos, las reglas del negocio ni la máquina de estados, que son los de este documento.
-- Las funciones que aparecen en el prototipo y no están en la sección 5.1 no pertenecen al MVP. El Anexo A registra qué se decidió sobre cada una.
-
-## 2. Problema que debe resolver
-
-La información operativa está distribuida entre diferentes medios, lo que dificulta:
-
-- Conocer las novedades abiertas y su estado actual.
-- Identificar su prioridad y la persona responsable.
-- Consultar fotografías, documentos, comentarios y cambios anteriores.
-- Revisar las actas y las modificaciones sugeridas.
-- Recordar reuniones y actividades programadas.
-- Consultar la información de una propiedad específica.
-- Supervisar todas las propiedades desde una sola vista.
-- Generar informes confiables sobre la gestión realizada.
-
-## 3. Objetivo general
-
-Desarrollar una PWA que permita gestionar la operación de las propiedades horizontales, centralizando el registro y seguimiento de novedades, la elaboración y revisión de actas, la programación de reuniones, los comentarios internos y la generación de informes por propiedad.
-
-## 4. Objetivos específicos
-
-- Organizar las propiedades y sus responsables.
-- Registrar novedades con prioridad, estado, evidencias y comentarios.
-- Mantener el historial completo de cada novedad.
-- Crear actas en borrador, recibir sugerencias y controlar sus versiones.
-- Programar reuniones en una agenda interna.
-- Mostrar recordatorios al usuario cuando ingrese al sistema.
-- Permitir que la gerente consulte y comente la información de todas las propiedades.
-- Generar informes individuales por propiedad y periodo.
-- Preparar la base técnica para agregar nuevos módulos después del MVP.
-
-## 5. Alcance del MVP
-
-El MVP se concentrará únicamente en la gestión operativa. Contabilidad, Tesorería y el manejo financiero no formarán parte de esta primera versión.
-
-### 5.1 Funciones incluidas
-
-1. Inicio de sesión y recuperación de contraseña.
-2. Administración de usuarios, roles y permisos.
-3. Registro y administración de propiedades.
-4. Asignación de director y coordinador a cada propiedad.
-5. Registro, consulta y actualización de novedades.
-6. Prioridades y estados configurados para las novedades.
-7. Fotografías, documentos y comentarios asociados a una novedad.
-8. Historial de responsables, estados y modificaciones.
-9. Creación y edición de actas en estado borrador.
-10. Versiones de las actas para conservar los cambios anteriores.
-11. Sugerencias de modificación que puedan aceptarse o rechazarse.
-12. Comentarios y respuestas dentro de novedades y actas.
-13. Programación de reuniones en una agenda interna.
-14. Recordatorios visibles al abrir la aplicación.
-15. Informe general de cada propiedad.
-16. Panel general para la gerente.
-17. Registro de auditoría de las acciones sensibles.
-18. Instalación de la aplicación como PWA en celular o computador.
-19. Costo estimado de la novedad como dato informativo, sin flujo de aprobación.
-20. Tipos de acta según el órgano que se reúne.
-21. Aviso por correo electrónico de las novedades críticas y de las reuniones programadas.
-
-### 5.2 Funciones excluidas del MVP
-
-- Solicitudes de recursos.
-- Aprobaciones contables.
-- Entregas de dinero por Tesorería.
-- Presupuestos, gastos y conciliaciones.
-- Aprobación de costos y control de ejecución presupuestal por propiedad. El MVP solo registra el costo estimado como dato informativo.
-- Integración con programas contables.
-- Compras e inventario.
-- Portal para propietarios o residentes.
-- Aplicación móvil nativa.
-- Sincronización con Google Calendar o Microsoft Outlook.
-- Funcionamiento completo sin conexión.
-- Análisis de actas con inteligencia artificial. El prototipo de referencia muestra sugerencias con fundamento legal generadas por un modelo de lenguaje; esa función no pertenece al MVP y las sugerencias las redactan las personas.
-- Firma electrónica de actas y registro de quórum. El MVP conserva la aprobación por parte del director, con registro de usuario, fecha y huella del PDF.
-- Notificaciones push en el dispositivo. El aviso fuera de la aplicación se cubre con correo electrónico.
-
-Estas funciones podrán evaluarse cuando el MVP se encuentre estable y validado por los usuarios.
-
-## 6. Roles del sistema
-
-Los permisos se administrarán por acciones. Un rol define qué puede hacer el usuario y la asignación a una propiedad define sobre qué información puede hacerlo.
-
-| Rol | Alcance | Responsabilidades |
-| --- | --- | --- |
-| Administrador | Todo el sistema | Crea usuarios, asigna roles, registra propiedades, asigna responsables y administra parámetros. |
-| Gerente | Todas las propiedades | Consulta novedades, actas, reuniones e informes de todas las propiedades. Puede agregar comentarios y hacer seguimiento. |
-| Director | Propiedades asignadas | Supervisa novedades, define o ajusta prioridades, asigna actividades, revisa actas, responde comentarios y valida cierres. |
-| Coordinador | Propiedades asignadas | Registra novedades, adjunta evidencias, actualiza estados, redacta actas, atiende sugerencias y programa reuniones. |
-
-### 6.1 Reglas de acceso
-
-- La gerente puede consultar todas las propiedades y comentar en cualquier novedad o acta.
-- Un director solo puede ingresar a las propiedades que tenga asignadas.
-- Un coordinador solo puede trabajar en las propiedades que tenga asignadas.
-- Cada propiedad tendrá un director y al menos un coordinador. El modelo permitirá asignar más de uno en el futuro sin cambiar la base de datos.
-- El administrador gestiona la configuración, pero sus acciones también quedan registradas.
-- Un usuario puede tener más de un rol si la empresa lo requiere.
-
-#### Alcance del rol
-
-Los roles Administrador y Gerente son **globales**: aplican a toda la organización. Los roles Director y Coordinador son **locales**: solo tienen efecto sobre las propiedades asignadas.
-
-Para que un mismo usuario pueda ser director de una propiedad y coordinador de otra sin heredar permisos donde no corresponde, la tabla `user_roles` incluirá `property_id` anulable:
-
-- `property_id` nulo: rol global (Administrador, Gerente).
-- `property_id` con valor: rol local sobre esa propiedad (Director, Coordinador).
-
-La verificación de cada acción evaluará siempre la pareja permiso + propiedad. Un permiso concedido por un rol local nunca se extiende a otra propiedad. La tabla `property_assignments` conserva la vigencia de la asignación operativa y su historial; `user_roles` conserva la capacidad de actuar.
-
-## 7. Módulos funcionales
-
-### 7.1 Usuarios y permisos
-
-- Crear, editar, activar y desactivar usuarios.
-- Asignar roles.
-- Recuperar contraseña.
-- Controlar permisos por acción y propiedad.
-- Consultar el último acceso y el estado del usuario.
-
-### 7.2 Propiedades
-
-- Registrar los datos de identificación y de contacto de la propiedad.
-- Asignar director y coordinador.
-- Consultar el equipo responsable.
-- Ver un resumen de novedades, actas y reuniones.
-- Mantener el historial de asignaciones.
-- Administrar el catálogo de áreas y equipos de la propiedad, que alimenta la ubicación de las novedades.
-
-La versión anterior decía solamente "datos básicos". Para una propiedad horizontal los campos mínimos son:
-
-| Campo | Observación |
-| --- | --- |
-| Nombre | Por ejemplo, Edificio Sol. |
-| NIT | Identificación tributaria de la copropiedad. |
-| Dirección, barrio y ciudad | — |
-| Número de unidades privadas | Base para indicadores por unidad. |
-| Tipo | Edificio, conjunto cerrado u otro. |
-| Estado | Activa o inactiva. |
-| Administrador o contacto principal y teléfono | — |
-| Presidente del consejo de administración | Útil para actas y convocatorias. |
-| Áreas y equipos comunes | Catálogo por propiedad: luminarias, ascensores, electrobombas, piscina, jardines, puertas eléctricas y demás. |
-| Fecha de inicio de la administración | — |
-
-### 7.3 Novedades
-
-- Crear una novedad desde celular o computador.
-- Seleccionar propiedad, categoría, ubicación y prioridad.
-- Escribir una descripción clara del problema.
-- Adjuntar fotografías o documentos.
-- Asignar un responsable.
-- Registrar un costo estimado en pesos, como dato informativo.
-- Cambiar el estado siguiendo el flujo permitido.
-- Agregar comentarios y responder a otros usuarios.
-- Consultar la línea de tiempo completa.
-- Cerrar o reabrir una novedad con justificación.
-
-### 7.4 Actas
-
-- Crear un acta asociada a una propiedad, indicando su tipo.
-- Guardarla como borrador sin publicarla.
-- Editar título, fecha, asistentes, temas tratados, compromisos y contenido.
-- Guardar versiones para consultar cambios anteriores.
-- Enviar el borrador a revisión.
-- Seleccionar un fragmento o sección y proponer una modificación.
-- Aceptar, rechazar o responder una sugerencia.
-- Aprobar el acta y generar una versión final en PDF.
-- Consultar actas por propiedad, tipo, fecha y estado.
-
-#### Tipos de acta
-
-| Tipo | Código técnico |
-| --- | --- |
-| Asamblea ordinaria | `ASAMBLEA_ORDINARIA` |
-| Asamblea extraordinaria | `ASAMBLEA_EXTRAORDINARIA` |
-| Consejo de administración | `CONSEJO_ADMINISTRACION` |
-| Comité de convivencia | `COMITE_CONVIVENCIA` |
-
-El tipo determina la plantilla de la que parte el borrador y los campos que el sistema pide antes de enviar a revisión. Los tipos son un catálogo administrable, no una lista fija en el código, para poder añadir otro órgano sin una migración.
-
-El MVP no registra quórum ni firma electrónica. El acta se aprueba por parte del director y el PDF final conserva su huella SHA-256, tal como establece la sección 10.
-
-### 7.5 Reuniones y agenda interna
-
-- Programar una reunión con título, descripción, propiedad, fecha, hora, lugar o enlace.
-- Seleccionar participantes entre los usuarios del sistema.
-- Definir con cuánta anticipación debe aparecer el recordatorio.
-- Consultar las reuniones en vista de calendario o lista.
-- Mostrar al iniciar la aplicación las reuniones del día y las próximas.
-- Marcar una reunión como realizada, cancelada o reprogramada.
-- Relacionar una reunión con un acta cuando corresponda.
-
-La agenda del MVP será interna. No enviará invitaciones externas ni modificará calendarios personales.
-
-### 7.6 Comentarios
-
-- Comentar una novedad o un acta.
-- Responder comentarios.
-- Mencionar a un usuario para generar una notificación.
-- Editar un comentario durante un periodo corto y conservar registro del cambio.
-- Marcar comentarios como resueltos cuando correspondan a una revisión.
-
-### 7.7 Notificaciones internas
-
-- Nueva novedad en una propiedad asignada.
-- Cambio de estado o prioridad.
-- Nuevo comentario o mención.
-- Acta enviada a revisión.
-- Nueva sugerencia o respuesta.
-- Reunión próxima.
-- Novedad sin actualización durante el tiempo configurado.
-
-Las notificaciones se mostrarán en el encabezado y en el panel inicial. Cada usuario podrá marcarlas como leídas.
-
-#### Alcance del canal de notificación
-
-Conviene ser explícito sobre una limitación que condiciona la adopción del sistema. Si las notificaciones solo existen dentro de la aplicación y los recordatorios solo aparecen al abrirla, **una novedad crítica no llega a nadie que no abra la aplicación**. El equipo trabaja hoy con WhatsApp, donde el aviso llega al bolsillo. Pasar a un canal que exige entrar a consultar es un retroceso en ese punto concreto y el riesgo real es que se siga usando WhatsApp en paralelo.
-
-Por eso el MVP incluye **correo electrónico**, además de la notificación interna. Las notificaciones push quedan fuera, según la sección 5.2.
-
-#### Correos del MVP
-
-| Situación | Destinatarios |
-| --- | --- |
-| Novedad registrada con prioridad crítica | Director de la propiedad y gerente |
-| Novedad crítica sin atención después del umbral configurado | Director de la propiedad y gerente |
-| Reunión programada, reprogramada o cancelada | Participantes de la reunión |
-| Recordatorio de reunión según la anticipación configurada | Participantes de la reunión |
-| Restablecimiento de contraseña | El propio usuario |
-
-Reglas del envío:
-
-- El correo complementa la notificación interna; no la reemplaza. Toda notificación enviada por correo existe también dentro de la aplicación.
-- El envío es asíncrono y se encola. Si el servicio de correo falla, la operación del usuario se completa igual y el envío se reintenta; un fallo de correo nunca impide registrar una novedad.
-- Cada intento se registra en `email_deliveries` con destinatario, asunto, estado y fecha, para poder demostrar que el aviso salió.
-- El correo no transporta información sensible más allá de lo necesario: indica la propiedad, el código de la novedad y un enlace. El detalle se consulta dentro de la aplicación, previa autenticación.
-- Cada usuario podrá desactivar los correos que no sean críticos. Los avisos de novedad crítica no son opcionales.
-- El remitente usará un dominio propio con SPF, DKIM y DMARC configurados. Sin eso los correos llegan a la carpeta de no deseados y la función se vuelve inútil en la práctica.
-
-### 7.8 Informes por propiedad
-
-Cada propiedad tendrá un informe filtrable por periodo que incluya:
-
-- Datos de la propiedad y responsables asignados.
-- Total de novedades registradas.
-- Novedades por estado, prioridad y categoría.
-- Novedades abiertas, resueltas, cerradas y reabiertas.
-- Tiempo promedio de atención y cierre.
-- Novedades que llevan más tiempo sin actualización.
-- Detalle de las novedades del periodo.
-- Suma de los costos estimados del periodo, señalada como estimación informativa.
-- Actas creadas, en revisión y aprobadas, discriminadas por tipo.
-- Reuniones realizadas, canceladas y pendientes.
-- Comentarios o actividades recientes relevantes.
-
-El informe podrá consultarse en pantalla y exportarse en PDF. La gerente podrá comparar propiedades desde su panel general, pero el documento individual siempre corresponderá a una propiedad.
-
-## 8. Casos de uso principales
-
-| Código | Caso de uso | Actor principal | Resultado |
-| --- | --- | --- | --- |
-| CU-01 | Iniciar sesión | Todos | Acceso según rol y propiedades asignadas. |
-| CU-02 | Administrar usuarios y roles | Administrador | Usuarios con permisos controlados. |
-| CU-03 | Registrar una propiedad | Administrador | Propiedad disponible para su gestión. |
-| CU-04 | Asignar director y coordinador | Administrador | Equipo responsable asociado a la propiedad. |
-| CU-05 | Consultar panel general | Gerente | Resumen de todas las propiedades. |
-| CU-06 | Registrar una novedad | Coordinador | Novedad creada con prioridad y evidencia. |
-| CU-07 | Revisar una novedad | Director | Prioridad, responsable y seguimiento validados. |
-| CU-08 | Actualizar el estado | Coordinador o director | Avance registrado en la línea de tiempo. |
-| CU-09 | Comentar una novedad | Gerente, director o coordinador | Comentario y notificación guardados. |
-| CU-10 | Cerrar o reabrir una novedad | Director | Cierre o reapertura con justificación. |
-| CU-11 | Crear un acta en borrador | Coordinador | Acta editable asociada a una propiedad. |
-| CU-12 | Sugerir una modificación | Gerente o director | Propuesta registrada sin alterar el texto original. |
-| CU-13 | Resolver una sugerencia | Autor o usuario autorizado | Sugerencia aceptada, rechazada o respondida. |
-| CU-14 | Aprobar un acta | Director | Versión final disponible para consulta y PDF. |
-| CU-15 | Programar una reunión | Director o coordinador | Reunión incluida en la agenda interna. |
-| CU-16 | Consultar recordatorios | Todos | Próximas reuniones visibles al ingresar. |
-| CU-17 | Generar informe por propiedad | Gerente o director | Informe filtrado y exportable. |
-| CU-18 | Consultar auditoría | Administrador | Historial de acciones sensibles. |
-| CU-19 | Recuperar la contraseña | Todos | Restablecimiento mediante enlace de un solo uso. |
-| CU-20 | Adjuntar una evidencia | Coordinador o director | Fotografía o documento asociado y verificado. |
-| CU-21 | Descargar un archivo | Según permiso y propiedad | Entrega validada a través del backend. |
-| CU-22 | Marcar notificaciones como leídas | Todos | Bandeja al día. |
-| CU-23 | Reasignar el responsable de una novedad | Director | Cambio registrado en el historial. |
-
-En CU-13, "usuario autorizado" corresponde al autor del acta y al director de la propiedad. La gerente propone sugerencias y responde, pero no las decide.
-
-## 9. Flujo de las novedades
-
-### 9.1 Prioridades
-
-| Prioridad | Uso esperado |
-| --- | --- |
-| Baja | Puede atenderse dentro de la programación normal. |
-| Media | Requiere seguimiento, pero no afecta de forma grave la operación. |
-| Alta | Debe atenderse pronto porque afecta un servicio o una zona importante. |
-| Crítica | Representa un riesgo para las personas, la seguridad o la continuidad de un servicio. |
-
-La prioridad inicial la propone el coordinador. El director puede ajustarla y debe quedar registro del cambio.
-
-### 9.2 Estados
-
-```mermaid
-stateDiagram-v2
-    [*] --> Reportada
-    Reportada --> EnRevision
-    EnRevision --> Asignada
-    EnRevision --> Reportada
-    Asignada --> EnProceso
-    Asignada --> EnEspera
-    EnProceso --> EnEspera
-    EnEspera --> EnProceso
-    EnProceso --> Resuelta
-    Resuelta --> Cerrada
-    Resuelta --> EnProceso
-    Cerrada --> Reabierta
-    Reabierta --> EnRevision
-    Reportada --> Cancelada
-    EnRevision --> Cancelada
-    Asignada --> Cancelada
-    EnProceso --> Cancelada
-    EnEspera --> Cancelada
-    Cerrada --> [*]
-    Cancelada --> [*]
-```
-
-Dos transiciones merecen explicación porque resuelven vacíos de la versión anterior:
-
-- **`Resuelta → En proceso`:** el director revisa y comprueba que el problema no quedó solucionado. La novedad vuelve a ejecución con un motivo obligatorio, sin necesidad de cerrarla y reabrirla.
-- **Cancelación desde cualquier estado no terminal:** una novedad puede descubrirse duplicada o improcedente después de haber iniciado su atención. La cancelación la ejecuta el director y exige motivo.
-
-| Estado | Código técnico | Significado |
-| --- | --- | --- |
-| Reportada | `REPORTADA` | La novedad fue creada y está pendiente de revisión. |
-| En revisión | `EN_REVISION` | El director está verificando la información y la prioridad. |
-| Asignada | `ASIGNADA` | Existe una persona responsable de atenderla. |
-| En proceso | `EN_PROCESO` | Se están realizando las actividades necesarias. |
-| En espera | `EN_ESPERA` | El caso está detenido y debe tener una causa registrada. |
-| Resuelta | `RESUELTA` | El responsable informa que el problema fue solucionado. |
-| Cerrada | `CERRADA` | El director comprobó la solución y finalizó el caso. |
-| Reabierta | `REABIERTA` | El problema continuó o apareció nuevamente. |
-| Cancelada | `CANCELADA` | La novedad no procede, está duplicada o se registró por error. |
-
-El código técnico es el valor que se guarda en PostgreSQL y viaja en la API. El nombre visible se resuelve en la interfaz. Frontend y backend no usarán cadenas distintas para el mismo estado.
-
-Cada cambio guardará el estado anterior, el nuevo estado, el usuario, la fecha y una observación cuando sea obligatoria.
-
-### 9.3 Permisos y requisitos de cada transición
-
-| Transición | Quién la ejecuta | Requisito |
-| --- | --- | --- |
-| `REPORTADA → EN_REVISION` | Director | — |
-| `EN_REVISION → REPORTADA` | Director | Motivo de la devolución. |
-| `EN_REVISION → ASIGNADA` | Director | Responsable definido. |
-| `ASIGNADA → EN_PROCESO` | Responsable o director | — |
-| `ASIGNADA → EN_ESPERA` | Responsable o director | Causa de la espera. |
-| `EN_PROCESO → EN_ESPERA` | Responsable o director | Causa de la espera. |
-| `EN_ESPERA → EN_PROCESO` | Responsable o director | — |
-| `EN_PROCESO → RESUELTA` | Responsable | Descripción de la solución y evidencia final. |
-| `RESUELTA → CERRADA` | Director | Validación registrada. |
-| `RESUELTA → EN_PROCESO` | Director | Motivo del rechazo de la solución. |
-| `CERRADA → REABIERTA` | Director | Justificación de la reapertura. |
-| `REABIERTA → EN_REVISION` | Director | — |
-| Cualquiera → `CANCELADA` | Director | Motivo de la cancelación. |
-
-### 9.4 Indicadores derivados
-
-El tiempo sin actualización **no es un estado**. Es un indicador calculado a partir de la última actividad registrada y del umbral configurado en la organización. Una novedad sin actualización puede estar en cualquier estado abierto y se señala con una marca visual en los paneles y en los informes, no cambiando su estado.
-
-El mismo criterio aplica a "novedad crítica" y a "novedad vencida": son atributos o cálculos, nunca estados de la máquina.
-
-## 10. Flujo de las actas
-
-```mermaid
-stateDiagram-v2
-    [*] --> Borrador
-    Borrador --> EnRevision
-    EnRevision --> Borrador
-    EnRevision --> ConSugerencias
-    ConSugerencias --> Borrador
-    ConSugerencias --> EnRevision
-    EnRevision --> Aprobada
-    Aprobada --> Archivada
-    Aprobada --> Borrador
-    Borrador --> Anulada
-    EnRevision --> Anulada
-    ConSugerencias --> Anulada
-    Archivada --> [*]
-    Anulada --> [*]
-```
-
-| Estado | Código técnico | Significado |
-| --- | --- | --- |
-| Borrador | `BORRADOR` | El autor la está redactando o atendiendo sugerencias. |
-| En revisión | `EN_REVISION` | Enviada para lectura del director y de la gerente. |
-| Con sugerencias | `CON_SUGERENCIAS` | Tiene sugerencias pendientes de decisión. |
-| Aprobada | `APROBADA` | El director la aprobó. Existe una versión final inmutable. |
-| Archivada | `ARCHIVADA` | Cerrada para consulta histórica. |
-| Anulada | `ANULADA` | Se registró por error o se desistió de ella. Requiere motivo. |
-
-Tres transiciones resuelven vacíos de la versión anterior:
-
-- **`EnRevision → Borrador`:** el revisor devuelve el acta sin redactar sugerencias puntuales, con un motivo.
-- **`ConSugerencias → EnRevision`:** una vez decididas todas las sugerencias, el acta vuelve a revisión y puede aprobarse. Sin esta transición un acta con sugerencias nunca llegaba a aprobarse.
-- **`Aprobada → Borrador`:** abre el ciclo de una corrección formal. La versión aprobada anterior se conserva íntegra en `minute_versions` y su PDF no se sobrescribe; el acta vuelve a borrador para producir una versión nueva que deberá aprobarse de nuevo.
-
-### Reglas del acta
-
-1. Mientras esté en borrador, el autor puede editarla.
-2. Al enviarla a revisión se crea una versión que sirve como punto de comparación.
-3. Una sugerencia no modifica automáticamente el contenido.
-4. Cada sugerencia incluye autor, texto original, texto propuesto, explicación y estado.
-5. Al aceptar una sugerencia se crea una nueva versión del acta.
-6. Un acta aprobada no se modifica. Cualquier corrección posterior genera una nueva versión formal mediante la transición `Aprobada → Borrador`, y la versión aprobada anterior se conserva.
-7. El PDF final debe indicar propiedad, fecha, versión y estado de aprobación.
-8. No se puede aprobar un acta con sugerencias pendientes de decisión.
-9. Cada versión guarda número consecutivo, autor, fecha, motivo del cambio y contenido completo. Las versiones no se borran ni se sobrescriben.
-10. La versión final aprobada conserva su PDF y la huella SHA-256 del archivo. Ese PDF no se regenera.
-11. La anulación exige motivo, la ejecuta el director y no elimina el registro.
-
-## 11. Reglas principales del negocio
-
-1. Toda novedad y acta debe pertenecer a una propiedad.
-2. Todo usuario debe tener un rol activo.
-3. Director y coordinador solo acceden a propiedades asignadas.
-4. La gerente tiene acceso de consulta y comentarios sobre todas las propiedades.
-5. Una novedad reportada debe incluir descripción, categoría, prioridad y al menos una evidencia, salvo excepción configurada.
-6. Una novedad crítica genera una notificación destacada dentro de la aplicación y un correo electrónico a director y gerente.
-7. No se puede cerrar una novedad sin descripción de la solución y evidencia final.
-8. Una novedad cerrada se reabre; no se devuelve directamente a un estado anterior.
-9. Los cambios de prioridad, estado y responsable conservan su historial.
-10. Los comentarios no sustituyen el historial de estados.
-11. Un acta aprobada conserva una versión final que no se sobrescribe.
-12. Las sugerencias deben aceptarse o rechazarse de forma expresa.
-13. Una reunión debe pertenecer a una propiedad y tener al menos un participante.
-14. Los recordatorios se calculan usando la zona horaria configurada para la empresa.
-15. Los registros de auditoría no pueden editarse desde la aplicación.
-16. Una propiedad no puede quedar sin director activo ni sin al menos un coordinador activo. El sistema impedirá retirar la última asignación vigente de cada tipo.
-17. No se puede desactivar un usuario que sea responsable actual de novedades abiertas. Primero deben reasignarse.
-18. La cancelación de una novedad y el rechazo de una solución exigen motivo y los ejecuta el director.
-19. El tiempo sin actualización, la criticidad y el vencimiento son indicadores calculados, no estados.
-20. Las fotografías se almacenan procesadas según la sección 14.2. El archivo original solo se conserva si la configuración lo indica.
-21. Los parámetros configurables de la sección 11.1 se guardan en la tabla `settings` y su cambio queda en auditoría.
-
-### 11.1 Parámetros configurables
-
-El documento menciona varios valores "configurados". Todos residirán en una única tabla de parámetros por organización, con valor por omisión y registro de auditoría al cambiarlos:
-
-| Parámetro | Usado en | Valor inicial sugerido |
-| --- | --- | --- |
-| Zona horaria | Recordatorios e informes | `America/Bogota` |
-| Evidencia obligatoria al reportar | Regla 5 | Activada |
-| Categorías exentas de evidencia | Regla 5 | Ninguna |
-| Horas sin actualización para alertar | Notificaciones e indicadores | 48 |
-| Anticipación por omisión del recordatorio | Reuniones | 24 horas |
-| Minutos de edición de un comentario | Comentarios | 15 |
-| Tamaño máximo por archivo | Adjuntos | 10 MB |
-| Formatos permitidos | Adjuntos | JPG, PNG, WEBP, PDF |
-| Días de retención de temporales | Almacenamiento | 2 |
-| Umbral de alerta de disco | Almacenamiento | 80 % |
-| Conservar la imagen original | Almacenamiento | Desactivado |
-
-## 12. Arquitectura recomendada
-
-Se usará un **monolito modular** con principios de **arquitectura limpia o hexagonal**. Esta arquitectura permite iniciar en un solo VPS con menor complejidad y mantener separados los módulos del negocio. Si el sistema crece, algunos componentes podrán extraerse sin reconstruir toda la aplicación.
-
-No se recomienda comenzar con microservicios. En este momento del proyecto aumentarían el trabajo de despliegue, seguridad, comunicación y monitoreo sin aportar una ventaja real al MVP.
-
-### 12.1 Vista general
+# EG S.A.S. — Sistema de Gestión de Novedades
+
+**Especificación funcional y técnica preliminar — Documento maestro**  
+**Versión de la definición:** 2.2 (consolidación documental)  
+**Fecha de compilación:** 15 de octubre de 2026  
+**Estado:** definición funcional avanzada; **no equivale a software desarrollado, probado o aprobado formalmente por EG S.A.S.**  
+**Ámbito:** propiedades horizontales administradas por EG S.A.S. y gestión interna de EG S.A.S.  
+**Exclusiones explícitas:** contabilidad, tesorería y pagos.
+
+> **Uso de este documento.** Reúne las decisiones tomadas en las conversaciones de definición del producto, el proceso operativo presentado y los documentos de práctica aportados como contexto. Distingue las decisiones confirmadas de las recomendaciones técnicas y de los puntos abiertos. Las reglas RN-001 a RN-221 figuran en un registro histórico de trazabilidad; las decisiones posteriores prevalecen cuando una regla antigua quedó reemplazada. El contenido académico de los archivos de referencia no implica que se hayan ejecutado desarrollos o pruebas.
+
+## Contenido
+
+1. [Resumen y propósito](#1-resumen-y-propósito)
+2. [Antecedentes y proceso actual](#2-antecedentes-y-proceso-actual-as-is)
+3. [Objetivos, alcance y límites](#3-objetivos-alcance-y-límites)
+4. [Actores, roles y permisos](#4-actores-roles-y-permisos)
+5. [Novedades: estructura y clasificación](#5-novedades-estructura-y-clasificación)
+6. [Flujo de atención y asignación](#6-flujo-de-atención-y-asignación-to-be)
+7. [Actividades, seguimiento y evidencias](#7-actividades-seguimiento-y-evidencias)
+8. [Notificaciones y panel de control](#8-notificaciones-y-panel-de-control)
+9. [Módulo de informes](#9-módulo-de-informes)
+10. [Plantillas institucionales y personalización](#10-plantillas-institucionales-y-personalización)
+11. [Diseño de pantallas](#11-diseño-de-pantallas)
+12. [Modelo conceptual de datos](#12-modelo-conceptual-de-datos)
+13. [Arquitectura técnica propuesta](#13-arquitectura-técnica-propuesta)
+14. [Requisitos no funcionales](#14-requisitos-no-funcionales)
+15. [Catálogo de requisitos funcionales](#15-catálogo-de-requisitos-funcionales)
+16. [Pruebas y criterios de aceptación](#16-pruebas-y-criterios-de-aceptación)
+17. [Plan de implementación recomendado](#17-plan-de-implementación-recomendado)
+18. [Decisiones aprobadas, propuestas y pendientes](#18-decisiones-aprobadas-propuestas-y-pendientes)
+19. [Registro completo de reglas RN-001 a RN-221](#19-registro-completo-de-reglas-rn-001-a-rn-221)
+20. [Glosario, fuentes y control de cambios](#20-glosario-fuentes-y-control-de-cambios)
+
+---
+
+## 1. Resumen y propósito
+
+EG S.A.S. requiere una plataforma para **registrar, asignar, atender, supervisar, verificar, cerrar y consultar novedades**. Una novedad es cualquier situación que necesita atención o seguimiento, no solamente un daño técnico. El sistema atenderá dos ámbitos: (a) propiedades horizontales administradas por la empresa y (b) situaciones internas de EG S.A.S.
+
+Actualmente, las novedades pueden quedar repartidas entre WhatsApp, correo, llamadas, fotografías y archivos. Esto dificulta conocer de forma inmediata quién responde por un caso, qué se ha hecho, qué está pendiente y con qué evidencias se cerró. La plataforma reunirá esos datos en un expediente operativo consultable desde computador o celular.
+
+**Propuesta de producto:** aplicación web progresiva (PWA), con acceso por roles y propiedades/áreas autorizadas, estados, actividades, comentarios, archivos, notificaciones, informes PDF y exportaciones Excel. La arquitectura y las tecnologías recogidas más adelante son **propuestas** derivadas de la documentación inicial; todavía deben confirmarse con el equipo de desarrollo.
+
+### 1.1 Principios de diseño
+
+- Un caso conserva su identidad desde el registro hasta el cierre, incluso si cambia de responsable, prioridad o estado.
+- La novedad, sus actividades y su historial son objetos relacionados, pero distintos.
+- El responsable principal de la novedad es único a la vez; una novedad puede tener múltiples actividades y participantes.
+- El director operativo confirma la asignación principal y realiza el cierre definitivo.
+- Las novedades críticas admiten registro de atención inmediata antes de la confirmación formal, con aviso al director y trazabilidad.
+- El cierre exige evidencias según la categoría configurada y verificación del director.
+- El módulo de informes reutiliza los registros existentes; no altera la información original.
+- Los permisos restringen **acciones** y **alcance de los datos**; tener una función administrativa no otorga automáticamente acceso a expedientes.
+- La plataforma no autoriza ni ejecuta compras, movimientos de dinero, pagos ni comprobaciones financieras.
+
+## 2. Antecedentes y proceso actual (AS-IS)
+
+### 2.1 Situación de partida
+
+En la descripción operativa aportada, EG S.A.S. administra propiedades horizontales y supervisa elementos como ascensores, electrobombas, luminarias, puertas eléctricas, piscinas, jardines, aseo, equipos eléctricos y áreas comunes. La operación se coordina mediante diferentes canales, en especial WhatsApp, llamadas y correo.
+
+### 2.2 Proceso documentado de atención de un daño
+
+| Paso | Acción actual | Interviniente habitual |
+|---:|---|---|
+| 1 | Inspeccionar la propiedad. | Supervisor/coordinador |
+| 2 | Identificar la novedad. | Supervisor/coordinador |
+| 3 | Tomar evidencia inicial. | Supervisor/coordinador |
+| 4 | Reportar por WhatsApp para revisión. | Coordinador / Dirección Operativa |
+| 5 | Solicitar cotización a técnico o proveedor. | Coordinador |
+| 6 | Enviar cotización a Dirección. | Coordinador |
+| 7 | Solicitar recursos por correo. | Dirección Operativa |
+| 8 | Validar disponibilidad de recursos. | Contabilidad |
+| 9 | Aprobar o negar el requerimiento financiero. | Contabilidad |
+| 10 | Comunicar autorización para continuar. | Dirección Operativa |
+| 11 | Entregar recursos autorizados. | Tesorería |
+| 12 | Realizar la compra correspondiente. | Coordinador |
+| 13 | Coordinar intervención técnica. | Coordinador |
+| 14 | Ejecutar instalación o reparación. | Técnico / proveedor |
+| 15 | Verificar solución y dar cierre. | Coordinador en el proceso original |
+
+**Aclaración:** este es el proceso *actual descrito en las fuentes*, no el flujo que implementará íntegramente la plataforma. Los pasos contables y de tesorería permanecerán **fuera del sistema**. El cierre digital propuesto pasa a responsabilidad exclusiva del director, conforme a las decisiones posteriores. Tampoco todas las novedades requieren cotizaciones, compras o técnicos.
+
+### 2.3 Problemas a resolver
+
+- Información dispersa y difícil de recuperar.
+- Falta de historial único para cada caso.
+- Dificultad para ubicar responsable y estado actuales.
+- Escasa visibilidad del tiempo transcurrido y de los bloqueos.
+- Informes por propiedad que requieren reconstrucción manual.
+- Evidencias, cotizaciones y resultados almacenados en diferentes lugares.
+
+## 3. Objetivos, alcance y límites
+
+### 3.1 Objetivo general
+
+Desarrollar una plataforma web progresiva que centralice la gestión de novedades de propiedades horizontales y de áreas internas de EG S.A.S., permitiendo registrarlas, asignarlas, documentar su atención, verificar su solución y generar informes de gestión con trazabilidad.
+
+### 3.2 Objetivos específicos
+
+1. Registrar novedades con categorías, prioridades y datos adecuados al ámbito.
+2. Gestionar responsables principales, actividades, estados, observaciones y evidencias.
+3. Distinguir la atención ordinaria de las medidas inmediatas en casos críticos.
+4. Controlar la verificación y el cierre definitivo por Dirección Operativa.
+5. Permitir seguimiento por propiedad, área interna, responsable y periodo.
+6. Generar informes automáticos con textos editables, revisión, aprobación, PDF oficial, exportación de datos y control de versiones.
+7. Proteger los accesos y conservar historial de cambios, documentos y entregas.
+
+### 3.3 Dentro del alcance funcional
+
+- Autenticación y autorización por roles, propiedades y áreas.
+- Usuarios, propiedades, zonas y áreas internas.
+- Categorías y criterios de evidencia configurables.
+- Novedades, asignación mixta y prioridades, incluida prioridad crítica.
+- Actividades y responsables de actividad, comentarios, menciones y adjuntos.
+- Estados, seguimiento, auditoría, cierre y reapertura.
+- Avisos internos y bandejas de pendientes; mecanismo adicional para urgencias por concretar.
+- Tableros operativos con filtros e indicadores.
+- Informes por propiedad, internos y consolidados; plantillas y personalización limitada.
+- Borradores, revisión y aprobación exclusivamente por el director; publicación interna.
+- PDF oficial, Excel para análisis y registro de distribución externa exclusivamente por director.
+- Almacenamiento privado, historial, copias de seguridad y recuperación.
+
+### 3.4 Fuera del alcance de la primera versión
+
+- Contabilidad, tesorería, cuentas, saldos, conciliaciones, presupuestos, control de gastos, desembolsos y pagos.
+- Autorización financiera de compras, contrataciones y entrega de dinero.
+- Inventario y gestión completa de compras/proveedores.
+- Programación integral de mantenimiento preventivo.
+- Portal de residentes o de terceros externos.
+- Editor visual libre de páginas y plantillas al estilo de un procesador de documentos.
+- Firmas digitales certificadas, pagos electrónicos y distribución masiva automática.
+- Expedientes laborales disciplinarios o datos sensibles que requieran tratamiento especializado.
+- Aplicaciones móviles nativas para tiendas de Android/iOS.
+
+**Límite práctico:** registrar una cotización en una novedad significa conservar un soporte operativo, no administrar dinero ni aprobar financieramente su ejecución.
+
+### 3.5 Resultado esperado del proyecto
+
+Una primera versión operativa que pueda usarse en un piloto con usuarios reales, acompañada de especificación, pruebas, manuales básicos y procedimiento de respaldo. **No se afirma que esos entregables ya existan.**
+
+## 4. Actores, roles y permisos
+
+### 4.1 Roles de negocio
+
+| Rol | Alcance y responsabilidad |
+|---|---|
+| **Gerente** | Crear novedades, supervisar propiedades y gestión interna, registrar observaciones, consultar tableros e informes, elaborar borradores autorizados. No aprueba ni distribuye informes oficialmente, no cierra novedades. |
+| **Auxiliar de Gerencia** | Apoyo a Gerencia, registro y seguimiento dentro de permisos otorgados; acceso no necesariamente idéntico al gerente. No aprueba ni distribuye oficialmente. |
+| **Director operativo** | Revisa novedades, confirma o modifica su responsable principal, supervisa actividades, cambia prioridades con trazabilidad, verifica y cierra/reabre novedades; revisa, devuelve, aprueba y distribuye oficialmente informes. Personaliza opciones permitidas de plantillas por propiedad. |
+| **Coordinador operativo** | Registra novedades, aporta evidencias, atiende asignaciones, crea y distribuye actividades de sus casos, registra avances, solicita cierre y elabora informes de sus propiedades autorizadas. |
+| **Administrador del sistema** | Configura cuentas, roles, permisos, catálogos y plantilla institucional. Este rol técnico no confiere automáticamente acceso a información operativa confidencial. |
+| **Participante interno autorizado** | Puede atender actividades asignadas y registrar avances/evidencias, si su acceso ha sido otorgado. Su alcance exacto es propuesta técnica derivada del concepto de participantes. |
+| **Técnico/proveedor externo** | Puede figurar como tercero relacionado con la intervención, **sin cuenta ni acceso** en el MVP. El responsable interno documenta su trabajo. |
+
+### 4.2 Principios de control de acceso
+
+1. Las funciones se conceden por rol y permisos explícitos.
+2. Cada usuario tiene acceso solo a las propiedades y áreas autorizadas; Gerencia tiene visibilidad general según las políticas de la empresa.
+3. Una actividad interna asignada a un coordinador no abre automáticamente todas las novedades del área interna.
+4. Director: único cierre definitivo y única aprobación/distribución oficial de informes.
+5. Director: confirmación o reasignación del responsable principal de novedades.
+6. Director y responsable principal: creación y asignación de actividades a usuarios autorizados.
+7. El administrador de plantillas institucionales no puede alterar contenido histórico aprobado.
+8. El permiso para descargar un PDF no equivale a autorización para distribución oficial; fuera de la aplicación se requerirá una política interna de uso documental.
+
+### 4.3 Matriz de operaciones principales
+
+| Operación | Gerente | Aux. Gerencia | Director | Coordinador | Admin. sistema |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Crear novedad | Sí | **Por confirmar** | Sí | Sí | No por defecto |
+| Marcar novedad inicialmente crítica | Sí | **Por confirmar** | Sí | Sí | No por defecto |
+| Ver novedades propias/autorizadas | Sí | Sí | Sí | Sí | Solo permiso adicional |
+| Confirmar responsable principal | No | No | **Sí** | No | No |
+| Cambiar prioridad con motivo | Proponer | Proponer | **Sí** | Proponer | No |
+| Crear actividades | Solo si es responsable principal | Solo si es responsable principal | Sí | Si es responsable principal | No |
+| Asignar actividades | Solo si es responsable principal | Solo si es responsable principal | Sí | Si es responsable principal | No |
+| Registrar avances propios | Sí, según acceso | Sí, según acceso | Sí | Sí | No |
+| Solicitar cierre | Si es responsable principal | Si es responsable principal | Sí | Si es responsable principal | No |
+| Cerrar/reabrir novedad | No | No | **Sí** | No | No |
+| Elaborar borrador de informe | Sí | Sí, según acceso | Sí | Sí, según acceso | No por defecto |
+| Revisar para aprobación | No | No | **Sí** | No | No |
+| Aprobar informe | No | No | **Sí** | No | No |
+| Distribución externa oficial | No | No | **Sí** | No | No |
+| Plantilla institucional | No | No | No | No | **Sí** |
+| Configuración por propiedad | No | No | **Sí** | No | No |
+
+**Pendiente real:** inicialmente se confirmó que reportan *Gerencia, Director y Coordinadores*. El Auxiliar de Gerencia se incorporó después con permisos similares a Gerencia, pero no se confirmó expresamente su facultad para crear o marcar crítica una novedad. Debe validarse; no se concede por suposición.
+
+## 5. Novedades: estructura y clasificación
+
+### 5.1 Dos ámbitos distintos
+
+| Campo | Novedad de propiedad | Novedad interna |
+|---|---|---|
+| Ámbito | `PROPIEDAD` | `INTERNA` |
+| Referencia obligatoria | Propiedad existente y autorizada | Área interna existente y autorizada |
+| Ubicación complementaria | Zona, equipo o punto de referencia (si corresponde) | Oficina, dependencia o ubicación interna (si corresponde) |
+| Categorías | Catálogo operativo para propiedades | Catálogo interno configurable |
+| Responsable sugerido | Coordinador principal de propiedad, si existe y está activo | Referente de área interna, si existe y está activo |
+| Informes | Por propiedad o consolidado | Por área o consolidado |
+
+No se creará una propiedad ficticia llamada «EG S.A.S.» para las novedades internas. A nivel de datos, cada novedad estará relacionada con **una propiedad o un área interna, nunca ambas**.
+
+### 5.2 Categorías sugeridas (configurables, no cerradas)
+
+- Propiedades: mantenimiento, aseo, jardinería, seguridad, administrativa, convivencia, otras.
+- Internas: administrativa, operativa, tecnología, otras.
+- Las categorías podrán activarse/desactivarse; deberán conservarse en reportes históricos aunque se retiren del catálogo activo.
+- Cada categoría podrá establecer evidencias mínimas para solicitar cierre.
+
+### 5.3 Datos de una novedad
+
+**Obligatorios comunes:** código único, ámbito, título, descripción, categoría, prioridad inicial, creador, fecha/hora de registro, estado y propiedad **o** área interna. Algunos se generan automáticamente.
+
+**Complementarios:** ubicación/zona, equipo, fotos iniciales, archivos, responsable sugerido, responsable principal confirmado, otros participantes, fecha prevista, descripción de impacto, causa, observaciones, vínculos a casos duplicados, motivo de descarte/reapertura.
+
+**Regla de edición:** no se borran retroactivamente los valores históricos de estados, prioridad, asignaciones o cierres. Los cambios relevantes se registran como eventos auditables.
+
+### 5.4 Prioridad y estado son independientes
+
+| Prioridad | Criterio orientativo |
+|---|---|
+| Baja | Puede programarse sin urgencia. |
+| Media | Requiere seguimiento ordinario. |
+| Alta | Atención preferente; **en principio requiere asignación confirmada**. |
+| Crítica | Riesgo o daño grave que exige reacción inmediata; habilita registro urgente previo a confirmación. |
+
+Gerente, director y coordinador pueden clasificar inicialmente una novedad como crítica. Solo el director modifica formalmente la prioridad y deja motivo e historial. Una marca «crítica» no autoriza ejecutar tareas de riesgo sin competencia técnica ni saltarse controles financieros fuera de la aplicación.
+
+### 5.5 Estados principales de la novedad
+
+| Estado | Qué significa |
+|---|---|
+| `REGISTRADA` | Caso creado; se valida y propone responsable. |
+| `EN_REVISION` | Director revisa y confirma o devuelve por datos insuficientes. |
+| `ASIGNADA` | Director confirmó responsable principal. |
+| `EN_ATENCION` | Se ejecutan actividades y se documentan avances. |
+| `PENDIENTE_CIERRE` | El responsable informó solución y solicita verificación. |
+| `CERRADA` | Director verificó y cerró definitivamente. |
+
+**Condiciones adicionales que no conviene confundir con estados principales:** devuelta para ajustes, en espera externa, atención urgente iniciada, reabierta y descartada. Se implementarán como subestados, indicadores, eventos o transiciones controladas según diseño técnico; su representación exacta aún es propuesta.
+
+## 6. Flujo de atención y asignación (TO-BE)
+
+### 6.1 Flujo ordinario
 
 ```mermaid
 flowchart TD
-    U[Usuario en celular o computador] --> A[Angular PWA]
-    A --> B[Nginx: HTTPS y proxy inverso]
-    B --> C[NestJS API REST]
-    C --> D[(PostgreSQL)]
-    C --> E[Volumen local de archivos]
-    C --> F[Generador de PDF]
-    C --> G[Notificaciones internas]
-    S[Tareas programadas] --> D
-    S --> E
-    S --> G
+  A[Registrar novedad] --> B[Calcular responsable sugerido]
+  B --> C[Director revisa información]
+  C -->|Datos insuficientes| D[Devolver para ajustes]
+  D --> A
+  C -->|Confirma o cambia| E[Asignación principal confirmada]
+  E --> F[Atender y registrar actividades]
+  F --> G[Solicitar cierre]
+  G --> H{Director verifica}
+  H -->|Insuficiente| F
+  H -->|Solucionada| I[Cierre definitivo]
 ```
 
-### 12.1.1 Tareas programadas
+1. El usuario autorizado crea el caso; la plataforma genera código y fecha/hora.
+2. Propone un responsable según propiedad/área si existe un candidato activo y autorizado.
+3. El director revisa datos, prioridad y sugerencia; confirma o cambia responsable principal.
+4. El responsable principal organiza la atención, crea actividades y asigna participantes autorizados; el director puede intervenir.
+5. Se registran avances, evidencias y eventuales esperas externas.
+6. El responsable solicita cierre cuando se cumplan los requisitos de evidencia de la categoría.
+7. El director verifica, cierra o devuelve la novedad para completar la atención.
 
-El sistema no funciona solo con peticiones del usuario. Hay comportamiento que debe ejecutarse por tiempo y la versión anterior del documento no lo contemplaba:
+### 6.2 Asignación mixta, casos particulares
 
-| Tarea | Frecuencia sugerida |
-| --- | --- |
-| Generar recordatorios de reuniones próximas | Cada 15 minutos |
-| Detectar novedades sin actualización según el umbral configurado | Cada hora |
-| Eliminar archivos temporales vencidos | Diaria |
-| Vigilar el espacio del volumen y alertar sobre el umbral | Cada hora |
-| Verificar la copia de seguridad del día anterior | Diaria |
+| Caso | Comportamiento |
+|---|---|
+| Una propiedad con coordinador principal activo | Se propone como responsable; el director confirma o cambia. |
+| Propiedad con varios coordinadores | Se propone el principal configurado o se solicita selección. |
+| Propiedad sin coordinador | Queda pendiente de asignación hasta intervención del director. |
+| Novedad interna con responsable de área | Se propone si está activo y autorizado. |
+| Usuario sugerido inactivo/no autorizado | No se confirma automáticamente; el director debe seleccionar otro. |
+| Reasignación posterior | Solo director para responsable principal, con motivo y evento de auditoría. |
 
-En el MVP estas tareas vivirán en el mismo proceso de NestJS mediante `@nestjs/schedule`, dentro de un `JobsModule`. Si en el futuro se ejecuta más de una instancia de la API, las tareas deberán protegerse con un bloqueo en base de datos para no duplicar notificaciones.
+La sugerencia nunca equivale a asignación final para los casos ordinarios.
 
-### 12.2 Capas internas
+### 6.3 Excepción de novedad crítica
 
-| Capa | Responsabilidad |
-| --- | --- |
-| Presentación | Controladores REST, validación de solicitudes y respuestas HTTP. |
-| Aplicación | Casos de uso como crear novedad, sugerir cambio o aprobar acta. |
-| Dominio | Entidades, estados, prioridades, permisos y reglas del negocio. |
-| Infraestructura | PostgreSQL, Prisma, sistema de archivos local, PDF y demás servicios técnicos. |
+```mermaid
+flowchart TD
+  A[Reportar como crítica] --> B[Guardar prioridad original y alertar al director]
+  B --> C[Registrar acciones urgentes de personal autorizado]
+  C --> D[Director revisa prioridad y asignación]
+  D --> E[Continuar seguimiento]
+  E --> F[Solicitar verificación]
+  F --> G{Director confirma solución}
+  G -->|No| E
+  G -->|Sí| H[Cerrar]
+```
 
-Las reglas del negocio no dependerán directamente de NestJS, Prisma ni del sistema de archivos del servidor.
+- Pueden iniciarse **registros de atención inmediata** antes de la asignación formal.
+- Es obligatorio guardar responsable de la acción, fecha, descripción y evidencia cuando exista.
+- El director recibe una alerta y posteriormente confirma/rectifica prioridad y asignación, con motivo.
+- La atención urgente no habilita permisos técnicos o financieros adicionales.
+- Incluso una novedad crítica necesita revisión y cierre definitivo del director.
+- Si se rebaja la prioridad, el historial urgente permanece.
 
-### 12.3 Módulos del backend
+### 6.4 Devoluciones, reaperturas y descartes
 
-- `AuthModule`
-- `UsersModule`
-- `RolesModule`
-- `PropertiesModule`
-- `PropertyAssignmentsModule`
-- `IncidentsModule`
-- `MinutesModule`
-- `MeetingsModule`
-- `CommentsModule`
-- `NotificationsModule`
-- `AttachmentsModule`
-- `ReportsModule`
-- `AuditModule`
-- `SettingsModule`
-- `JobsModule`
-- `MailModule`
+- **Devolución inicial:** el reporte carece de información suficiente; el creador o usuario indicado lo completa sin perder su historia.
+- **Devolución de cierre:** el director no considera resuelto el caso o faltan evidencias; exige motivo y regresa a atención.
+- **Reapertura:** solo director, con causa y evento de auditoría, después de un cierre.
+- **Descarte:** solo acción autorizada por el director, con motivo; no cuenta como novedad solucionada.
+- **Duplicados:** propuesta de vincularlos y conservar sus registros, sin eliminarlos; regla operativa exacta pendiente.
 
-Cada módulo tendrá sus controladores, casos de uso, entidades, repositorios y adaptadores. Las dependencias entre módulos deben realizarse mediante interfaces o servicios públicos definidos.
+## 7. Actividades, seguimiento y evidencias
 
-## 13. Patrones de diseño
+### 7.1 Diferencias entre objetos
 
-| Patrón | Aplicación |
-| --- | --- |
-| Repository | Separa las consultas de PostgreSQL de las reglas del negocio. |
-| Use Case o Application Service | Encapsula una acción completa del usuario. |
-| State | Controla los cambios válidos de estados en novedades y actas. |
-| Strategy | Permite cambiar reglas de prioridad, recordatorio o generación de informes. |
-| Adapter | Aísla el almacenamiento local, el generador de PDF, el envío de correo y futuros proveedores externos. |
-| Domain Events | Genera notificaciones después de eventos como `IncidentCreated` o `MeetingScheduled`. |
-| Dependency Injection | Permite sustituir implementaciones y facilita las pruebas. |
+- **Novedad:** situación principal con código, ámbito, prioridad, estado y responsable general.
+- **Actividad:** acción o tarea vinculada a una novedad; puede tener responsable, estado, fechas y archivos propios.
+- **Seguimiento:** comentario, decisión, avance o evento que explica qué pasó con la novedad o sus actividades.
+- **Evidencia:** archivo o constancia asociado a novedad/actividad; se organiza según su finalidad.
 
-No se recomienda aplicar CQRS, Event Sourcing ni otros patrones complejos en el MVP. Podrán evaluarse si aparece una necesidad concreta.
+**Ejemplo:** una electrobomba averiada corresponde a una novedad. Inspección, solicitud de visita, reparación y verificación son actividades de ese mismo caso. No se crean cuatro novedades distintas para esas gestiones.
 
-### 13.1 Convención de idioma
+### 7.2 Estados de actividad
 
-El documento anterior mezclaba identificadores en inglés y en español. Se fija una sola regla:
+| Estado | Significado | Condiciones |
+|---|---|---|
+| `PENDIENTE` | No iniciada. | Puede tener fecha objetivo. |
+| `EN_CURSO` | Se está realizando. | Acepta avances, comentarios y adjuntos. |
+| `BLOQUEADA` | No puede continuar. | Motivo obligatorio. |
+| `COMPLETADA` | Se terminó la actividad. | Fecha real, usuario y resultado. |
+| `CANCELADA` | Ya no procede. | Motivo obligatorio; no se elimina el historial. |
 
-- **Código, tablas, columnas, módulos, clases, eventos y rutas de la API:** inglés (`incidents`, `IncidentsModule`, `IncidentCreated`, `/api/v1/incidents`).
-- **Estados, prioridades y valores de catálogo:** código técnico en español mayúscula, según las secciones 9.2 y 10 (`EN_REVISION`).
-- **Textos visibles para el usuario, documentación y este documento:** español.
+Una actividad completada no cierra automáticamente la novedad. Si todas las actividades están listas, el responsable principal solicita el cierre y el director verifica.
 
-## 14. Tecnologías propuestas
+### 7.3 Creación y distribución de actividades
 
-| Componente | Tecnología | Uso |
-| --- | --- | --- |
-| Aplicación web | Angular con TypeScript | Interfaz modular y adaptable. |
-| PWA | Angular Service Worker y Web App Manifest | Instalación desde el navegador y caché básica. |
-| Componentes visuales | PrimeNG (una sola estrategia de estilos, ver nota) | Formularios, calendario, tablas y paneles. |
-| Backend | NestJS con TypeScript | API organizada por módulos. |
-| API | REST versionada en `/api/v1` | Comunicación entre frontend y backend. |
-| Documentación API | OpenAPI/Swagger | Consulta y prueba de servicios. |
-| Base de datos | PostgreSQL | Usuarios, propiedades, estados, versiones e historial. |
-| Acceso a datos | Prisma ORM | Consultas tipadas y migraciones. |
-| Evidencias y documentos | Sistema de archivos del VPS mediante un volumen persistente | Fotografías, PDF y demás documentos. |
-| PDF | Generación desde el backend | Actas e informes descargables. |
-| Correo | Servicio de correo transaccional con dominio propio, tras un contrato `MailPort` | Avisos de novedades críticas, reuniones y restablecimiento de contraseña. |
-| Contenedores | Docker Compose | Despliegue de los servicios. |
-| Proxy y certificado | Nginx y Certbot | Dominio, HTTPS y acceso a la aplicación. |
-| Pruebas | Jest y Playwright | Reglas, API y recorridos completos. |
-| Control de versiones | Git y GitHub | Historial del código y automatización. |
+- El director y el responsable principal pueden crear y asignar actividades.
+- Los destinatarios deben ser usuarios activos y autorizados para la novedad.
+- El director supervisa y puede modificar, cancelar o reasignar actividades.
+- Los participantes actualizan las actividades que tengan asignadas; no pueden reasignar el responsable principal de la novedad.
+- Un proveedor/técnico externo puede figurar como ejecutor informado, sin credenciales de acceso en el MVP.
+- Las reasignaciones conservan usuario anterior, nuevo responsable, autor del cambio y fecha.
+- Las actividades podrán tener fechas previstas y reales. El director podrá revisar retrasos y bloqueos.
 
-Las versiones se fijarán al iniciar el desarrollo. Se debe utilizar una versión LTS de Node.js compatible con Angular, NestJS y Prisma.
+### 7.4 Historial de seguimiento
 
-**Nota sobre los estilos.** No se mezclarán PrimeNG con tema propio y Tailwind a la vez, porque compiten en especificidad y producen correcciones frágiles. Hay que elegir una de estas dos opciones al iniciar el desarrollo y dejarla escrita:
+Se registrará automáticamente: creación, correcciones relevantes, clasificaciones críticas, cambios de prioridad, asignaciones/reasignaciones, cambios de estado, solicitudes de cierre, devoluciones, aprobación de cierre, reaperturas, descartes, creación/cambio de actividades y registros de documentos. Los comentarios manuales también guardarán autor y fecha.
 
-1. **PrimeNG con tema propio** y CSS del proyecto para la maquetación. Más rápido de arrancar.
-2. **PrimeNG en modo `unstyled` con Tailwind** mediante su capa de adaptación. Más trabajo inicial, pero un solo sistema de diseño y mayor fidelidad a la referencia visual del prototipo.
+La interfaz podrá mostrar una línea de tiempo cronológica con los eventos; debe distinguir textos escritos por un usuario de cambios automáticos del sistema. No se eliminarán silenciosamente comentarios ni eventos; la política de corrección y retención será auditada.
 
-Dado que el prototipo que sirve de referencia visual está hecho con Tailwind, la opción 2 reproduce mejor ese diseño.
+### 7.5 Evidencias y archivos
 
-### 14.1 Almacenamiento local de archivos
+| Tipo | Uso |
+|---|---|
+| Inicial | Foto/documento del problema al reportarlo. |
+| Ejecución | Avances e intervenciones durante la atención. |
+| Final | Resultado que apoya la verificación del cierre. |
+| Soporte | Cotización, diagnóstico técnico, comunicación u otro PDF/archivo relevante. |
 
-Todas las fotografías, los PDF, las evidencias y los demás documentos se almacenarán directamente en el VPS. No se guardarán dentro de PostgreSQL ni dentro de la capa temporal del contenedor de NestJS.
+Los documentos se relacionarán con la novedad o con una actividad concreta. Conservarán metadatos de autor, fecha, nombre y clase de archivo, además de controles de acceso. Se deben definir formatos, tamaños máximos y un proceso de carga fiable; **los límites numéricos siguen pendientes**.
 
-Se utilizará un volumen persistente montado en el contenedor de la API. Una estructura inicial puede ser:
+### 7.6 Requisitos de evidencia para solicitar cierre
+
+La evidencia exigida será **configurable por categoría**. Ejemplos propuestos, no parametrización aprobada:
+
+| Categoría | Evidencia sugerida |
+|---|---|
+| Mantenimiento | Foto final y descripción del trabajo. |
+| Aseo/jardinería | Foto del resultado. |
+| Seguridad | Prueba documental o visual según la situación. |
+| Administrativa | Resultado descrito; documento cuando corresponda. |
+| Otra | Regla definida por el administrador autorizado. |
+
+El sistema validará requisitos antes de enviar a cierre; el director, con criterio operativo, comprobará el resultado. Los cambios de configuración no deben alterar silenciosamente los criterios ya aplicados a solicitudes en revisión.
+
+## 8. Notificaciones y panel de control
+
+### 8.1 Eventos propuestos
+
+| Evento | Destinatario |
+|---|---|
+| Novedad nueva | Director que deba revisar la asignación. |
+| Novedad marcada crítica | Director, con aviso prioritario. |
+| Asignación confirmada/reasignación | Responsable principal. |
+| Actividad nueva o reasignada | Responsable de actividad. |
+| Comentario con mención | Usuario mencionado y autorizado. |
+| Reporte devuelto | Usuario encargado de corregirlo. |
+| Solicitud de cierre | Director. |
+| Solicitud de cierre devuelta | Responsable principal. |
+| Novedad cerrada | Creador y responsable. |
+| Actividad bloqueada/vencida | Responsable y director según configuración. |
+| Informe enviado a revisión | Director. |
+| Informe devuelto | Autor del borrador. |
+| Informe aprobado | Autor y usuarios autorizados. |
+
+**MVP:** bandeja y avisos internos. **Pendiente:** canal alterno confiable para alertas críticas (correo, push o mensajería), configuración y escalamiento si el director no responde. No se presume que un aviso mostrado en pantalla garantice su lectura.
+
+### 8.2 Tableros
+
+- **Gerencia:** novedades por ámbito/propiedad, abiertas al corte, prioridades, críticas, cierres, tiempos, pendientes y responsables.
+- **Dirección:** por revisar, sin responsable, críticas, bloqueadas, en espera, pendientes de cierre, informes por aprobar.
+- **Coordinador:** propiedades asignadas, «Mis novedades», actividades asignadas, próximas a vencer y solicitudes devueltas.
+- **Administrador técnico:** catálogos, usuarios, permisos, plantillas y auditoría técnica; no vista indiscriminada de expedientes.
+
+### 8.3 Indicadores y fórmulas preliminares
+
+| Indicador | Regla de cálculo |
+|---|---|
+| Novedades registradas en periodo | Casos creados entre fecha inicial y final. |
+| Novedades cerradas en periodo | Casos con evento de cierre durante el intervalo. |
+| Abiertas a fecha de corte | Casos que, en el instante de corte, no estaban cerrados ni descartados. |
+| Actividades completadas en periodo | Actividades con fecha de finalización real en intervalo. |
+| Tiempo hasta primera atención | Primera acción de atención menos fecha de registro. |
+| Tiempo hasta asignación | Primera confirmación menos fecha de registro. |
+| Tiempo hasta cierre | Fecha de cierre menos fecha de registro, distinguiendo reaperturas. |
+| Tiempo por estado | Diferencia entre eventos sucesivos de estado, dentro del intervalo considerado. |
+| Novedades críticas | Casos marcados inicialmente críticos y/o críticos en algún momento; informar el criterio usado. |
+| Porcentaje de cierre de cohorte | Casos creados en periodo que ya se cerraron / casos creados en periodo; fijar fecha de corte. |
+
+**No mezclar poblaciones:** «registradas en septiembre» y «cerradas en septiembre» son cifras de cohortes diferentes; el cociente simple entre ellas no es necesariamente una tasa de solución. En una reapertura conviene distinguir *novedades únicas cerradas* de *eventos de cierre*. Los cálculos definitivos deberán incluir casos de prueba con periodos, zonas horarias y reaperturas.
+
+## 9. Módulo de informes
+
+### 9.1 Tipos confirmados
+
+1. **Propiedad:** informe de un edificio o conjunto para un periodo seleccionado, con novedades, actividad, evidencias, pendientes y observaciones.
+2. **Gestión interna:** información de un área o conjunto de áreas internas autorizadas de EG S.A.S.
+3. **Consolidado de Gerencia:** datos generales comparativos de propiedades y áreas, separados por ámbito cuando corresponda.
+
+### 9.2 Elaboración: automático y editable
+
+| Componente | Origen | Modificación desde el informe |
+|---|---|---|
+| Nombre de propiedad/área y periodo | Registro y filtros | Se elige al crear; no se reescribe en documento. |
+| Novedades, estado, actividades, fechas, responsables | Base de datos e historial | **No editable**. |
+| Indicadores y totales | Cálculos automáticos | **No editable**. |
+| Selección de fotos/soportes a mostrar | Evidencias autorizadas | **Sí**, selección sin alterar origen. |
+| Introducción | Autor del borrador | Sí. |
+| Observaciones generales | Autor del borrador | Sí. |
+| Recomendaciones | Autor del borrador | Sí. |
+| Comentarios finales | Autor del borrador | Sí. |
+| Identidad del aprobador y sello temporal | Sistema al aprobar | No. |
+
+El usuario debe poder previsualizar el documento. La vista previa y el PDF aprobado se generarán a partir del mismo modelo de datos y motor de representación para reducir diferencias.
+
+### 9.3 Estados y decisiones
+
+| Estado | Acciones permitidas |
+|---|---|
+| `BORRADOR` | Editar textos, seleccionar evidencias y actualizar datos de origen explícitamente. |
+| `EN_REVISION` | Ver documento congelado; el director aprueba o devuelve. Sin edición silenciosa. |
+| `DEVUELTO` | Autor corrige, consulta observaciones y reenvía. |
+| `APROBADO` | Documento oficial inmutable, publicado internamente para usuarios autorizados. Nueva corrección requiere versión nueva. |
+
+La **publicación interna** ocurre automáticamente después de la aprobación; es un evento, no una segunda aprobación. **Distribuido** tampoco reemplaza al estado Aprobado: es una entrega vinculada a una versión concreta.
+
+### 9.4 Responsabilidades exclusivas
+
+- **Director operativo:** único revisor con facultad de aprobar/devolver, único aprobador de informes de todos los tipos y único usuario con función de distribución oficial externa.
+- **Otros usuarios:** pueden elaborar y consultar según alcance autorizado, descargar cuando corresponda y agregar textos editables; no aprobar ni registrar distribución externa oficial.
+- **Administrador técnico:** gestiona diseño institucional, sin acceso automático al contenido confidencial de informes.
+
+### 9.5 Estructura base del informe de propiedad
+
+1. Portada: identidad institucional y propiedad, título, periodo, versión.
+2. Identificación: datos de propiedad, autor del informe, fecha de corte.
+3. Introducción redactada (si se habilita).
+4. Resumen: totales e indicadores con definiciones consistentes.
+5. Relación de novedades: código, título, prioridad, estado, fechas y responsables.
+6. Detalle de gestiones/actividades (opcional, con filtros definidos).
+7. Evidencias seleccionadas y su descripción (opcional).
+8. Novedades pendientes al corte y bloqueos (sección configurable, conservando resumen obligatorio de estados).
+9. Observaciones y recomendaciones redactadas (si se habilitan).
+10. Identificación de aprobación, fecha y control de versión.
+
+Las versiones internas o consolidadas heredan identidad institucional, con estructura de contenido propia del ámbito.
+
+### 9.6 Criterios de fechas y corte
+
+- El periodo seleccionado limita los registros que aparecen según su fecha pertinente; el informe indicará el criterio en cada sección.
+- La **fecha de corte** determina estados y pendientes a un momento concreto.
+- Novedades iniciadas meses atrás pueden aparecer como cerradas en el periodo, sin cambiar su mes de registro.
+- Cambios ocurridos después de que el borrador se envía a revisión no alteran automáticamente el contenido en revisión.
+- Cuando un borrador requiere datos nuevos, debe ofrecer una acción explícita de actualizar, mostrando qué información cambiará.
+
+### 9.7 Publicación y distribución
+
+Solo se distribuyen oficialmente **versiones aprobadas**. El director registra destinatario, canal, fecha, versión exacta, responsable y observaciones/comprobante cuando aplique. La versión entregada conserva su PDF, aunque después se emita una nueva. Se distingue entre **registro manual de entrega** y un envío electrónico verificable; el MVP puede comenzar con la primera opción.
+
+Los demás roles pueden descargar los PDF autorizados, pero la aplicación no puede impedir técnicamente que alguien reenvíe un archivo descargado. Esa limitación se cubre con autorización, auditoría y política interna de tratamiento de documentos, no con una promesa de control absoluto.
+
+### 9.8 Versiones de documentos
+
+1. **Versión de plantilla institucional:** estructura base publicada por el administrador.
+2. **Versión de configuración por propiedad:** logo, encabezado, datos, secciones y presentación permitida; publicada por el director.
+3. **Versión del informe:** instantánea de datos, textos, selecciones, evidencias y diseño; se aprueba y distribuye como documento fijo.
+
+No se reemplazan PDFs aprobados; una corrección origina otra versión con motivo, fecha, autor y nueva aprobación. La aplicación conserva el informe anterior y sus distribuciones.
+
+## 10. Plantillas institucionales y personalización
+
+### 10.1 Autoridades
+
+| Acción | Administrador | Director | Otros roles |
+|---|:---:|:---:|:---:|
+| Crear/modificar plantilla institucional | Sí | No | No |
+| Publicar nueva versión institucional | Sí | No | No |
+| Personalizar configuración de propiedad | No por defecto | Sí | No |
+| Publicar configuración de propiedad | No por defecto | Sí | No |
+| Editar textos de un informe propio autorizado | No por defecto | Sí | Según acceso |
+| Modificar datos históricos desde plantilla | No | No | No |
+
+### 10.2 Opciones por propiedad
+
+- Logo de propiedad (opcional; si no existe, usar imagen/identidad institucional).
+- Nombre, dirección, identificación registrada y datos de contacto autorizados.
+- Secciones opcionales visibles y su orden dentro de límites institucionales.
+- Opciones de disposición de imágenes (por ejemplo, una o dos por fila).
+- Identificación y pie de página común; no se eliminan campos de control del documento.
+
+### 10.3 Secciones inalterables y opcionales
+
+**Obligatorias:** identificación del informe, ámbito/propiedad/área, periodo y fecha de corte, resumen de novedades y estados, identificador/versión, aprobador y fecha de aprobación en la versión final.
+
+**Opcionales:** introducción, detalle extendido de actividades, galería fotográfica, pendientes detallados, observaciones generales, recomendaciones y comentarios finales. Ocultar una sección del PDF no elimina sus registros del sistema.
+
+### 10.4 Flujo de configuración
+
+```mermaid
+flowchart LR
+  A[Administrador publica plantilla institucional] --> B[Director configura propiedad]
+  B --> C[Director publica configuración]
+  C --> D[Usuario crea informe]
+  D --> E[Se fija versión en revisión]
+  E --> F[Director aprueba]
+  F --> G[PDF inmutable]
+```
+
+La plantilla institucional, configuración por propiedad y documento final tienen historiales distintos. El cambio de plantilla no altera informes aprobados ni enviados a revisión. Los borradores podrán actualizarse expresamente a una nueva plantilla publicada.
+
+### 10.5 Generación de PDF
+
+Proceso propuesto: (1) elegir ámbito/periodo; (2) recuperar datos autorizados; (3) generar instantánea temporal; (4) resolver plantilla institucional y configuración particular; (5) construir vista previa; (6) enviar a director; (7) aprobar; (8) producir y conservar PDF inmutable; (9) habilitar descarga/registro de distribución. La selección concreta del motor PDF deberá probarse contra documentos con muchas fotografías, tablas extensas y caracteres en español.
+
+El Excel será una **exportación de datos**, no una reproducción visual de la maqueta PDF. Se recomiendan hojas separadas de novedades, actividades y resumen, con columnas documentadas y filtros, sin replicar información financiera.
+
+## 11. Diseño de pantallas
+
+Las pantallas siguientes representan una **propuesta de organización funcional**, no prototipos diseñados ni aplicaciones ya construidas.
+
+### 11.1 Navegación general
 
 ```text
-/srv/gestion-ph/data/
-├── attachments/
-│   └── properties/{property_id}/
-│       ├── incidents/{incident_id}/
-│       └── minutes/{minute_id}/
-├── generated/
-│   ├── minutes/{minute_id}/
-│   └── reports/{property_id}/
-└── temporary/
+EG S.A.S. — Gestión de Novedades
+├── Inicio / Tablero
+├── Novedades
+│   ├── Todas (según permisos)
+│   ├── Mis novedades
+│   ├── Pendientes de revisión
+│   ├── Críticas / en espera / vencidas
+│   ├── Nueva novedad
+│   └── Detalle
+│       ├── Resumen
+│       ├── Actividades
+│       ├── Evidencias y documentos
+│       ├── Comentarios
+│       └── Historial
+├── Propiedades
+│   ├── Catálogo, zonas y responsables
+│   └── Configuración de informes (solo director)
+├── Gestión interna
+│   ├── Áreas
+│   └── Novedades autorizadas
+├── Informes
+│   ├── Crear y previsualizar
+│   ├── Mis borradores
+│   ├── Por revisar / devueltos
+│   ├── Aprobados / histórico
+│   └── Distribuciones (solo director)
+└── Configuración
+    ├── Usuarios, roles, asignaciones y catálogos
+    ├── Prioridades y evidencias por categoría
+    ├── Plantilla institucional (solo admin)
+    └── Auditoría técnica
 ```
 
-La ruta exacta podrá ajustarse durante el despliegue, pero debe permanecer fuera del código fuente y de la imagen Docker.
-
-#### Reglas de almacenamiento
-
-- NestJS será el único servicio autorizado para cargar, consultar o eliminar archivos.
-- Nginx no publicará la carpeta de documentos como un directorio abierto.
-- Cada descarga validará la sesión, el permiso y la propiedad asignada al usuario.
-- Los nombres físicos se generarán con identificadores únicos; no se usará directamente el nombre enviado por el usuario.
-- PostgreSQL guardará el nombre original, ruta interna, tipo, tamaño, huella SHA-256, autor y fecha de carga.
-- Los archivos temporales se eliminarán automáticamente después del tiempo configurado.
-- Los PDF generados podrán regenerarse, pero las versiones finales de actas deberán conservarse.
-- Se establecerán límites por archivo y formatos permitidos.
-- El espacio disponible se vigilará mediante la tarea programada de la sección 12.1.1 y generará alerta al superar el umbral configurado.
-- El acceso del sistema operativo quedará limitado al usuario que ejecuta la aplicación y al proceso de respaldo.
-
-El backend mantendrá un contrato `StoragePort` y una implementación `LocalStorageAdapter`. Esto permite conservar el almacenamiento en el servidor y, si en el futuro se usan varios servidores o se necesita más capacidad, cambiar a otra solución sin modificar los módulos de novedades o actas.
-
-### 14.2 Procesamiento de imágenes
-
-Una fotografía tomada con celular pesa entre 3 y 6 MB. Subirlas sin procesar haría crecer el volumen del VPS mucho más rápido de lo necesario y volvería lenta la consulta de novedades en conexiones móviles.
-
-Al recibir una imagen, el backend generará:
-
-| Derivado | Uso | Límite sugerido |
-| --- | --- | --- |
-| Miniatura | Listas y galerías | 320 px de lado mayor |
-| Versión de consulta | Detalle de la novedad o el acta | 1600 px de lado mayor, calidad 80 |
-| Original | Solo si el parámetro de configuración lo exige | Sin cambios |
-
-Reglas:
-
-- Se conservan los metadatos relevantes en PostgreSQL, pero se eliminan los datos EXIF de ubicación antes de almacenar, salvo que la empresa decida conservarlos de forma expresa.
-- La conversión se hará en el backend, nunca confiando en un recorte hecho por el navegador.
-- Los PDF no se recomprimen.
-
-## 15. Comportamiento de la PWA
-
-El sistema se diseñará primero para celular, sin perder comodidad en computador.
-
-El MVP permitirá:
-
-- Instalar la aplicación desde el navegador.
-- Abrirla desde un ícono en la pantalla principal.
-- Adaptar formularios y tablas a pantallas pequeñas.
-- Usar la cámara del dispositivo para adjuntar evidencias.
-- Mantener en caché la interfaz básica.
-- Consultar el panel inicial y sus notificaciones cuando exista conexión.
-
-Queda por decidir si el MVP incluirá notificaciones push, según lo planteado en la sección 7.7. Sin ellas, un aviso solo se ve al abrir la aplicación. La versión anterior del documento no mencionaba las notificaciones push ni para incluirlas ni para excluirlas.
-
-El MVP no permitirá guardar definitivamente novedades o actas sin conexión. Si se pierde internet, el sistema conservará de forma segura el contenido del formulario cuando sea posible y avisará al usuario antes de enviarlo. La sincronización completa sin conexión se evaluará después, porque requiere resolver duplicados y conflictos de datos.
-
-## 16. Modelo de datos inicial
-
-| Tabla | Propósito |
-| --- | --- |
-| organizations | Empresa que utiliza el sistema y su zona horaria. |
-| users | Usuarios, estado y datos básicos. |
-| roles | Roles disponibles. |
-| permissions | Acciones permitidas. |
-| user_roles | Relación entre usuarios y roles. |
-| properties | Propiedades administradas. |
-| property_assignments | Directores y coordinadores asignados, con fechas de vigencia. |
-| incident_categories | Categorías de las novedades. |
-| incidents | Novedades, prioridad, estado y responsable actual. |
-| incident_status_history | Línea de tiempo de estados. |
-| incident_assignment_history | Historial de responsables. |
-| minutes | Información general y estado actual de las actas. |
-| minute_versions | Contenido de cada versión del acta. |
-| minute_suggestions | Modificaciones propuestas y su decisión. |
-| meetings | Reuniones programadas. |
-| meeting_participants | Participantes y estado de asistencia. |
-| comments | Comentarios y respuestas relacionados con novedades o actas. |
-| attachments | Ruta interna, nombre original, nombre físico, formato, tamaño, huella y autor de fotografías y documentos. |
-| notifications | Recordatorios y avisos internos, por usuario y con estado de lectura. |
-| audit_logs | Registro de acciones sensibles. |
-| role_permissions | Relación entre roles y acciones permitidas. |
-| settings | Parámetros configurables de la organización, según la sección 11.1. |
-| refresh_sessions | Sesiones activas y tokens de renovación, para poder revocarlas. |
-| password_reset_tokens | Enlaces de un solo uso para restablecer la contraseña. |
-| comment_edits | Historial de ediciones de un comentario. |
-| comment_mentions | Usuarios mencionados en un comentario, base de la notificación. |
-| minute_types | Catálogo de tipos de acta. |
-| property_areas | Áreas y equipos comunes de cada propiedad. |
-| email_deliveries | Intentos de envío de correo, con destinatario, estado y fecha. |
-
-### 16.1 Precisiones que faltaban
-
-Las tablas operativas incluirán identificador de organización, fecha de creación, fecha de actualización y usuario responsable cuando corresponda. No se guardarán las imágenes dentro de PostgreSQL; se almacenará su identificador externo y sus metadatos.
-
-**`user_roles` llevará `property_id` anulable**, según la sección 6.1. Sin esa columna un usuario que fuera director de una propiedad quedaría con permisos de director en todas las demás.
-
-**`role_permissions` es indispensable.** La versión anterior incluía `roles` y `permissions` sin nada que las relacionara, aunque la sección 6 establece que los permisos se administran por acción.
-
-**`meetings` incluirá `minute_id` anulable**, para cumplir la relación entre una reunión y su acta que pide la sección 7.5.
-
-**Relaciones polimórficas.** `comments` y `attachments` sirven tanto a novedades como a actas. Prisma no modela bien el polimorfismo y la decisión afecta migraciones, consultas de informes e integridad referencial, así que conviene tomarla antes de escribir el esquema:
-
-- **Opción recomendada:** dos columnas anulables con llave foránea real (`incident_id`, `minute_id`) y una restricción que obligue a que exactamente una tenga valor. Conserva integridad referencial y borrado en cascada, a costa de una columna por cada entidad nueva.
-- **Alternativa:** `entity_type` + `entity_id` sin llave foránea. Más flexible para entidades futuras, pero la integridad queda a cargo de la aplicación.
-
-**Ubicación de la novedad.** La sección 7.3 pide ubicación. Se modelará con dos campos: `area`, tomado de un catálogo por propiedad (`property_areas`), y `location_details` en texto libre. El catálogo permite agrupar los informes por zona o equipo, que es justamente lo que se inspecciona: luminarias, ascensores, electrobombas, piscinas, jardines y puertas eléctricas.
-
-**Identificador visible.** Cada novedad y cada acta tendrán un código legible y consecutivo por propiedad, además del identificador interno, para poder referenciarlas en una conversación.
-
-**Costo estimado.** `incidents` llevará `estimated_cost_cop` como valor numérico anulable, con la moneda fija en pesos colombianos. Es un dato informativo: no tiene flujo de aprobación, no condiciona ninguna transición de estado y en los informes se presenta como suma estimada, nunca como valor ejecutado. Si más adelante se incorpora la aprobación de costos, esa función traerá sus propias tablas de historial y permisos.
-
-**Tipo de acta.** `minutes` llevará la referencia a `minute_types`. Se evita un enum en el código para poder añadir un órgano nuevo sin migración.
-
-**Eliminación lógica.** La sección 18 audita la eliminación lógica, de modo que las tablas operativas llevarán `deleted_at` y `deleted_by`, y las consultas excluirán los registros eliminados por omisión.
-
-### 16.2 Sobre `organization_id`
-
-Incluir `organization_id` en todas las tablas tiene un costo que conviene declarar, porque el soporte para varias empresas administradoras está fuera del MVP (sección 24).
-
-Se mantiene de forma **preparatoria**: en el MVP existirá una sola organización. A cambio de ese costo se exige desde el primer día:
-
-- Un filtro obligatorio por organización en la capa de acceso a datos, no dejado al criterio de cada consulta.
-- Índices que empiecen por `organization_id` en las tablas de consulta frecuente.
-- Una prueba automática que verifique que ningún listado ni informe devuelve datos de otra organización.
-
-Sin esas tres condiciones, la columna solo agrega complejidad.
-
-## 17. Seguridad
-
-- Todo el tráfico utilizará HTTPS.
-- Las contraseñas se almacenarán con Argon2id o un algoritmo seguro equivalente.
-- Se usarán tokens de acceso de corta duración y renovación controlada.
-- El token de renovación se guardará en una cookie `HttpOnly` y `Secure`.
-- La autorización combinará rol, permiso y propiedad asignada.
-- El backend validará todos los datos y no confiará únicamente en Angular.
-- Los archivos tendrán límites de tamaño y formatos permitidos.
-- Se verificará el tipo real del archivo antes de almacenarlo.
-- La carpeta física de archivos no será pública ni se servirá directamente desde una dirección predecible.
-- Las descargas pasarán por el backend, que comprobará el usuario, sus permisos y la propiedad solicitada.
-- Los archivos se entregarán siempre con `Content-Disposition: attachment` y `X-Content-Type-Options: nosniff`. Verificar el tipo real al guardar no basta: un SVG o un HTML servido en línea desde el dominio de la aplicación permite ejecutar código en la sesión del usuario.
-- Se aplicará una política de seguridad de contenido (CSP) a la PWA, junto con `Strict-Transport-Security` y `Referrer-Policy`.
-- Los archivos subidos se revisarán con un antivirus del servidor antes de quedar disponibles para descarga.
-- Se impedirán rutas manipuladas y recorridos fuera de la carpeta autorizada.
-- Los archivos se almacenarán con nombres internos aleatorios y permisos restrictivos del sistema operativo.
-- Los intentos de inicio de sesión y recuperación de contraseña tendrán límites de peticiones.
-- Los secretos se guardarán fuera del repositorio.
-- Las acciones sensibles registrarán usuario, fecha, dirección IP y resultado.
-- Se realizarán copias de seguridad diarias de PostgreSQL y del volumen de documentos, junto con pruebas de restauración.
-- OWASP ASVS servirá como lista de verificación de seguridad.
-
-La empresa deberá aplicar su política de tratamiento de datos personales conforme a la Ley 1581 de 2012 y las normas vigentes. Debe definir qué datos recoge, para qué los usa, quién puede consultarlos y cuánto tiempo los conserva.
-
-Para que esa política pueda aplicarse en el sistema hacen falta tres definiciones que todavía no existen y que son de la empresa, no del equipo de desarrollo:
-
-| Definición | Por qué se necesita |
-| --- | --- |
-| Plazo de conservación de novedades, actas, fotografías y auditoría | Determina cuándo se archiva o elimina la información y, con ello, el crecimiento del disco. |
-| Procedimiento ante una solicitud de supresión de datos de una persona | Debe poder atenderse sin romper la trazabilidad de las actas, que tienen valor probatorio. |
-| Responsable del tratamiento dentro de la empresa y aviso de privacidad mostrado al iniciar sesión | Exigencia legal y requisito de la pantalla de acceso. |
-
-## 18. Auditoría
-
-La auditoría debe registrar como mínimo:
-
-- Inicio y cierre de sesión.
-- Creación, modificación, activación o desactivación de usuarios.
-- Asignación o retiro de responsables de una propiedad.
-- Creación, cambio de prioridad, cambio de estado, cierre y reapertura de novedades.
-- Creación, revisión y aprobación de actas.
-- Aceptación o rechazo de sugerencias.
-- Creación, reprogramación o cancelación de reuniones.
-- Eliminación lógica o recuperación de registros.
-
-La auditoría no reemplaza el historial propio de las novedades o actas. Ambos registros cumplen funciones diferentes.
-
-## 19. Informes y paneles
-
-### Panel del coordinador
-
-- Novedades asignadas.
-- Novedades críticas o sin actualización.
-- Actas en borrador o con sugerencias.
-- Reuniones del día y próximas reuniones.
-- Comentarios o menciones pendientes.
-
-### Panel del director
-
-- Resumen de sus propiedades.
-- Novedades por estado y prioridad.
-- Novedades pendientes de validación.
-- Actas en revisión.
-- Reuniones próximas.
-- Actividad reciente del equipo.
-
-### Panel de la gerente
-
-- Resumen de todas las propiedades.
-- Comparación de novedades abiertas y cerradas.
-- Casos críticos y casos con mayor tiempo abiertos.
-- Actas pendientes de revisión o aprobación.
-- Reuniones próximas de todas las propiedades.
-- Acceso rápido para comentar cualquier caso.
-- Generación del informe individual de cada propiedad.
-
-## 20. Requisitos no funcionales
-
-| Área | Requisito inicial |
-| --- | --- |
-| Facilidad de uso | Formularios cortos, textos claros y diseño pensado primero para celular. |
-| Rendimiento | Las consultas comunes deberían responder en menos de dos segundos bajo la carga acordada. |
-| Trazabilidad | Estados, asignaciones, versiones y comentarios deben conservar su historial. |
-| Recuperación | Copia diaria de PostgreSQL y del volumen de archivos, con procedimiento documentado de restauración. |
-| Escalabilidad | Aplicación modular y almacenamiento encapsulado mediante un adaptador. |
-| Compatibilidad | Versiones estables recientes de Chrome, Edge, Firefox y Safari móvil. |
-| Accesibilidad | Buen contraste, etiquetas visibles, navegación por teclado y mensajes comprensibles. |
-| Mantenibilidad | Pruebas automáticas, migraciones versionadas y documentación de la API. |
-
-Los tiempos exactos de respuesta y recuperación se ajustarán después de conocer la cantidad real de usuarios, propiedades y archivos.
-
-### 20.1 Volumetría
-
-El requisito de rendimiento habla de "la carga acordada" y esa carga no estaba definida en ninguna parte. Como todo el almacenamiento es local en el VPS, sin estas cifras no se puede dimensionar el disco, ni estimar el crecimiento, ni calcular el tiempo de una restauración. **Estos valores deben confirmarse con la empresa antes de contratar el servidor.**
-
-| Magnitud | Valor por confirmar | Supuesto usado aquí |
-| --- | --- | --- |
-| Propiedades administradas | ¿? | 10 |
-| Usuarios con acceso | ¿? | 25 |
-| Usuarios simultáneos en hora pico | ¿? | 8 |
-| Novedades nuevas por propiedad y mes | ¿? | 20 |
-| Fotografías por novedad | ¿? | 4 |
-| Actas por propiedad y mes | ¿? | 2 |
-| Años de información en línea | ¿? | 5 |
-
-Con esos supuestos, y aplicando el procesamiento de imágenes de la sección 14.2, el cálculo aproximado es:
-
-- 10 propiedades × 20 novedades × 4 fotografías = 800 fotografías al mes.
-- A unos 400 KB por fotografía procesada, más la miniatura: cerca de **350 MB al mes**, unos **4 GB al año**.
-- Si se conservara el original sin procesar, la misma operación ocuparía cerca de **40 GB al año**, diez veces más. Esa diferencia es la razón de la sección 14.2.
-- Los PDF de actas e informes aportan una cantidad menor, del orden de cientos de MB al año.
-
-Un VPS con 80 GB de disco útil para datos cubre varios años con holgura bajo estos supuestos. Si las cifras reales resultan bastante mayores, hay que revisar el dimensionamiento antes de la Fase 0, no después de contratar el servidor.
-
-## 21. Despliegue inicial
-
-La aplicación podrá ejecutarse en el VPS mediante Docker Compose:
-
-- Frontend Angular servido por Nginx.
-- API NestJS en un contenedor independiente.
-- PostgreSQL en un contenedor con volumen persistente.
-- Volumen persistente del VPS para fotografías, PDF y demás documentos.
-- Nginx principal como proxy inverso y terminación HTTPS.
-
-Los volúmenes de PostgreSQL y documentos deben ser independientes. Actualizar o reemplazar los contenedores no puede borrar la información almacenada.
-
-Se manejarán tres entornos:
-
-- **Desarrollo:** equipos de los programadores.
-- **Pruebas:** datos ficticios y validación de cambios.
-- **Producción:** información real de la empresa.
-
-La base de datos, los documentos, los usuarios, los secretos y las copias de seguridad de este sistema deben mantenerse separados de otros proyectos instalados en el mismo VPS.
-
-Aunque el almacenamiento principal permanezca en el servidor, debe existir al menos una copia de seguridad fuera del mismo VPS. Una copia ubicada únicamente en el servidor no protege frente a una falla del disco, pérdida del servidor o acceso no autorizado. Esta copia puede mantenerse cifrada y restringida al proceso de respaldo.
-
-## 22. Estrategia de pruebas
-
-- **Unitarias:** estados, prioridades, permisos, sugerencias y recordatorios.
-- **Integración:** PostgreSQL, Prisma, almacenamiento local y generación de PDF.
-- **API:** autenticación, validaciones, filtros y respuestas.
-- **Extremo a extremo:** recorrido completo de una novedad, un acta y una reunión.
-- **Seguridad:** acceso por propiedad, archivos protegidos, sesiones y límites de peticiones.
-- **Aceptación:** pruebas con gerente, director y coordinador.
-- **Respaldo:** restauración de una copia en un ambiente separado.
-- **Carga:** verificación del objetivo de dos segundos con el número de usuarios simultáneos y el volumen de datos de la sección 20.1.
-- **Correo:** entrega efectiva en las bandejas reales de la empresa, incluida la revisión de SPF, DKIM y DMARC.
-
-Casos que deben probarse obligatoriamente:
-
-- Un coordinador intenta consultar una propiedad que no tiene asignada.
-- Un usuario intenta saltarse un estado de la novedad.
-- Se intenta cerrar una novedad sin evidencia final.
-- Una sugerencia modifica el acta sin ser aceptada.
-- Un usuario intenta editar un acta aprobada.
-- Un recordatorio aparece en una zona horaria incorrecta.
-- La gerente intenta consultar y comentar información de cualquier propiedad.
-- Un usuario que es director de una propiedad y coordinador de otra intenta actuar como director en la segunda.
-- Se intenta aprobar un acta con sugerencias pendientes de decisión.
-- Se intenta retirar al último director o coordinador vigente de una propiedad.
-- Se intenta desactivar un usuario que tiene novedades abiertas a su cargo.
-- Se sube un archivo que supera el tamaño permitido, o con una extensión válida y un contenido que no corresponde.
-- Se solicita la descarga de un archivo de una propiedad no asignada.
-- Se usa dos veces el mismo enlace de recuperación de contraseña, o uno ya vencido.
-- Un listado o informe devuelve registros de otra organización.
-- Una tarea programada se ejecuta dos veces y genera notificaciones duplicadas.
-- El servicio de correo está caído y el usuario registra una novedad crítica: la novedad debe guardarse y el envío reintentarse.
-- Se intenta aprobar un costo estimado: el MVP no debe ofrecer ese flujo.
-
-## 23. Fases de construcción del MVP
-
-El MVP se construye en seis fases, numeradas desde la **Fase 0**, que prepara el terreno antes de escribir la primera regla del negocio. Las fases describen el orden del trabajo; el esfuerzo, el calendario, las dependencias y las puertas de decisión se detallan en el **Roadmap de construcción v1.0**, que acompaña a este documento.
-
-Ninguna fase se considera terminada porque el código exista. Se considera terminada cuando un usuario real ejecuta el recorrido completo descrito en su criterio de salida.
-
-| Fase | Nombre | Esfuerzo estimado |
-| --- | --- | --- |
-| 0 | Cimientos | 3 semanas-persona |
-| 1 | Base del sistema | 8 semanas-persona |
-| 2 | Novedades | 10 semanas-persona |
-| 3 | Actas y reuniones | 10 semanas-persona |
-| 4 | Informes y estabilización | 7 semanas-persona |
-| 5 | Puesta en marcha | 3 semanas-persona |
-
-Con la holgura recomendada del 15 %, el total asciende a 47 semanas-persona: entre seis y siete meses con dos desarrolladores de tiempo completo.
-
-### Fase 0. Cimientos
-
-Infraestructura, entornos y despliegue. Que exista un camino completo desde el computador del desarrollador hasta producción, con respaldo verificado, antes de construir funcionalidad.
-
-- Repositorio, ramas y revisión de código.
-- Entornos de desarrollo, pruebas y producción, separados de otros proyectos del VPS.
-- Docker Compose, Nginx, certificado y dominio.
-- Migraciones de base de datos e integración continua.
-- Copia de seguridad automática, con una copia fuera del VPS, y primera prueba de restauración.
-
-*Criterio de salida:* una aplicación vacía desplegada en producción por medio de la integración continua, accesible por HTTPS, cuya base de datos se restauró con éxito desde una copia en el entorno de pruebas.
-
-### Fase 1. Base del sistema
-
-- Autenticación.
-- Usuarios, roles y permisos.
-- Propiedades y asignaciones.
-- Diseño PWA y panel inicial.
-- Auditoría básica.
-- Parámetros configurables y tareas programadas.
-- Envío de correo y restablecimiento de contraseña.
-
-*Criterio de salida:* un administrador crea usuarios y propiedades, asigna responsables, y un director solo ve lo que le corresponde. Las acciones quedan en auditoría.
-
-### Fase 2. Novedades
-
-- Registro de novedades.
-- Prioridades y estados.
-- Evidencias y comentarios.
-- Asignación e historial.
-- Cierre y reapertura.
-
-*Criterio de salida:* una novedad recorre el flujo completo de la sección 9.2, incluidos el rechazo de la solución y la cancelación, con evidencias y trazabilidad. Una novedad crítica genera correo a director y gerente.
-
-### Fase 3. Actas y reuniones
-
-- Borradores y versiones de actas.
-- Sugerencias y respuestas.
-- Aprobación y PDF.
-- Agenda interna.
-- Recordatorios al iniciar la aplicación.
-
-*Criterio de salida:* un acta recorre borrador, revisión, sugerencias y aprobación sin perder versiones, y una reunión genera su recordatorio en la zona horaria correcta.
-
-### Fase 4. Informes y estabilización
-
-- Informe por propiedad.
-- Panel general de la gerente.
-- Exportación a PDF.
-- Pruebas de aceptación.
-- Seguridad, copias de respaldo y documentación.
-- Pruebas de carga contra las cifras de la sección 20.1.
-- Capacitación del equipo y acompañamiento en el cambio.
-
-*Criterio de salida:* los criterios de aceptación de la sección 26, verificados uno por uno con la gerente, un director y un coordinador.
-
-### Fase 5. Puesta en marcha
-
-Esta fase no es desarrollo y es la que más se omite en los cronogramas. El riesgo principal del proyecto está aquí, no en el código: el equipo lleva años trabajando por WhatsApp y, si el sistema se percibe como trabajo adicional, se usará a medias y la información volverá a dispersarse.
-
-- Carga de los datos maestros: propiedades, usuarios, categorías, áreas y equipos.
-- Carga de información histórica, si la gerencia lo decide.
-- Capacitación por rol, con ejercicios sobre casos reales de la propiedad.
-- Piloto en una propiedad durante dos semanas, con acompañamiento cercano.
-- Ajustes menores surgidos del piloto.
-- Extensión al resto de las propiedades.
-- Procedimiento de soporte: a quién se reporta una falla, en qué horario y con qué tiempo de respuesta.
-
-*Criterio de salida:* durante dos semanas consecutivas, todas las novedades nuevas de la propiedad piloto se registran en el sistema y ninguna queda únicamente en WhatsApp. Se mide en comportamiento, no en funciones entregadas.
-
-## 24. Crecimiento después del MVP
-
-Cuando la primera versión esté estable, se podrán agregar:
-
-1. Cotizaciones y proveedores.
-2. Solicitudes de recursos y aprobaciones de Contabilidad.
-3. Registro de entregas realizadas por Tesorería.
-4. Presupuestos, gastos e informes financieros por propiedad.
-5. Aprobación de costos y control de ejecución presupuestal por propiedad, a partir del costo estimado que ya registra el MVP.
-6. Mantenimiento preventivo y listas de inspección.
-7. Análisis de actas con inteligencia artificial, con validación humana obligatoria.
-8. Firma electrónica de actas y registro de quórum por coeficientes de copropiedad.
-9. Notificaciones por WhatsApp mediante n8n y notificaciones push en el dispositivo. El correo electrónico ya forma parte del MVP.
-10. Integración con Google Calendar o Microsoft Outlook.
-11. Inventario de materiales y repuestos.
-12. Portal de consulta para consejos de administración o residentes.
-13. Trabajo sin conexión y sincronización posterior.
-14. Soporte para varias empresas administradoras.
-15. Migración del almacenamiento a un servidor de archivos u objeto externo, únicamente si el volumen o la cantidad de servidores lo exige.
-
-Los módulos futuros deberán conectarse mediante casos de uso y eventos internos. No deben agregarse reglas financieras dentro del módulo de novedades.
-
-## 25. Decisiones para facilitar el crecimiento
-
-1. **Monolito modular:** permite iniciar con una infraestructura sencilla y separar módulos en el futuro.
-2. **PWA:** cubre celular y computador con una sola aplicación.
-3. **PostgreSQL:** mantiene relaciones consistentes entre propiedades, usuarios, novedades, actas y reuniones.
-4. **API REST versionada:** permite integrar aplicaciones futuras sin romper la PWA.
-5. **Almacenamiento local mediante adaptador:** mantiene todos los archivos en el VPS sin acoplar el negocio a rutas físicas. Si el sistema crece, el proveedor puede cambiarse sin reescribir los módulos.
-6. **Permisos por propiedad:** evita duplicar aplicaciones para cada edificio o conjunto.
-7. **Versiones de actas:** conserva trazabilidad y evita sobrescribir documentos aprobados.
-8. **Eventos internos:** desacopla comentarios, recordatorios e integraciones futuras.
-9. **Módulos financieros separados:** permite añadir Contabilidad y Tesorería después sin alterar el núcleo operativo.
-
-Se evaluarán microservicios únicamente si existen equipos independientes, grandes diferencias de carga o necesidad real de desplegar módulos por separado.
-
-## 26. Criterios de aceptación del MVP
-
-El MVP se considerará listo cuando:
-
-- Cada propiedad tenga director y coordinador asignados.
-- La gerente pueda consultar todas las propiedades y comentar sus registros.
-- Director y coordinador solo puedan acceder a las propiedades autorizadas.
-- Una novedad pueda seguirse desde su reporte hasta el cierre o la reapertura.
-- Las prioridades, estados, evidencias, responsables y comentarios conserven su historial.
-- Un acta pueda crearse como borrador, revisarse mediante sugerencias y aprobarse sin perder versiones anteriores.
-- Las reuniones aparezcan en la agenda y generen recordatorios al abrir la aplicación.
-- Se pueda generar y exportar un informe de una propiedad y un periodo específico.
-- Las fotografías y documentos estén protegidos.
-- Una novedad crítica genere correo a director y gerente, y el envío quede registrado.
-- Las acciones sensibles aparezcan en la auditoría.
-- Exista una copia de seguridad verificable y un procedimiento de recuperación.
-
-## 27. Referencias técnicas
-
-- [Angular: Service Workers y PWA](https://angular.dev/ecosystem/service-workers)
-- [NestJS: organización mediante módulos](https://docs.nestjs.com/modules)
-- [PostgreSQL: documentación oficial](https://www.postgresql.org/docs/current/)
-- [Prisma Migrate](https://www.prisma.io/docs/orm/prisma-migrate)
-- [Docker Compose en producción](https://docs.docker.com/compose/how-tos/production/)
-- [Docker: volúmenes persistentes](https://docs.docker.com/engine/storage/volumes/)
-- [OWASP Application Security Verification Standard](https://owasp.org/www-project-application-security-verification-standard/)
-- [SIC: protección de datos personales](https://sedeelectronica.sic.gov.co/formacion/curso/introduccion-la-proteccion-de-datos-personales)
-
-## 28. Anexo A. Decisiones de alcance
-
-Estas decisiones no son técnicas: definen qué se construye. Cada una cambia el alcance, el esfuerzo y el costo, de modo que deben cerrarse antes de la fase que depende de ellas. El Roadmap de construcción v1.0 indica cuál bloquea a cuál.
-
-### A.1 Decisiones tomadas el 9 de septiembre de 2026
-
-| N.º | Asunto | Decisión | Dónde quedó |
-| --- | --- | --- | --- |
-| A-1 | Inteligencia artificial para el análisis de actas | **Fuera del MVP.** Las sugerencias de acta las redactan las personas. Se evalúa después del MVP, con validación humana obligatoria. | 5.2 y 24 |
-| A-2 | Costos y presupuesto | **Solo costo estimado informativo.** Sin flujo de aprobación, sin presupuesto por propiedad y sin control de ejecución. | 5.1, 5.2, 7.3, 7.8 y 16.1 |
-| A-3 | Firma electrónica de actas | **Fuera del MVP.** Se conserva la aprobación por parte del director con registro de usuario, fecha y huella SHA-256 del PDF. | 5.2, 7.4 y 10 |
-| A-4 | Tipos de acta | **Dentro del MVP**, como catálogo administrable de cuatro tipos iniciales. | 7.4 |
-| A-4b | Registro de quórum | **Fuera del MVP.** Queda para una ola posterior, donde deberá definirse si se calcula por coeficientes de copropiedad o por unidades presentes. | 5.2 y 24 |
-| A-5 | Avisos fuera de la aplicación | **Correo electrónico dentro del MVP** para novedades críticas, reuniones y restablecimiento de contraseña. Las notificaciones push quedan fuera. | 5.1, 5.2, 7.7 y 14 |
-
-### A.2 Decisiones aún abiertas
-
-| N.º | Decisión | Situación | Efecto |
-| --- | --- | --- | --- |
-| A-6 | **Auditoría encadenada por huella.** El prototipo muestra una huella de verificación por registro. El documento solo dice que la auditoría no se edita desde la aplicación. | Por decidir. | Encadenar cada registro con la huella del anterior permite demostrar que nadie alteró el historial. Cuesta poco si se define antes de escribir el módulo y bastante si se agrega después. Recomiendo incluirlo. |
-| A-7 | **Volumetría.** Las cifras de la sección 20.1. | Con supuestos, sin confirmar con la empresa. | Determina el tamaño del VPS, el disco y el tiempo de una restauración. Debe cerrarse antes de contratar el servidor. |
-| A-8 | **Estrategia de estilos.** PrimeNG con tema propio, o PrimeNG en modo `unstyled` con Tailwind, según la sección 14. | Por decidir antes de la Fase 0. | Afecta la fidelidad frente a la referencia visual y la velocidad de desarrollo. |
-| A-9 | **Dominio y servicio de correo.** Qué dominio firma los correos y con qué proveedor se envían. | Por definir. | Sin SPF, DKIM y DMARC sobre un dominio propio, los avisos de novedad crítica terminan en la carpeta de no deseados y la función decidida en A-5 no sirve. |
-
-## 29. Anexo B. Asuntos no técnicos sin definir
-
-El documento cubre bien el software y no menciona lo que rodea su puesta en marcha. Estos puntos suelen decidir si un sistema se adopta o se abandona:
-
-| Asunto | Qué hay que definir |
-| --- | --- |
-| Información histórica | Si se cargarán novedades, actas o reuniones que hoy están en WhatsApp, correo o archivos, desde qué fecha y quién hace esa carga. |
-| Capacitación y acompañamiento | El equipo trabaja hoy con WhatsApp. Sin capacitación y sin un período de acompañamiento, el sistema convive con WhatsApp y pierde la centralización que lo justifica. |
-| Responsable del producto | Quién, dentro de la empresa, decide prioridades y acepta las entregas. |
-| Administración del VPS | Quién actualiza el servidor, atiende las alertas de disco y vigila que la copia de seguridad se esté ejecutando. |
-| Soporte posterior | A quién se reportan las fallas, en qué horario y con qué tiempo de respuesta. |
-| Fechas y esfuerzo | El Roadmap de construcción v1.0 estima el esfuerzo y plantea tres escenarios de equipo. Falta confirmar cuál se adopta y la fecha de inicio. |
-
-## 30. Conclusión
-
-El MVP se centrará en las necesidades operativas que actualmente están dispersas: propiedades, responsables, novedades, actas, reuniones, comentarios e informes. La gerente tendrá una visión general, mientras que directores y coordinadores trabajarán únicamente con las propiedades que les correspondan.
-
-La arquitectura propuesta permite comenzar con una sola aplicación desplegada en el VPS y mantener cada función separada por módulos. Contabilidad, Tesorería y otras integraciones quedarán fuera del MVP y podrán añadirse después sin mezclar sus reglas con la gestión de novedades.
-
-Las decisiones de alcance que estaban abiertas quedaron resueltas en el Anexo A.1: la inteligencia artificial, la firma electrónica de actas y el registro de quórum se evaluarán después del MVP, mientras que el costo estimado informativo, los tipos de acta y el aviso por correo electrónico sí forman parte de esta primera versión. Quedan por cerrar los cuatro puntos del Anexo A.2 y los asuntos del Anexo B. Son pocos y concretos, pero condicionan el presupuesto y el cronograma, de modo que conviene resolverlos con la gerencia antes de iniciar la Fase 0.
-
-## 31. Historial de versiones
-
-| Versión | Fecha | Cambios |
-| --- | --- | --- |
-| 1.2 | 2026-09-09 | Versión anterior. |
-| 1.4 | 2026-09-10 | Se unifica el vocabulario: lo que antes se llamaba "etapa" se llama **fase** en todo el documento, numerada desde la Fase 0, igual que en el Roadmap de construcción v1.0. Se agrega la **Fase 5 de puesta en marcha**, que no existía: carga de datos maestros, capacitación, piloto y soporte, con un criterio de salida medido en comportamiento. La sección 23 incorpora la tabla de esfuerzo por fase y remite al roadmap para el calendario y las dependencias. Se ajustan las referencias del Anexo A y del Anexo B en consecuencia. |
-| 1.3 | 2026-09-09 | Se cierran las decisiones de alcance A-1 a A-5 del Anexo A: la inteligencia artificial, la firma de actas y el registro de quórum quedan fuera del MVP; se incluyen el costo estimado como dato informativo, los tipos de acta y el aviso por correo electrónico. Se aclara que el prototipo existente es solo referencia visual (1.1). Se completan las máquinas de estados de novedades (9.2) y actas (10), con códigos técnicos, permisos por transición e indicadores derivados. Se define el alcance del rol por propiedad (6.1). Se agrupan los parámetros configurables (11.1) y se añaden reglas de integridad (11). Se agregan casos de uso faltantes (8). Se incorporan las tareas programadas a la arquitectura (12.1.1) y los módulos `SettingsModule` y `JobsModule`. Se fija la convención de idioma (13.1) y la estrategia de estilos (14). Se añade el procesamiento de imágenes (14.2). Se completan las tablas del modelo de datos y se resuelven el polimorfismo y `organization_id` (16.1 y 16.2). Se amplía la seguridad de las descargas (17) y la política de retención de datos. Se define el alcance del canal de notificación (7.7). Se agrega volumetría (20.1), pruebas faltantes (22) y la Etapa 0 con criterios de salida (23). Se añaden el Anexo A de decisiones de alcance y el Anexo B de asuntos no técnicos. Se corrige la fecha del documento. |
+### 11.2 Pantalla «Nueva novedad»
+
+1. Elegir **Propiedad horizontal** o **Interna EG S.A.S.**.
+2. Mostrar propiedad/zona o área interna según elección.
+3. Completar título, descripción, categoría y prioridad; opcionalmente adjuntos iniciales.
+4. Identificar al creador automáticamente y sugerir responsable si corresponde.
+5. Si se marca crítica, mostrar aviso claro de atención inmediata y enviar alerta al director.
+6. Permitir guardar y confirmar recepción; gestionar pérdida de señal sin duplicar registros.
+
+### 11.3 Pantalla de detalle
+
+Encabezado: código, título, ámbito, prioridad, estado, responsable principal y fechas. Secciones: descripción, actividades, comentarios, evidencias, eventos y solicitudes de cierre. Las acciones disponibles dependerán del rol, del estado y de la asignación.
+
+### 11.4 Bandejas por usuario
+
+- **Director:** registros por revisar, casos sin asignar, críticos, pendientes de cierre, informes en revisión.
+- **Coordinador/responsable:** casos y actividades asignados, vencimientos, devoluciones, bloqueos.
+- **Gerencia:** vista consolidada, casos críticos, análisis por propiedad y áreas.
+
+### 11.5 Informes y plantillas
+
+- Creador de informe: ámbito → destinatario interno (propiedad/área) → periodo → secciones → vista previa.
+- Editor de borrador: textos redactados y selección de evidencias, manteniendo métricas bloqueadas.
+- Revisión del director: PDF de vista previa, comentarios, devolver o aprobar.
+- Histórico: versión, fecha, autor, aprobador, PDF oficial y entregas.
+- Configuración de plantilla: campos institucionales gestionados por admin y configuración particular gestionada por director.
+
+## 12. Modelo conceptual de datos
+
+Este modelo es una **propuesta inicial**, no un esquema Prisma ni una migración aprobada. Los nombres pueden ajustarse al idioma y estilo de implementación, sin perder las relaciones.
+
+### 12.1 Entidades
+
+| Entidad | Información principal | Relación |
+|---|---|---|
+| `User` | Identificación interna, nombre, correo/login, estado activo | Roles, propiedades, áreas, acciones y tareas |
+| `Role` / `Permission` | Rol y capacidad autorizada | Usuarios |
+| `Property` | Nombre, datos identificativos, dirección, estado | Zonas, responsables, novedades, configuración PDF |
+| `PropertyAssignment` | Usuario, propiedad, función, principal o apoyo | Control de acceso y sugerencias |
+| `PropertyZone` | Zona/equipo/ubicación dentro de propiedad | Novedades |
+| `InternalArea` | Nombre, referencia y responsable opcional | Novedades internas y permisos |
+| `AreaAssignment` | Usuarios autorizados para área y función | Áreas/usuarios |
+| `Category` | Ámbito, nombre, actividad, reglas de evidencia | Novedades |
+| `ClosureEvidencePolicy` | Tipos de soporte requeridos y versión | Categorías/solicitudes de cierre |
+| `Issue` | Código, ámbito, título, prioridad, estado, creador, fechas, propietario o área | Actividades, adjuntos, historial |
+| `IssueAssignment` | Responsable, autor, motivo y vigencia | Novedad y usuarios |
+| `IssueParticipant` | Participante interno con permiso | Novedad |
+| `IssueActivity` | Título, descripción, responsable, estado, vencimiento y cierre | Novedad y eventos |
+| `IssueComment` | Texto, creador, fecha, menciones | Novedad/actividad |
+| `Attachment` | Tipo, propósito, clave de almacenamiento, autor, tamaño, hash | Novedad/actividad/informe |
+| `IssueEvent` | Tipo de cambio, autor, instante, valores relevantes | Historial de la novedad |
+| `Notification` | Destinatario, evento, leído, fecha | Usuarios y recursos |
+| `Report` | Tipo, ámbito, periodo, creador, estado | Versiones y revisiones |
+| `ReportVersion` | Instantánea, plantilla, versión, aprobador, archivo final | Informe, entregas |
+| `ReportReview` | Revisión, observaciones, decisión | Informe/versión |
+| `ReportDistribution` | Versión entregada, destinatario, canal, fecha, responsable | Informe aprobado |
+| `TemplateVersion` | Plantilla institucional versionada y publicada | Informes |
+| `PropertyTemplateConfig` | Personalización por propiedad, versión y publicación | Propiedad/plantilla |
+| `AuditEvent` | Actor, acción, recurso, fecha, datos de cambio | Sistema completo |
+
+### 12.2 Restricciones a proteger desde base de datos
+
+- `Issue.scope = PROPIEDAD` exige `property_id` y prohíbe `internal_area_id`.
+- `Issue.scope = INTERNA` exige `internal_area_id` y prohíbe `property_id`.
+- Código de novedad único.
+- Un responsable principal **vigente** por novedad, sin eliminar el historial de anteriores.
+- No asignar participantes inactivos o no autorizados (validación de servicio transaccional).
+- No permitir cierre definitivo fuera de la transición validada para director.
+- Las evidencias y eventos históricos serán append-only o tendrán sustitución auditada.
+- Una versión aprobada de informe es inmutable; la siguiente corrección crea otra versión.
+- Las distribuciones apuntan a una **versión** de informe aprobada, no solo al informe lógico.
+- La versión de plantilla/configuración usada para un informe queda fijada.
+- No borrar en cascada registros operativos por retirar usuarios, categorías o propiedades; preferir desactivación.
+
+### 12.3 Relaciones conceptuales
+
+```mermaid
+erDiagram
+  USER ||--o{ ISSUE : creates
+  PROPERTY ||--o{ ISSUE : includes
+  INTERNAL_AREA ||--o{ ISSUE : includes
+  CATEGORY ||--o{ ISSUE : classifies
+  ISSUE ||--o{ ISSUE_ACTIVITY : has
+  ISSUE ||--o{ ISSUE_EVENT : records
+  ISSUE ||--o{ ISSUE_COMMENT : has
+  ISSUE ||--o{ ATTACHMENT : has
+  ISSUE_ACTIVITY ||--o{ ATTACHMENT : has
+  USER ||--o{ ISSUE_ASSIGNMENT : takes
+  ISSUE ||--o{ ISSUE_ASSIGNMENT : tracks
+  REPORT ||--o{ REPORT_VERSION : versions
+  REPORT_VERSION ||--o{ REPORT_DISTRIBUTION : delivered_as
+  TEMPLATE_VERSION ||--o{ REPORT_VERSION : renders
+  PROPERTY ||--o{ PROPERTY_TEMPLATE_CONFIG : configures
+```
+
+### 12.4 Auditoría y temporalidad
+
+Se recomienda usar instantes de tiempo en UTC en la base de datos y convertir para visualización a la zona de EG S.A.S. (Colombia). Las fechas de corte deben interpretarse explícitamente. Los eventos importantes deben conservar el actor y un contexto verificable para reconstruir cambios.
+
+## 13. Arquitectura técnica propuesta
+
+### 13.1 Stack de referencia de las fuentes (aún por ratificar)
+
+| Capa | Tecnología propuesta | Motivo |
+|---|---|---|
+| Frontend | Angular como PWA | Acceso desde navegador y celular, componentes y posibilidad de instalación. |
+| Backend | NestJS con API REST | Separación de módulos, validaciones y políticas de autorización. |
+| Base de datos | PostgreSQL | Integridad referencial y transacciones para estados, responsables y versiones. |
+| Arquitectura de backend | Monolito modular | Separación de responsabilidades con despliegue sencillo. |
+| Despliegue | Docker Compose, Nginx, HTTPS en VPS | Operación inicial contenida y centralizada. |
+| Archivos | Almacenamiento privado en VPS o servicio de objetos equivalente | Fotografías, documentos y PDF accesibles solo por permisos. |
+| Autenticación | Tokens/sesiones seguros, control de roles y permisos | Identificación de usuario y protección de recursos. |
+| PDF | Motor HTML/CSS a PDF u otra biblioteca validada | Aprovechar plantillas y vista previa consistente. |
+
+**Divergencia de fuentes:** el plan inicial propone Cloudinary para fotos y VPS para PDF. Otro informe también recoge almacenamiento híbrido. No está acordada una decisión final sobre proveedor, cuotas o política de alojamiento de imágenes. Es correcto conservar la alternativa como pendiente y no fijarla sin análisis de costos, privacidad y respaldos.
+
+### 13.2 Separación modular recomendada
+
+```text
+backend/
+├── identity-and-access
+├── properties-and-areas
+├── catalog-and-evidence-policies
+├── issues
+├── activities-and-comments
+├── attachments
+├── notifications
+├── reporting-and-indicators
+├── templates-and-report-versions
+├── report-distribution
+└── audit
+```
+
+La separación modular no implica necesariamente microservicios independientes. Las operaciones que afectan a varias tablas —por ejemplo, confirmación de asignación, solicitud de cierre o aprobación de informe— requieren transacciones y protección frente a solicitudes concurrentes.
+
+### 13.3 Integraciones y almacenamiento
+
+- Acceso autenticado a los archivos, sin enlaces públicos permanentes.
+- Política de nombres/claves de almacenamiento, límites y validación de tipo real del archivo.
+- Almacenamiento y base de datos respaldados de forma consistente; prueba periódica de restauración.
+- Generación de informes fuera del proceso de petición si los PDF son grandes; proceso asíncrono y estado de generación como **propuesta de implementación**, no requisito comercial ya aprobado.
+- Considerar límites de tamaño para fotografías desde celular y compresión sin perder evidencia relevante.
+- Despliegue de pruebas separado del entorno productivo.
+
+### 13.4 PWA y modo sin conexión
+
+Las fuentes académicas incluyen un objetivo de diligenciar reportes sin conexión y sincronizarlos después. **No fue validado expresamente en la conversación de definición actual**. Se recomienda tratarlo como requisito propuesto y decidir si entra en el MVP; implementarlo correctamente requiere almacenamiento local seguro, reintentos idempotentes, prevención de duplicados y gestión de conflictos.
+
+## 14. Requisitos no funcionales
+
+| Código | Requisito | Estado |
+|---|---|---|
+| RNF-01 | Cifrado en tránsito (HTTPS), contraseñas almacenadas con hash resistente y autenticación segura. | Propuesto/consistente con fuentes |
+| RNF-02 | Autorización por rol y alcance en backend, incluso si la interfaz oculta funciones. | Necesario por decisiones |
+| RNF-03 | Protección de archivos y validación de cargas contra acceso indebido y contenido peligroso. | Propuesto |
+| RNF-04 | Historial de auditoría de cambios sensibles, aprobaciones, cierres y distribución. | Confirmado funcionalmente |
+| RNF-05 | Interfaz adaptable a computador y celular; navegación PWA. | Confirmado como enfoque |
+| RNF-06 | Manejo de errores y recuperación de conexiones interrumpidas sin registros duplicados. | Propuesto |
+| RNF-07 | Copias de seguridad de base de datos, evidencias, PDF y configuración, con pruebas de restauración. | Confirmado como necesidad |
+| RNF-08 | Protección de datos personales y minimización de información recopilada. | Propuesto/necesario |
+| RNF-09 | Disponibilidad, tiempos de respuesta y tamaño de archivos con metas medibles acordadas antes de pruebas. | **Valores pendientes** |
+| RNF-10 | Monitoreo, registros de errores y observabilidad mínima de backend y generación de informes. | Propuesto |
+| RNF-11 | Soporte de accesibilidad básica, contraste, teclado, mensajes claros y formularios utilizables. | Propuesto |
+| RNF-12 | Configuración segura de servidor, copias y credenciales por ambiente. | Propuesto |
+| RNF-13 | Inmutabilidad lógica de documentos aprobados y referencias a versiones de plantilla. | Confirmado funcionalmente |
+| RNF-14 | Pruebas automatizadas de permisos, flujos, transiciones y generación de documentos. | Necesario para validación |
+| RNF-15 | No almacenar ni procesar saldos, datos contables o pagos. | Restricción confirmada |
+| RNF-16 | Política de conservación y eliminación legal de información por definir con EG S.A.S. | Pendiente |
+
+No se establecen SLA, número de usuarios concurrentes, límites exactos ni plazos de retención sin datos de la operación real.
+
+## 15. Catálogo de requisitos funcionales
+
+Los requisitos funcionales (RF) siguientes presentan el **alcance consolidado** y son la referencia preferida para diseñar módulos. El registro RN posterior conserva la trazabilidad de las decisiones tomadas durante la conversación.
+
+| Código | Requisito verificable |
+|---|---|
+| RF-001 | Autenticar usuarios y aplicar permisos por rol, propiedad, área interna y participación. |
+| RF-002 | Administrar usuarios y activar/desactivar accesos sin borrar historiales. |
+| RF-003 | Registrar propiedades, zonas, coordinadores principales y usuarios autorizados. |
+| RF-004 | Registrar áreas internas y responsables sugeribles. |
+| RF-005 | Administrar categorías por ámbito y sus requisitos de evidencia para cierre. |
+| RF-006 | Crear novedades de propiedad o internas con datos y validaciones diferenciados. |
+| RF-007 | Generar código único, creador y fecha de registro automáticamente. |
+| RF-008 | Clasificar novedades por prioridad, incluida crítica desde su creación por roles confirmados. |
+| RF-009 | Proponer responsable según configuración del ámbito. |
+| RF-010 | Permitir al director confirmar, modificar y reasignar responsable principal con historial. |
+| RF-011 | Rechazar candidatos inactivos/no autorizados y dejar pendientes los casos sin sugerencia válida. |
+| RF-012 | Gestionar transiciones de estado y devoluciones sin pérdida de historial. |
+| RF-013 | Permitir registrar atención urgente antes de asignación en novedades críticas. |
+| RF-014 | Alertar al director al crearse o reclasificarse una novedad crítica. |
+| RF-015 | Registrar motivos y autores de cambios de prioridad. |
+| RF-016 | Permitir a director y responsable principal crear actividades. |
+| RF-017 | Permitirles asignar actividades a usuarios activos autorizados. |
+| RF-018 | Administrar estados de actividades y fechas objetivo/reales. |
+| RF-019 | Exigir motivo al bloquear o cancelar actividades. |
+| RF-020 | Registrar comentarios, menciones autorizadas y avances fechados. |
+| RF-021 | Adjuntar y consultar fotografías, documentos y cotizaciones como soportes. |
+| RF-022 | Clasificar adjuntos como iniciales, ejecución, finales o soporte. |
+| RF-023 | Exigir evidencias de cierre según categoría y versión de regla aplicable. |
+| RF-024 | Permitir a responsable principal solicitar cierre. |
+| RF-025 | Permitir solo al director verificar, cerrar, devolver o reabrir con motivo. |
+| RF-026 | Conservar historial cronológico de cambios de novedades y actividades. |
+| RF-027 | Mostrar bandejas de tareas, casos críticos, asignaciones y solicitudes pendientes por rol. |
+| RF-028 | Notificar eventos relevantes a usuarios autorizados. |
+| RF-029 | Mostrar tableros por propiedad, área, prioridad, responsable y estado. |
+| RF-030 | Calcular indicadores según fechas reales de eventos y fecha de corte. |
+| RF-031 | Generar borradores de informes por propiedad, área interna y consolidado. |
+| RF-032 | Recuperar automáticamente novedades, actividades e indicadores del periodo seleccionado. |
+| RF-033 | Editar introducciones, observaciones, recomendaciones y otras secciones habilitadas. |
+| RF-034 | Seleccionar evidencias autorizadas para incluir en el informe sin alterar archivos originales. |
+| RF-035 | Guardar borradores y permitir actualizar explícitamente sus datos de origen. |
+| RF-036 | Mostrar vista previa coherente con el PDF destinado a aprobación. |
+| RF-037 | Enviar informe a revisión fijando la versión de contenido, datos y plantilla. |
+| RF-038 | Permitir únicamente al director devolver con observaciones o aprobar. |
+| RF-039 | Publicar internamente el PDF inmutable al aprobar, con control de acceso. |
+| RF-040 | Generar una nueva versión para corregir un informe ya aprobado. |
+| RF-041 | Consultar histórico de versiones y decisiones de revisión/aprobación. |
+| RF-042 | Registrar distribución oficial externa solo por el director, vinculada a versión aprobada. |
+| RF-043 | Exportar datos autorizados a Excel sin cambiar el contenido del PDF oficial. |
+| RF-044 | Crear, versionar y publicar plantillas institucionales solo por administrador. |
+| RF-045 | Personalizar y publicar configuraciones de plantilla por propiedad solo por director. |
+| RF-046 | Aplicar configuración institucional por defecto si no hay personalización válida. |
+| RF-047 | Conservar referencias de versiones de plantilla/configuración en cada PDF. |
+| RF-048 | Registrar auditoría de cierres, asignaciones, informes, plantillas y distribuciones. |
+| RF-049 | Filtrar consultas y exportaciones conforme al alcance del usuario. |
+| RF-050 | Permitir respaldos y restauración documentada de información y archivos. |
+
+## 16. Pruebas y criterios de aceptación
+
+### 16.1 Novedades, permisos y flujo
+
+| ID | Escenario | Resultado esperado |
+|---|---|---|
+| CP-01 | Coordinador crea novedad en propiedad asignada. | Se guarda con código, ámbito, fecha y autor; propone candidato. |
+| CP-02 | Coordinador intenta crear/consultar en propiedad no autorizada. | Se deniega la operación en backend. |
+| CP-03 | Crea novedad interna. | Exige área; no acepta simultáneamente propiedad. |
+| CP-04 | No hay responsable sugerible. | Queda en revisión; no se asigna a usuario aleatorio. |
+| CP-05 | Director confirma asignación. | Se notifica al responsable y queda evento de auditoría. |
+| CP-06 | Coordinador intenta cambiar responsable principal. | Acceso denegado. |
+| CP-07 | Caso crítico se registra antes de asignación. | Alerta al director; registra medidas urgentes autorizadas. |
+| CP-08 | Director cambia prioridad crítica a media. | Motivo obligatorio y conservación de prioridad inicial/acciones urgentes. |
+| CP-09 | Responsable principal crea actividad y asigna usuario autorizado. | Actividad registrada, responsable notificado. |
+| CP-10 | Intenta asignar a usuario inactivo o sin alcance. | Operación rechazada. |
+| CP-11 | Actividad se marca bloqueada. | Exige motivo y conserva historial. |
+| CP-12 | Categoría exige foto final y se solicita cierre sin ella. | Solicitud impedida con mensaje claro. |
+| CP-13 | Responsable solicita cierre con evidencias suficientes. | Pasa a pendiente de cierre. |
+| CP-14 | Coordinador intenta cerrar definitivamente. | Acceso denegado. |
+| CP-15 | Director devuelve cierre con motivo. | Regresa a atención y deja evento. |
+| CP-16 | Director cierra y luego reabre con motivo. | Se preserva el cierre histórico y el evento de reapertura. |
+| CP-17 | Desactivar una categoría con casos anteriores. | Historial de casos permanece legible. |
+
+### 16.2 Informes, plantillas y distribución
+
+| ID | Escenario | Resultado esperado |
+|---|---|---|
+| CP-18 | Usuario genera borrador por propiedad. | Datos y evidencias autorizados correctos; periodo visible. |
+| CP-19 | Cambia texto de observaciones en borrador. | Modifica informe, nunca novedad de origen. |
+| CP-20 | Intenta cambiar un indicador automático en editor. | Campo bloqueado; cálculo intacto. |
+| CP-21 | Envía borrador a revisión. | Instantánea fija; no cambia ante nuevos eventos posteriores. |
+| CP-22 | Director devuelve con observaciones. | Autor puede corregir y reenviar; decisión registrada. |
+| CP-23 | Gerente intenta aprobar. | Rechazo por permisos. |
+| CP-24 | Director aprueba un informe. | Se conserva PDF oficial y se publica para usuarios autorizados. |
+| CP-25 | Se cambia una novedad tras aprobación. | PDF oficial histórico sin cambios. |
+| CP-26 | Se solicita corregir aprobado. | Se crea nueva versión y exige aprobación nueva. |
+| CP-27 | Coordinador intenta distribuir oficialmente. | Acceso denegado. |
+| CP-28 | Director distribuye versión 1 y luego se aprueba versión 2. | La entrega histórica sigue apuntando a versión 1. |
+| CP-29 | Administrador publica nueva plantilla institucional. | Nuevos documentos usan nueva versión; los anteriores no cambian. |
+| CP-30 | Director personaliza logo de una propiedad. | Solo afecta a la propiedad configurada y a informes nuevos. |
+| CP-31 | Director intenta modificar una sección institucional obligatoria. | No se permite. |
+| CP-32 | Usuario intenta leer un PDF de otra propiedad por URL directa. | Rechazo por autorización en servidor. |
+| CP-33 | Informe tiene decenas de fotografías/tablas. | PDF no corta contenido y mantiene legibilidad. |
+| CP-34 | Informe combina registradas/cerradas de otros meses. | Indicadores aplican fechas y cohortes correctas. |
+| CP-35 | Dos usuarios intentan aprobar/versionar en paralelo. | No se producen versiones finales inconsistentes. |
+
+### 16.3 Pruebas transversales
+
+- Intentos de modificar datos de otro ámbito por URL o parámetros de API.
+- Archivos demasiado grandes, formatos falsos y archivos maliciosos.
+- Recuperación de copia de seguridad y consistencia entre archivos/metadatos.
+- Registros con fechas en límites de mes y zona horaria Colombia.
+- Flujo con reaperturas, descartes y casos sin evidencia fotográfica por categoría.
+- Conexión móvil intermitente; si se aprueba modo offline, sincronización duplicada y conflictos.
+- Revisión de la correspondencia entre la vista previa y el PDF generado/aprobado.
+
+## 17. Plan de implementación recomendado
+
+### 17.1 Entregas técnicas por orden de dependencia
+
+| Etapa | Contenido | Evidencia de término |
+|---|---|---|
+| 0. Validación | Resolver políticas pendientes y normalizar reglas. | Documento aprobado por responsables de EG S.A.S. |
+| 1. Base | Proyecto, autenticación, usuarios, roles, propiedades y áreas. | Acceso y aislamiento comprobados. |
+| 2. Novedades | Catálogos, alta, estados, prioridades y asignación mixta. | Ciclo ordinario validado. |
+| 3. Operación | Actividades, evidencias, comentarios, historial, urgencias. | Casos completos y pruebas de autorización. |
+| 4. Cierre/avisos | Evidencia por categoría, solicitud/cierre, bandejas y notificaciones. | Flujo crítico y ordinario comprobados. |
+| 5. Informes | Borradores, métricas, PDF, Excel, editor de secciones. | Informe correcto para propiedad e interno. |
+| 6. Gobierno documental | Plantillas/versiones, revisión, aprobación y distribuciones. | Histórico inmutable y permisos comprobados. |
+| 7. Piloto y entrega | Pruebas de aceptación, respaldo, capacitación, ajustes. | Acta de validación y procedimiento operativo. |
+
+### 17.2 Cronogramas de fuentes: discrepancia abierta
+
+Los dos informes de práctica aportados presentan enfoques temporales diferentes: uno incluye un cronograma de **nueve semanas** y el otro uno de **dieciséis semanas**. Ninguno se toma aquí como plazo contractual del producto. EG S.A.S. debe validar la fecha real de inicio/fin de la práctica y el calendario de desarrollo antes de convertir las etapas anteriores en cronograma.
+
+### 17.3 Entregables a crear posteriormente
+
+- Especificación funcional validada y matriz final de permisos.
+- Diagramas BPMN del proceso actual y propuesto, si el informe académico los requiere.
+- Modelo entidad-relación y migraciones.
+- Prototipos de pantallas escritorio/móvil.
+- Contratos de API y arquitectura revisada.
+- Casos de pruebas implementados y resultados.
+- Instructivo de operación, copias/restauración y manuales por rol.
+- Acta de aprobación del alcance y de cierre del piloto.
+
+## 18. Decisiones aprobadas, propuestas y pendientes
+
+### 18.1 Confirmadas expresamente en esta conversación
+
+| ID | Decisión | Estado |
+|---|---|---|
+| DEC-01 | Novedades de propiedades **y** novedades internas de EG S.A.S. | Confirmada |
+| DEC-02 | Puede reportarse cualquier situación que necesite seguimiento. | Confirmada |
+| DEC-03 | Reportan Gerencia, director y coordinadores. | Confirmada |
+| DEC-04 | Solo el director realiza el cierre definitivo. | Confirmada |
+| DEC-05 | Asignación mixta; sugerencia del sistema y confirmación/cambio por director. | Confirmada |
+| DEC-06 | Atención inmediata registrable para casos críticos antes de confirmar asignación. | Confirmada |
+| DEC-07 | Gerencia, director y coordinadores pueden marcar inicialmente una novedad crítica; director ajusta con historial. | Confirmada |
+| DEC-08 | Director y responsable principal crean/asignan actividades; director supervisa. | Confirmada |
+| DEC-09 | Requisitos de evidencia para cierre configurables por categoría; director verifica. | Confirmada |
+| DEC-10 | Informes automáticos con secciones redactadas editables, sin cambiar datos originales. | Confirmada |
+| DEC-11 | Director aprueba todos los informes. | Confirmada |
+| DEC-12 | Solo director realiza distribución externa oficial. | Confirmada |
+| DEC-13 | Plantilla institucional configurable por propiedad. | Confirmada |
+| DEC-14 | Administrador gestiona plantilla institucional; director configura opciones permitidas por propiedad. | Confirmada |
+| DEC-15 | Contabilidad y tesorería quedan fuera del sistema. | Confirmada |
+
+### 18.2 Decisiones técnicas o de operación propuestas, NO aprobadas expresamente
+
+- Un único responsable principal activo por novedad.
+- Posibilidad de elaborar informes por coordinadores y Gerencia bajo los alcances propuestos.
+- Publicación automática interna tras aprobación del director.
+- Estados técnicos exactos, parámetros de vencimiento y mecanismo de alertas críticas.
+- Política de categorías por defecto y requisitos concretos de fotos/documentos.
+- Almacenamiento de fotos (VPS o servicio externo) y motor concreto de PDF.
+- Modo sin conexión y sincronización avanzada de PWA.
+- Activación de reportes de gestión interna para determinados usuarios adicionales.
+
+Estas propuestas aparecen desarrolladas en las reglas de negocio acumuladas, pero conviene validarlas como un bloque antes del diseño final.
+
+### 18.3 Pendientes de decisión
+
+| ID | Pregunta pendiente | Riesgo si no se define |
+|---|---|---|
+| PEN-01 | ¿Puede el director aprobar un informe que elaboró él mismo? | Flujo de revisión sin criterio en autorrevisión. |
+| PEN-02 | ¿Qué sucede si el director no está disponible? ¿Se puede designar otro usuario que tenga formalmente ese mismo rol? | Informes y cierres detenidos. |
+| PEN-03 | ¿Puede Auxiliar de Gerencia registrar novedades y marcarlas críticas? | Diferencia de permisos con Gerencia. |
+| PEN-04 | ¿Puede distribuirse externamente un informe interno o consolidado, y a qué destinatarios? | Posible difusión indebida. |
+| PEN-05 | ¿Quién revisa las configuraciones publicadas por el director cuando afectan identidad de una propiedad? | Cambios no deseados en informes. |
+| PEN-06 | ¿Cuáles son límites por prioridad y cuándo una alerta crítica escala? | Avisos inefectivos o métricas imprecisas. |
+| PEN-07 | ¿Qué tipos/tamaños de archivo admite el sistema y dónde se almacenan? | Costos, seguridad y rendimiento. |
+| PEN-08 | ¿Qué tiempo se conservarán documentos, eventos y archivos? | Riesgos operativos y normativos. |
+| PEN-09 | ¿El MVP incluye funcionamiento sin conexión? | Complejidad adicional de sincronización. |
+| PEN-10 | ¿Cuántas propiedades, coordinadores, áreas y novedades habrá inicialmente? | Dimensionamiento insuficiente. |
+| PEN-11 | ¿Quién valida oficialmente los requisitos, los informes y la prueba piloto por EG S.A.S.? | Falta de criterio de aceptación. |
+| PEN-12 | ¿Las categorías y sus evidencias mínimas exactas serán las sugeridas o cambiarán? | Cierres bloqueados o demasiado laxos. |
+| PEN-13 | ¿Quién puede descartar casos y vincular duplicados, y en qué situaciones? | Inconsistencias en reportes. |
+| PEN-14 | ¿Cómo se gestionan datos confidenciales en novedades internas? | Exposición de información sensible. |
+| PEN-15 | ¿Qué periodos exactos, indicadores obligatorios y formato institucional se usarán? | Informes no aceptados por la empresa. |
+
+### 18.4 Reglas que deben considerarse reemplazadas o precisadas
+
+1. **Asignación principal:** una propuesta previa permitía asignaciones por Gerencia y Auxiliar de Gerencia; prevalece la decisión posterior de **confirmación/reasignación por director**.
+2. **Cierre:** el flujo actual descrito en fuentes terminaba con cierre del coordinador; el flujo nuevo exige **cierre por director**.
+3. **Aprobación financiera:** el plan original incorporaba Contabilidad y Tesorería en la plataforma; se descartó expresamente. Solo pueden conservarse soportes y referencias operativas.
+4. **Revisión de informes:** cualquier mención a «revisor genérico» se restringe al **director** para aprobar o devolver.
+5. **Distribución:** cualquier referencia a «usuario autorizado» para distribución oficial externa se restringe a **director**.
+6. **Plantillas:** administración institucional es del **administrador**, configuración de propiedad es del **director**.
+7. **Informes:** publicación interna es consecuencia de aprobación; distribución es evento independiente, no otro estado de aprobación.
+8. **Rendimiento/sin conexión:** afirmaciones cuantitativas y modo offline de textos preliminares no se declaran implementados ni aprobados sin validación.
+
+---
+
+## 19. Registro completo de reglas RN-001 a RN-221
+
+Este catálogo conserva el **historial consolidado y normalizado** de las 221 reglas numeradas durante las definiciones funcionales. No pretende ser una transcripción literal palabra por palabra. Algunas reglas antiguas quedaron precisadas o reemplazadas por decisiones posteriores (véase §18.4); en conflicto, **prevalece la decisión más reciente**. El catálogo RF-001 a RF-050 del §15 es la vista funcional depurada para el equipo de desarrollo.
+
+### RN-001 a RN-030: Registro general, ámbitos y primeros permisos
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-001 | Toda novedad tendrá un identificador único generado automáticamente. |
+| RN-002 | Solo roles autorizados podrán registrar novedades: Gerencia, Dirección y Coordinadores (Auxiliar de Gerencia por validar). |
+| RN-003 | Toda novedad tendrá ámbito propiedad o gestión interna, con relación exclusiva a una propiedad o un área. |
+| RN-004 | Datos mínimos: título, descripción, categoría, ámbito y referencia; sistema guarda fecha y creador. |
+| RN-005 | Los usuarios accederán solo a propiedades y áreas autorizadas; Gerencia tiene visibilidad general según política. |
+| RN-006 | El director confirma al responsable principal de cada novedad; otros roles pueden solicitar cambios pero no confirmarlos. |
+| RN-007 | Cada novedad tendrá un responsable principal vigente y puede tener participantes. |
+| RN-008 | Prioridades baja, media, alta o crítica; plazos máximos por configurar. |
+| RN-009 | Los usuarios autorizados registran avances, comentarios, fechas, fotos y documentos. |
+| RN-010 | Los cambios relevantes se guardan con autor, fecha y valores; no desaparecen silenciosamente. |
+| RN-011 | Si existe dependencia externa, se registra motivo y condición de espera. |
+| RN-012 | El coordinador o responsable principal solicita cierre; no cierra definitivamente. |
+| RN-013 | El director verifica solución y evidencias antes del cierre, según categoría. |
+| RN-014 | El director puede devolver el cierre con motivo, preservando historial. |
+| RN-015 | Las novedades cerradas no se editan como abiertas; reapertura autorizada deja motivo. |
+| RN-016 | Los descartes se conservan con justificación y no se cuentan como soluciones ejecutadas. |
+| RN-017 | Informes respetan permisos y filtros de ámbito, propiedad, responsable, estado y periodo. |
+| RN-018 | Se excluyen operaciones contables, presupuestos, pagos y tesorería. |
+| RN-019 | Se pueden adjuntar cotizaciones como soporte, sin registro de saldos o pagos. |
+| RN-020 | Toda novedad conserva historial, aun reasignada, devuelta, reabierta o cerrada. |
+| RN-021 | Las novedades de propiedad requieren propiedad válida. |
+| RN-022 | Las novedades internas requieren área válida y no llevan propiedad. |
+| RN-023 | Las categorías son configurables y se diferencian por ámbito. |
+| RN-024 | La visibilidad depende de rol, propiedades y participación en casos internos. |
+| RN-025 | Participar en una novedad interna no da acceso a todas las del área. |
+| RN-026 | La propuesta temprana concedía asignación a Gerencia/Auxiliar; queda sustituida por confirmación y reasignación principal del director. |
+| RN-027 | El director realiza el cierre definitivo en ambos ámbitos. |
+| RN-028 | Los informes admiten filtros por ámbito, área, propiedad, responsable, estado y fecha. |
+| RN-029 | Correcciones de ámbito requieren autorización y auditoría; no se cambian silenciosamente. |
+| RN-030 | Los ámbitos comparten flujo, pero sus indicadores se consultan por separado. |
+
+### RN-031 a RN-044: Asignación mixta
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-031 | Al registrar novedad se intenta sugerir responsable por propiedad o área. |
+| RN-032 | La sugerencia no es definitiva hasta confirmación del director. |
+| RN-033 | El director puede cambiar el candidato propuesto por otro usuario autorizado. |
+| RN-034 | Sin candidato válido, la novedad queda pendiente de asignación. |
+| RN-035 | Solo usuarios activos y autorizados pueden ser responsables. |
+| RN-036 | Asignaciones y reasignaciones guardan autor, fecha y responsable anterior. |
+| RN-037 | Al confirmar asignación se notifica al responsable. |
+| RN-038 | Cada novedad tiene un responsable principal vigente y admite participantes autorizados. |
+| RN-039 | Solo el director reasigna el responsable principal de una novedad abierta, con motivo. |
+| RN-040 | El responsable puede registrar impedimentos sin cerrar o eliminar el caso. |
+| RN-041 | El responsable principal puede solicitar cierre; solamente el director lo confirma. |
+| RN-042 | El director que devuelve solicitud de cierre registra el motivo y retorna a atención. |
+| RN-043 | El sistema calcula duración de etapas a partir de eventos y fechas. |
+| RN-044 | No puede asignarse un caso a alguien sin acceso a su propiedad o área. |
+
+### RN-045 a RN-061: Novedades críticas y atención inmediata
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-045 | Casos de prioridad baja, media y alta requieren confirmación antes de atención formal. |
+| RN-046 | Casos críticos permiten registrar acciones inmediatas antes de la confirmación del director. |
+| RN-047 | Crear novedad crítica genera alerta prioritaria al director correspondiente. |
+| RN-048 | Las acciones urgentes guardan actor, fecha, descripción y evidencias disponibles. |
+| RN-049 | Solo personal autorizado realiza actuaciones urgentes dentro de sus competencias. |
+| RN-050 | El director revisa las acciones urgentes, confirma asignación y define pendientes. |
+| RN-051 | Atención inmediata no aprueba compras, contrataciones, pagos o recursos. |
+| RN-052 | Cambio de prioridad registra valores anterior y nuevo, motivo y autor. |
+| RN-053 | La novedad crítica también necesita verificación y cierre por el director. |
+| RN-054 | Los informes pueden identificar críticas, tiempo de respuesta y medidas previas a asignación. |
+| RN-055 | Gerencia, director y coordinadores pueden clasificar inicialmente una novedad como crítica. |
+| RN-056 | La creación de una crítica dispara notificación inmediata al director. |
+| RN-057 | Solo el director cambia formalmente la prioridad y documenta el motivo. |
+| RN-058 | Se conserva la prioridad original y cada cambio con fecha y usuario. |
+| RN-059 | Bajar prioridad no borra acciones urgentes realizadas. |
+| RN-060 | Marcar crítica no habilita automáticamente trabajos técnicos riesgosos ni aprobaciones financieras. |
+| RN-061 | Una crítica acepta registros urgentes antes de asignación formal. |
+
+### RN-062 a RN-076: Actividades y seguimiento
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-062 | Una novedad puede contener varias actividades relacionadas con su solución. |
+| RN-063 | Toda actividad tiene título, descripción, estado y autor de creación. |
+| RN-064 | Una actividad puede tener responsable y fecha prevista. |
+| RN-065 | El responsable principal mantiene la responsabilidad general aunque existan participantes. |
+| RN-066 | Responsables internos de actividad necesitan acceso; intervenciones externas se documentan por usuario interno. |
+| RN-067 | Una actividad puede incluir comentarios, fotos y documentos. |
+| RN-068 | Los cambios de estado de actividad quedan en el historial. |
+| RN-069 | Actividad bloqueada exige motivo. |
+| RN-070 | Actividad cancelada conserva datos y motivo. |
+| RN-071 | Completar todas las actividades no cierra automáticamente la novedad. |
+| RN-072 | El responsable principal solicita verificación para cerrar. |
+| RN-073 | El director puede devolver el caso aunque todas las actividades estén completadas. |
+| RN-074 | El historial muestra cambios de prioridad, estados, responsables, actividades y cierre. |
+| RN-075 | Usuarios ven y modifican actividades según su autorización. |
+| RN-076 | Los informes distinguen novedades de actividades para no duplicar casos. |
+
+### RN-077 a RN-091: Permisos y gestión de actividades
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-077 | Director y responsable principal pueden crear actividades. |
+| RN-078 | Ambos pueden asignar actividades a usuarios activos autorizados. |
+| RN-079 | El director puede modificar, reasignar o cancelar actividades; registra motivos según corresponda. |
+| RN-080 | Responsable principal administra actividades de su novedad sin cambiar el principal del caso. |
+| RN-081 | Actividad tiene responsable, descripción, estado y fecha; fecha objetivo cuando corresponda. |
+| RN-082 | Responsable de actividad puede actualizarla y adjuntar evidencia. |
+| RN-083 | Reasignación de actividad conserva responsable anterior e historial. |
+| RN-084 | Director puede consultar actividades de casos bajo su supervisión. |
+| RN-085 | Completar actividad no significa por sí solo solucionar novedad. |
+| RN-086 | Comentarios y avances guardan fecha, hora y autor. |
+| RN-087 | Cambios de estado y responsable generan eventos automáticos. |
+| RN-088 | Comentarios pueden mencionar usuarios autorizados y notificarles. |
+| RN-089 | Cambios/cancelaciones no borran historial de actividades. |
+| RN-090 | Actividades vencidas/bloqueadas aparecen en bandejas de responsable y director. |
+| RN-091 | Se distingue fecha objetivo de fecha real de ejecución. |
+
+### RN-092 a RN-101: Evidencias e informes iniciales
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-092 | Las novedades y actividades aceptan fotos y documentos. |
+| RN-093 | Archivos se clasifican como evidencia inicial, ejecución, final o soporte. |
+| RN-094 | Cada archivo conserva autor, fecha y referencia al caso/actividad. |
+| RN-095 | Archivos se consultan solo mediante autorización. |
+| RN-096 | Eliminar/sustituir evidencia requiere trazabilidad y restricciones. |
+| RN-097 | Informes se generan por ámbito, propiedad, área, responsable, categoría, estado y periodo. |
+| RN-098 | Informes se exportan a PDF y Excel conforme al permiso. |
+| RN-099 | Indicadores utilizan datos y fechas trazables de novedades/actividades. |
+| RN-100 | Las novedades cerradas conservan evidencias, comentarios, actividades e historial. |
+| RN-101 | Indicadores cuentan casos sin duplicación por múltiples actividades. |
+
+### RN-102 a RN-108: Criterios de evidencia para cierre
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-102 | Cada categoría tiene requisitos configurables de evidencia de cierre. |
+| RN-103 | Requisitos admiten fotos, documentos, resultados redactados o combinaciones. |
+| RN-104 | Antes de solicitar cierre se valida el cumplimiento de requisitos configurados. |
+| RN-105 | Director verifica solución y suficiencia de evidencias antes de cerrar. |
+| RN-106 | Director devuelve con motivo si faltan evidencias o la solución no es suficiente. |
+| RN-107 | Cambios de requisitos se auditan y no alteran silenciosamente solicitudes ya iniciadas. |
+| RN-108 | Archivos, observaciones y decisiones quedan en historial de cierre. |
+
+### RN-109 a RN-122: Informes e indicadores
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-109 | Hay informes por propiedad, gestión interna y consolidado de Gerencia. |
+| RN-110 | Informes se generan desde novedades, actividades, evidencias e historial. |
+| RN-111 | Usuario elige periodo y filtros permitidos. |
+| RN-112 | Informe por propiedad solo contiene información de propiedad seleccionada. |
+| RN-113 | Informe interno solo incluye áreas autorizadas. |
+| RN-114 | Usuario elige qué secciones opcionales incluir. |
+| RN-115 | Informe presenta estados, actividades realizadas y pendientes. |
+| RN-116 | Indicadores usan fecha de registro, ejecución, estado y cierre según cada métrica. |
+| RN-117 | Caso puede figurar en informes de varios periodos sin duplicarse en BD. |
+| RN-118 | Existe vista previa del informe antes de generarlo. |
+| RN-119 | Informe permite PDF y Excel según alcance. |
+| RN-120 | Fotos/documentos incluidos respetan acceso del usuario. |
+| RN-121 | Informe identifica periodo y fecha de generación. |
+| RN-122 | Informes multiámbito o multipropiedad requieren autorización apropiada. |
+
+### RN-123 a RN-140: Elaboración y revisión de informes
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-123 | Informes automáticos usan registros autorizados como fuente de datos. |
+| RN-124 | Solo se editan textos habilitados y se seleccionan evidencias sin modificar origen. |
+| RN-125 | Indicadores, fechas, estados y datos operativos no son editables desde informes. |
+| RN-126 | Cada informe tiene código, periodo, fecha de corte, autor y estado. |
+| RN-127 | Los borradores se pueden guardar antes de revisión. |
+| RN-128 | Se puede enviar un borrador al director para revisión. |
+| RN-129 | La revisión con facultad de devolver o aprobar corresponde exclusivamente al director. |
+| RN-130 | Devolución de informe registra motivo, fecha y usuario. |
+| RN-131 | Cambios durante elaboración/revisión conservan trazabilidad. |
+| RN-132 | Informe aprobado queda protegido ante edición directa. |
+| RN-133 | Corrección posterior a aprobación crea nueva versión, preservando la anterior. |
+| RN-134 | Cada versión aprobada fija datos/documentos usados. |
+| RN-135 | PDF oficial y exportación Excel de datos se descargan según permisos. |
+| RN-136 | Solo usuarios autorizados consultan o descargan informes de sus ámbitos. |
+| RN-137 | Aprobación registra aprobador y fecha. |
+| RN-138 | Informes en revisión o devueltos generan avisos a responsables. |
+| RN-139 | Aprobar informe no cambia estados de novedades ni actividades. |
+| RN-140 | Actualizar datos de borrador debe ser explícito y respetar textos redactados. |
+
+### RN-141 a RN-160: Aprobación, publicación, versiones y entrega
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-141 | Solo el director puede aprobar informes de cualquiera de los ámbitos. |
+| RN-142 | Gerencia, Auxiliar y Coordinadores pueden elaborar informes según autorización. |
+| RN-143 | Un informe únicamente puede aprobarse desde estado En revisión. |
+| RN-144 | Aprobación conserva usuario, fecha, hora y versión. |
+| RN-145 | Director puede devolver informe con observaciones obligatorias. |
+| RN-146 | Aprobado queda disponible automáticamente para usuarios internos autorizados. |
+| RN-147 | Aprobado no admite modificaciones directas. |
+| RN-148 | Corrección posterior crea nueva versión y requiere nueva aprobación. |
+| RN-149 | Histórico identifica versión vigente y versiones anteriores. |
+| RN-150 | Cada versión aprobada conserva copia fija de datos/contenido. |
+| RN-151 | Consulta/descarga restringida por ámbito y permisos. |
+| RN-152 | PDF es documento oficial; Excel representa datos exportados para análisis. |
+| RN-153 | Distribución se registra sobre informes aprobados; permiso concretado más adelante como exclusivo del director. |
+| RN-154 | Distribución apunta a la versión específica entregada. |
+| RN-155 | Se registran destinatario, canal, fecha y usuario que distribuye. |
+| RN-156 | Distribuir no cambia estados de novedades o actividades. |
+| RN-157 | Se preserva trazabilidad de aprobaciones, versiones y entregas. |
+| RN-158 | Versiones históricas no se eliminan mediante operaciones habituales. |
+| RN-159 | Archivos se protegen por controles de acceso y copias de seguridad. |
+| RN-160 | Tiempo de conservación se establecerá según política documental de EG S.A.S. |
+
+### RN-161 a RN-168: Distribución externa exclusiva del director
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-161 | Solo director registra/ejecuta distribución externa oficial. |
+| RN-162 | Solo informes aprobados pueden distribuirse oficialmente. |
+| RN-163 | Toda distribución vincula versión específica de informe. |
+| RN-164 | Distribución registra destinatario, canal, fecha, responsable y observaciones cuando existan. |
+| RN-165 | Gerencia, Auxiliar y Coordinadores descargan según permisos, sin función oficial de distribución. |
+| RN-166 | Historial de distribuciones se conserva tras nuevas versiones. |
+| RN-167 | Aprobación y distribución son acciones diferentes, ambas exclusivas del director. |
+| RN-168 | Informes en revisión o borrador no pueden figurar como distribuidos oficialmente. |
+
+### RN-169 a RN-184: Plantillas y PDF
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-169 | Existe plantilla institucional base para informes de EG S.A.S. |
+| RN-170 | Plantilla institucional se adapta a informes de propiedad, internos y consolidados. |
+| RN-171 | Solo usuarios con permiso institucional modifican plantillas; decisión final: administrador del sistema. |
+| RN-172 | Plantilla admite logo, encabezado, pie y secciones predefinidas. |
+| RN-173 | Informe incorpora automáticamente datos autorizados del periodo. |
+| RN-174 | Usuarios autorizados eligen evidencias y editan secciones de texto habilitadas. |
+| RN-175 | Borrador conserva los textos escritos por usuario. |
+| RN-176 | La vista previa corresponde al contenido que verá el director al aprobar. |
+| RN-177 | El PDF debe distribuir tablas y fotografías en páginas sin cortes inapropiados. |
+| RN-178 | Las imágenes mantienen proporción y textos siguen legibles. |
+| RN-179 | Informe aprobado conserva versión de plantilla utilizada. |
+| RN-180 | Cambiar plantilla no altera informes aprobados anteriores. |
+| RN-181 | PDF final identifica código, versión, periodo y fecha correspondiente. |
+| RN-182 | PDF almacenado aprobado es el distribuible posteriormente. |
+| RN-183 | Editar aprobado exige nueva versión y aprobación. |
+| RN-184 | PDF y anexos se conservan en almacenamiento protegido con respaldos. |
+
+### RN-185 a RN-206: Personalización por propiedad
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-185 | Hay plantilla institucional base. |
+| RN-186 | Cada propiedad admite configuración particular basada en ella. |
+| RN-187 | Personalización de propiedad: logo, identificación y secciones opcionales permitidas. |
+| RN-188 | Las configuraciones particulares no suprimen secciones obligatorias. |
+| RN-189 | Sin configuración particular se usa la predeterminada institucional. |
+| RN-190 | Identificación de la propiedad procede de su registro del sistema. |
+| RN-191 | Solo administrador administra plantilla institucional. |
+| RN-192 | La configuración por propiedad exige rol del director operativo. |
+| RN-193 | Modificación de plantilla/configuración registra autor, fecha y cambios. |
+| RN-194 | Plantillas tienen versiones y estado borrador/publicada. |
+| RN-195 | Los cambios no sustituyen automáticamente versión publicada; deben publicarse. |
+| RN-196 | Informes nuevos usan plantilla y configuración publicadas correspondientes. |
+| RN-197 | Cambios de plantilla no alteran aprobados. |
+| RN-198 | Borradores pueden actualizar a plantilla más nueva mediante acción explícita. |
+| RN-199 | Informes enviados a revisión fijan diseño, datos y textos examinados. |
+| RN-200 | Aprobados conservan referencias a versiones de plantilla/configuración usadas. |
+| RN-201 | Ocultar imágenes en PDF no borra evidencias de la novedad. |
+| RN-202 | Internos y consolidados usan identidad institucional sin propiedad ficticia. |
+| RN-203 | Vista previa muestra encabezados, secciones, fotografías y páginas. |
+| RN-204 | Generación PDF/Excel aplica permisos de ámbito y acceso. |
+| RN-205 | Si faltan datos opcionales, se usa valor alterno razonable o se omite sin inventar. |
+| RN-206 | Configurar informe no permite alterar estados, responsables ni indicadores del caso. |
+
+### RN-207 a RN-221: Permisos definitivos de administración y publicación
+
+| Código | Descripción vigente o nota histórica |
+|---|---|
+| RN-207 | Solo administrador crea, modifica, versiona y publica plantillas institucionales. |
+| RN-208 | Director modifica la configuración de informes de propiedades bajo su autorización. |
+| RN-209 | Personalización de propiedad se limita a opciones expuestas por plantilla institucional. |
+| RN-210 | Director no puede eliminar secciones obligatorias ni editar fórmulas/datos históricos mediante personalización. |
+| RN-211 | Propiedad hereda configuración institucional si no tiene una particular válida. |
+| RN-212 | Configurar propiedad registra versiones, fecha y usuario. |
+| RN-213 | Configuración por propiedad se guarda primero como borrador y la publica el director. |
+| RN-214 | Solo configuraciones publicadas se aplican automáticamente a nuevos informes. |
+| RN-215 | Actualizar plantilla/configuración no altera informes aprobados ni en revisión. |
+| RN-216 | Cada versión de informe conserva qué plantilla/configuración se utilizó. |
+| RN-217 | Director es único aprobador de informes de todos los ámbitos. |
+| RN-218 | Informe aprobado se publica automáticamente para consulta interna autorizada. |
+| RN-219 | Director es único responsable de registrar distribución externa oficial. |
+| RN-220 | PDF aprobado y sus datos de aprobación se conservan sin alteración directa. |
+| RN-221 | Cambios de administración/publicación de plantillas se auditan. |
+
+## 20. Glosario, fuentes y control de cambios
+
+### 20.1 Glosario
+
+| Término | Definición |
+|---|---|
+| Novedad | Caso reportado que necesita atención o seguimiento. |
+| Ámbito | Contexto del caso: propiedad horizontal o gestión interna. |
+| Responsable sugerido | Candidato propuesto automáticamente; no es asignación definitiva. |
+| Responsable principal | Persona que responde por el seguimiento general del caso. |
+| Actividad | Trabajo o gestión específica que forma parte de una novedad. |
+| Evidencia | Foto, archivo o descripción que apoya un hecho o un resultado. |
+| Cierre definitivo | Decisión del director de dar por solucionado el caso. |
+| Informe | Documento de gestión construido a partir de datos operativos. |
+| Plantilla institucional | Diseño y estructura base publicados por el administrador. |
+| Configuración por propiedad | Personalización autorizada publicada por el director. |
+| Versión de informe | Instantánea de contenido y diseño de un documento aprobado. |
+| Distribución oficial | Registro formal del envío/entrega externa de un PDF aprobado. |
+| PWA | Aplicación web que puede ofrecer experiencia similar a una aplicación instalable. |
+| RBAC | Control de acceso basado en roles. |
+| MVP | Primera versión funcional acotada para validar con usuarios. |
+| AS-IS / TO-BE | Proceso descrito actualmente / proceso propuesto. |
+
+### 20.2 Documentos aportados como contexto
+
+1. **`Proceso_Operativo.docx`**: descripción de inspecciones, reporte, cotización, solicitud de recursos, atención y cierre; base principal del proceso AS-IS de 15 pasos.
+2. **`Plan_de_Mejora_Henry_Tordecilla.pdf`**: problema de dispersión de información y propuesta inicial de PWA con Angular, NestJS, PostgreSQL y módulos operativos. En su propuesta original incluyó interacción con Contabilidad y Tesorería, **posteriormente excluida** del producto confirmado.
+3. **`FORMATO INFORME_PRACTICA_NORMA_IEE (1).docx`**: esquema de informe académico de práctica, alcance inicial y cronograma de nueve semanas.
+4. **`FORMATO INFORME_PRACTICA_NORMA_IEE (2).docx`**: desarrollo más amplio del proceso, requisitos, propuesta técnica, flujo de informes y cronograma de dieciséis semanas. Algunos apartados están escritos en futuro o contienen marcadores «COMPLETAR» y «ACTUALIZAR»; **no se consideran resultados verificados**.
+5. **Conversación de definición funcional de EG S.A.S.**: decisiones explícitamente confirmadas de la plataforma, consolidadas en §18.1 y en las reglas de este documento.
+
+Las fuentes se utilizan **como material de contexto y diseño**. No se verificaron datos legales de EG S.A.S., métricas de producción, existencia de despliegue, resultados de pruebas, número de propiedades ni identidad legal completa.
+
+### 20.3 Cambios consolidados en esta versión
+
+| Versión | Cambio documental |
+|---|---|
+| v1.0–v1.3 (conversación) | Alcance, roles, ámbitos, asignación mixta y excepción crítica. |
+| v1.4–v1.6 (conversación) | Actividades, evidencia por categoría, indicadores y estructura de informes. |
+| v1.7–v1.9 (conversación) | Borradores, aprobación, distribución, versiones, PDF y plantillas. |
+| v2.0–v2.1 (conversación) | Configuración por propiedad, separación de permisos y revisión de consistencia. |
+| **v2.2 (este documento)** | Consolidación integral para desarrollo; catálogo RF, registro RN-001 a RN-221, datos, pruebas, decisiones y pendientes. |
+
+### 20.4 Estado de aprobación
+
+**Decisiones del usuario confirmadas:** DEC-01 a DEC-15 del §18.1.  
+**Aprobación formal de EG S.A.S.:** pendiente.  
+**Implementación y pruebas del software:** no acreditadas por este documento.  
+**Próximo entregable sugerido:** historias de usuario con criterios medibles, diagrama de datos validado y prototipos de pantallas a partir de esta especificación.

@@ -1,0 +1,237 @@
+<div class="issues-container">
+  <!-- Header con título y acción principal -->
+  <header class="page-header">
+    <div>
+      <div class="breadcrumb">Operación EG S.A.S. / Novedades</div>
+      <h1 class="page-title">Bandeja Operativa de Novedades</h1>
+      <p class="page-subtitle">
+        Control de registro, asignación principal y seguimiento crítico conforme a las fases F2/F3
+      </p>
+    </div>
+    <div class="header-actions">
+      <a routerLink="/issues/new" class="btn btn-primary">
+        <span class="icon">+</span> Registrar Novedad
+      </a>
+    </div>
+  </header>
+
+  <!-- Métricas rápidas de bandeja -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-icon stat-icon-total">📋</div>
+      <div class="stat-info">
+        <span class="stat-value">{{ stats().total }}</span>
+        <span class="stat-label">Total Novedades</span>
+      </div>
+    </div>
+    <div class="stat-card stat-card-critical" (click)="onlyCritical.set(!onlyCritical())" [class.active]="onlyCritical()">
+      <div class="stat-icon stat-icon-crit">🚨</div>
+      <div class="stat-info">
+        <span class="stat-value">{{ stats().critical }}</span>
+        <span class="stat-label">Casos Críticos (F3)</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon-review">⏳</div>
+      <div class="stat-info">
+        <span class="stat-value">{{ stats().inReview }}</span>
+        <span class="stat-label">En Revisión (Pend. Director)</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon-assigned">👤</div>
+      <div class="stat-info">
+        <span class="stat-value">{{ stats().assigned }}</span>
+        <span class="stat-label">Asignadas Activas</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Barra de Filtros y Búsqueda -->
+  <div class="filters-card">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input
+        type="text"
+        placeholder="Buscar por código (NOV-...), título, propiedad o área..."
+        [ngModel]="searchQuery()"
+        (ngModelChange)="searchQuery.set($event)"
+      />
+    </div>
+
+    <div class="filter-controls">
+      <!-- Filtro Ámbito -->
+      <div class="filter-group">
+        <label>Ámbito:</label>
+        <div class="pill-group">
+          <button
+            class="pill-btn"
+            [class.active]="selectedScope() === 'ALL'"
+            (click)="selectedScope.set('ALL')"
+          >
+            Todos
+          </button>
+          <button
+            class="pill-btn"
+            [class.active]="selectedScope() === 'PROPIEDAD'"
+            (click)="selectedScope.set('PROPIEDAD')"
+          >
+            🏢 Propiedades
+          </button>
+          <button
+            class="pill-btn"
+            [class.active]="selectedScope() === 'INTERNA'"
+            (click)="selectedScope.set('INTERNA')"
+          >
+            🏛️ Áreas Internas
+          </button>
+        </div>
+      </div>
+
+      <!-- Filtro Prioridad -->
+      <div class="filter-group">
+        <label>Prioridad:</label>
+        <select
+          [ngModel]="selectedPriority()"
+          (ngModelChange)="selectedPriority.set($event)"
+          class="custom-select"
+        >
+          <option value="ALL">Todas las prioridades</option>
+          <option value="CRITICA">🚨 Crítica</option>
+          <option value="ALTA">Alta</option>
+          <option value="MEDIA">Media</option>
+          <option value="BAJA">Baja</option>
+        </select>
+      </div>
+
+      <!-- Filtro Estado -->
+      <div class="filter-group">
+        <label>Estado:</label>
+        <select
+          [ngModel]="selectedStatus()"
+          (ngModelChange)="selectedStatus.set($event)"
+          class="custom-select"
+        >
+          <option value="ALL">Todos los estados</option>
+          <option value="EN_REVISION">En Revisión</option>
+          <option value="ASIGNADA">Asignada</option>
+          <option value="EN_PROCESO">En Proceso</option>
+          <option value="CERRADA">Cerrada</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mensaje de aviso de permisos si aplica -->
+  @if (errorMessage()) {
+    <div class="alert-banner">
+      <span class="alert-icon">ℹ️</span>
+      <div>{{ errorMessage() }}</div>
+    </div>
+  }
+
+  <!-- Tabla de Novedades -->
+  <div class="table-card">
+    @if (loading()) {
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Cargando bandeja de novedades...</p>
+      </div>
+    } @else if (errorMessage()) {
+      <div class="empty-state">
+        <div class="empty-icon">🚫</div>
+        <h3>Acceso Restringido o Error de Conexión</h3>
+        <p>{{ errorMessage() }}</p>
+        <button class="btn btn-secondary" (click)="loadIssues()">Reintentar</button>
+      </div>
+    } @else if (filteredIssues().length === 0) {
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h3>No se encontraron novedades con los filtros actuales</h3>
+        <p>Intente modificar los criterios de búsqueda o registre una nueva novedad.</p>
+        <a routerLink="/issues/new" class="btn btn-secondary">Crear Novedad</a>
+      </div>
+    } @else {
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Ámbito / Ubicación</th>
+              <th>Título y Categoría</th>
+              <th>Prioridad</th>
+              <th>Estado</th>
+              <th>Responsable</th>
+              <th>Medidas Urgentes</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (issue of filteredIssues(); track issue.id) {
+              <tr [class.row-critical]="issue.priority === 'CRITICA'">
+                <td class="col-code">
+                  <span class="code-tag">{{ issue.code }}</span>
+                </td>
+                <td class="col-scope">
+                  <span class="scope-indicator" [class.scope-prop]="issue.scope === 'PROPIEDAD'">
+                    {{ issue.scope === 'PROPIEDAD' ? '🏢 Propiedad' : '🏛️ Interna' }}
+                  </span>
+                  <div class="location-name">
+                    {{ issue.scope === 'PROPIEDAD' ? issue.property?.name : issue.internalArea?.name }}
+                  </div>
+                </td>
+                <td class="col-title">
+                  <div class="issue-title">{{ issue.title }}</div>
+                  <div class="issue-cat">{{ issue.category?.name }}</div>
+                </td>
+                <td class="col-priority">
+                  <span class="badge" [ngClass]="getPriorityClass(issue.priority)">
+                    {{ issue.priority }}
+                  </span>
+                </td>
+                <td class="col-status">
+                  <span class="badge" [ngClass]="getStatusClass(issue.status)">
+                    {{ issue.status }}
+                  </span>
+                </td>
+                <td class="col-responsible">
+                  @if (issue.assignedUser) {
+                    <div class="user-pill confirmed">
+                      <span class="user-status-dot green"></span>
+                      <span>{{ issue.assignedUser.firstName }} {{ issue.assignedUser.lastName }}</span>
+                      <small class="user-role-sub">Confirmado</small>
+                    </div>
+                  } @else if (issue.suggestedUser) {
+                    <div class="user-pill suggested">
+                      <span class="user-status-dot yellow"></span>
+                      <span>{{ issue.suggestedUser.firstName }} {{ issue.suggestedUser.lastName }}</span>
+                      <small class="user-role-sub">Sugerido (Líder)</small>
+                    </div>
+                  } @else {
+                    <span class="unassigned-text">Sin responsable</span>
+                  }
+                </td>
+                <td class="col-urgent">
+                  @if (issue.urgentMeasures) {
+                    <span class="urgent-tag" title="{{ issue.urgentMeasures }}">
+                      🚨 Atendida
+                    </span>
+                  } @else if (issue.priority === 'CRITICA') {
+                    <span class="urgent-pending-tag">⚠️ Pendiente</span>
+                  } @else {
+                    <span class="muted-dash">—</span>
+                  }
+                </td>
+                <td class="col-action">
+                  <a [routerLink]="['/issues', issue.id]" class="btn-link">
+                    Gestionar →
+                  </a>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</div>
