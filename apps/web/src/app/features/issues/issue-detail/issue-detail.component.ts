@@ -6,8 +6,10 @@ import { IssuesService, CandidateUser } from '../../../core/services/issues.serv
 import { AuthService } from '../../../core/services/auth.service';
 import {
   ActivityStatus,
+  EvidenceStage,
   Issue,
   IssueActivity,
+  IssueAttachment,
   IssueComment,
   IssuePriority,
 } from '../../../core/models/issue.model';
@@ -245,9 +247,9 @@ export class IssueDetailComponent {
 
   // --- F4: Pestañas, Actividades y Comentarios ---
 
-  readonly activeTab = signal<'actividades' | 'comentarios' | 'historial'>('actividades');
+  readonly activeTab = signal<'actividades' | 'comentarios' | 'evidencias' | 'historial'>('actividades');
 
-  selectTab(tab: 'actividades' | 'comentarios' | 'historial'): void {
+  selectTab(tab: 'actividades' | 'comentarios' | 'evidencias' | 'historial'): void {
     this.activeTab.set(tab);
     if (tab === 'comentarios' && this.candidates().length === 0) {
       const current = this.issue();
@@ -485,6 +487,323 @@ export class IssueDetailComponent {
         error: (err) => {
           this.actionLoading.set(false);
           const msg = err.error?.message || 'Error al registrar comentario.';
+          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
+        },
+      });
+  }
+
+  // --- F4 / RF-021, RF-022: Gestión de Evidencias ---
+  readonly showUploadEvidenceModal = signal<boolean>(false);
+  selectedFile: File | null = null;
+  selectedEvidenceStage: EvidenceStage = 'SOPORTE';
+  selectedEvidenceActivityId = '';
+
+  // --- F5 / RF-012, RF-023 a RF-028: Gestión de Cierre Operativo ---
+  readonly showRequestClosureModal = signal<boolean>(false);
+  readonly showCloseModal = signal<boolean>(false);
+  readonly showReturnModal = signal<boolean>(false);
+  readonly showReopenModal = signal<boolean>(false);
+  readonly showDiscardModal = signal<boolean>(false);
+
+  closureNotes = '';
+  closureObservations = '';
+  returnReason = '';
+  reopenReason = '';
+  discardReason = '';
+
+  canRequestClosure(): boolean {
+    const current = this.issue();
+    const user = this.authService.currentUser();
+    if (!current || !user) return false;
+    if (current.status !== 'ASIGNADA' && current.status !== 'EN_ATENCION') return false;
+    return this.authService.isDirector() || current.assignedUserId === user.id;
+  }
+
+  canClose(): boolean {
+    const current = this.issue();
+    if (!current || !this.authService.isDirector()) return false;
+    return (
+      current.status === 'PENDIENTE_CIERRE' ||
+      current.status === 'EN_ATENCION' ||
+      current.status === 'ASIGNADA'
+    );
+  }
+
+  canReturn(): boolean {
+    const current = this.issue();
+    if (!current || !this.authService.isDirector()) return false;
+    return current.status === 'PENDIENTE_CIERRE' || current.status === 'EN_REVISION';
+  }
+
+  canReopen(): boolean {
+    const current = this.issue();
+    if (!current || !this.authService.isDirector()) return false;
+    return current.status === 'CERRADA';
+  }
+
+  canDiscard(): boolean {
+    const current = this.issue();
+    if (!current || !this.authService.isDirector()) return false;
+    return current.status === 'REGISTRADA' || current.status === 'EN_REVISION';
+  }
+
+  hasMissingFinalEvidence(): boolean {
+    const current = this.issue();
+    if (!current || !current.category?.requiresEvidence) return false;
+    const attachments = current.attachments || [];
+    return !attachments.some((att) => att.stage === 'FINAL');
+  }
+
+  openUploadEvidenceModal(): void {
+    const current = this.issue();
+    if (!current) return;
+    this.selectedFile = null;
+    this.selectedEvidenceStage = 'SOPORTE';
+    this.selectedEvidenceActivityId = '';
+    this.showUploadEvidenceModal.set(true);
+  }
+
+  onFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      this.selectedFile = input.files[0];
+    }
+  }
+
+  submitUploadEvidence(): void {
+    const current = this.issue();
+    if (!current || !this.selectedFile) {
+      this.errorMessage.set('Debe seleccionar un archivo válido para adjuntar.');
+      return;
+    }
+
+    this.actionLoading.set(true);
+    this.errorMessage.set(null);
+
+    this.issuesService
+      .uploadAttachment(
+        current.id,
+        this.selectedFile,
+        this.selectedEvidenceStage,
+        this.selectedEvidenceActivityId || undefined,
+      )
+      .subscribe({
+        next: () => {
+          this.actionLoading.set(false);
+          this.showUploadEvidenceModal.set(false);
+          this.selectedFile = null;
+          this.successMessage.set('Evidencia adjuntada exitosamente.');
+          this.loadIssue(current.id);
+        },
+        error: (err) => {
+          this.actionLoading.set(false);
+          const msg = err.error?.message || 'Error al adjuntar evidencia.';
+          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
+        },
+      });
+  }
+
+  downloadEvidence(att: IssueAttachment): void {
+    const current = this.issue();
+    if (!current) return;
+
+    this.issuesService.downloadAttachment(current.id, att.id).subscribe({
+      next: (blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = att.fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      },
+      error: (err) => {
+        const msg = err.error?.message || 'Error al descargar archivo.';
+        this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
+      },
+    });
+  }
+
+  formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  openRequestClosureModal(): void {
+    this.closureNotes = '';
+    this.showRequestClosureModal.set(true);
+  }
+
+  submitRequestClosure(): void {
+    const current = this.issue();
+    if (!current) return;
+
+    this.actionLoading.set(true);
+    this.errorMessage.set(null);
+
+    this.issuesService
+      .requestClosure(current.id, { notes: this.closureNotes.trim() || undefined })
+      .subscribe({
+        next: (updated) => {
+          this.actionLoading.set(false);
+          this.issue.set(updated);
+          this.showRequestClosureModal.set(false);
+          this.closureNotes = '';
+          this.successMessage.set(
+            'Solicitud de cierre enviada a la Dirección Operativa para verificación.',
+          );
+          this.loadIssue(current.id);
+        },
+        error: (err) => {
+          this.actionLoading.set(false);
+          const msg = err.error?.message || 'Error al solicitar cierre.';
+          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
+        },
+      });
+  }
+
+  openCloseModal(): void {
+    this.closureObservations = '';
+    this.showCloseModal.set(true);
+  }
+
+  submitClose(): void {
+    const current = this.issue();
+    if (!current) return;
+
+    this.actionLoading.set(true);
+    this.errorMessage.set(null);
+
+    this.issuesService
+      .closeIssue(current.id, {
+        closureObservations: this.closureObservations.trim() || undefined,
+      })
+      .subscribe({
+        next: (updated) => {
+          this.actionLoading.set(false);
+          this.issue.set(updated);
+          this.showCloseModal.set(false);
+          this.closureObservations = '';
+          this.successMessage.set(
+            'Novedad cerrada definitivamente y verificada a conformidad.',
+          );
+          this.loadIssue(current.id);
+        },
+        error: (err) => {
+          this.actionLoading.set(false);
+          const msg = err.error?.message || 'Error al cerrar novedad.';
+          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
+        },
+      });
+  }
+
+  openReturnModal(): void {
+    this.returnReason = '';
+    this.showReturnModal.set(true);
+  }
+
+  submitReturn(): void {
+    const current = this.issue();
+    if (!current) return;
+
+    if (!this.returnReason.trim()) {
+      this.errorMessage.set('El motivo de devolución es obligatorio.');
+      return;
+    }
+
+    this.actionLoading.set(true);
+    this.errorMessage.set(null);
+
+    this.issuesService
+      .returnIssue(current.id, { reason: this.returnReason.trim() })
+      .subscribe({
+        next: (updated) => {
+          this.actionLoading.set(false);
+          this.issue.set(updated);
+          this.showReturnModal.set(false);
+          this.returnReason = '';
+          this.successMessage.set(
+            'Solicitud devuelta al responsable para subsanación.',
+          );
+          this.loadIssue(current.id);
+        },
+        error: (err) => {
+          this.actionLoading.set(false);
+          const msg = err.error?.message || 'Error al devolver caso.';
+          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
+        },
+      });
+  }
+
+  openReopenModal(): void {
+    this.reopenReason = '';
+    this.showReopenModal.set(true);
+  }
+
+  submitReopen(): void {
+    const current = this.issue();
+    if (!current) return;
+
+    if (!this.reopenReason.trim()) {
+      this.errorMessage.set('El motivo de reapertura es obligatorio.');
+      return;
+    }
+
+    this.actionLoading.set(true);
+    this.errorMessage.set(null);
+
+    this.issuesService
+      .reopenIssue(current.id, { reason: this.reopenReason.trim() })
+      .subscribe({
+        next: (updated) => {
+          this.actionLoading.set(false);
+          this.issue.set(updated);
+          this.showReopenModal.set(false);
+          this.reopenReason = '';
+          this.successMessage.set('Novedad reabierta formalmente con trazabilidad.');
+          this.loadIssue(current.id);
+        },
+        error: (err) => {
+          this.actionLoading.set(false);
+          const msg = err.error?.message || 'Error al reabrir caso.';
+          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
+        },
+      });
+  }
+
+  openDiscardModal(): void {
+    this.discardReason = '';
+    this.showDiscardModal.set(true);
+  }
+
+  submitDiscard(): void {
+    const current = this.issue();
+    if (!current) return;
+
+    if (!this.discardReason.trim()) {
+      this.errorMessage.set('El motivo de descarte es obligatorio.');
+      return;
+    }
+
+    this.actionLoading.set(true);
+    this.errorMessage.set(null);
+
+    this.issuesService
+      .discardIssue(current.id, { reason: this.discardReason.trim() })
+      .subscribe({
+        next: (updated) => {
+          this.actionLoading.set(false);
+          this.issue.set(updated);
+          this.showDiscardModal.set(false);
+          this.discardReason = '';
+          this.successMessage.set('Novedad descartada formalmente.');
+          this.loadIssue(current.id);
+        },
+        error: (err) => {
+          this.actionLoading.set(false);
+          const msg = err.error?.message || 'Error al descartar caso.';
           this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
         },
       });

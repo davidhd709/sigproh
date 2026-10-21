@@ -85,9 +85,9 @@
       </div>
     </div>
 
-    <!-- Barra de Acciones Operativas (F3) -->
+    <!-- Barra de Acciones Operativas (F3, F4, F5) -->
     <div class="actions-toolbar">
-      <div class="toolbar-title">Acciones Operativas (F3):</div>
+      <div class="toolbar-title">Acciones Operativas:</div>
       <div class="toolbar-buttons">
         <!-- Acción Director: Confirmar / Reasignar Responsable -->
         @if (authService.isDirector()) {
@@ -97,16 +97,50 @@
           <button class="btn btn-outline" (click)="showPriorityModal.set(true)">
             ⚡ Modificar Prioridad
           </button>
-        } @else {
-          <span class="role-hint">
-            🔒 Confirmación y modificación de prioridad reservadas al Director Operativo (DEC-04 / RN-006).
-          </span>
         }
 
         <!-- Medidas urgentes si es crítica -->
         @if (current.priority === 'CRITICA' || current.initialPriority === 'CRITICA') {
           <button class="btn btn-warning" (click)="showUrgentMeasureModal.set(true)">
             🚨 Registrar Medida Urgente
+          </button>
+        }
+
+        <!-- FLUJO DE CIERRE OPERATIVO F5 -->
+        @if (canRequestClosure()) {
+          <button
+            class="btn btn-closure-request"
+            (click)="openRequestClosureModal()"
+            [title]="hasMissingFinalEvidence() ? 'Atención: requiere evidencia final previa' : 'Solicitar visto bueno de cierre a la Dirección'"
+          >
+            🏁 Solicitar Cierre
+            @if (hasMissingFinalEvidence()) {
+              <span class="evidence-warning-badge" title="Falta evidencia en etapa FINAL">⚠️</span>
+            }
+          </button>
+        }
+
+        @if (canClose()) {
+          <button class="btn btn-success" (click)="openCloseModal()">
+            ✅ Aprobar Cierre Definitivo
+          </button>
+        }
+
+        @if (canReturn()) {
+          <button class="btn btn-warning" (click)="openReturnModal()">
+            ↩️ Devolver Solicitud
+          </button>
+        }
+
+        @if (canReopen()) {
+          <button class="btn btn-outline" (click)="openReopenModal()">
+            🔄 Reabrir Novedad
+          </button>
+        }
+
+        @if (canDiscard()) {
+          <button class="btn btn-danger" (click)="openDiscardModal()">
+            🚫 Descartar
           </button>
         }
       </div>
@@ -145,7 +179,7 @@
           </div>
         }
 
-        <!-- PESTAÑAS DE GESTIÓN OPERATIVA F4 -->
+        <!-- PESTAÑAS DE GESTIÓN OPERATIVA F4 & F5 -->
         <div class="tabs-header-nav">
           <button
             class="tab-nav-btn"
@@ -160,6 +194,13 @@
             (click)="selectTab('comentarios')"
           >
             💬 Comentarios ({{ current.comments?.length || 0 }})
+          </button>
+          <button
+            class="tab-nav-btn"
+            [class.active]="activeTab() === 'evidencias'"
+            (click)="selectTab('evidencias')"
+          >
+            📷 Evidencias ({{ current.attachments?.length || 0 }})
           </button>
           <button
             class="tab-nav-btn"
@@ -342,7 +383,102 @@
           </div>
         }
 
-        <!-- CONTENIDO PESTAÑA 3: HISTORIAL DE AUDITORÍA -->
+        <!-- CONTENIDO PESTAÑA 3: EVIDENCIAS (F4 / RF-021, RF-022) -->
+        @if (activeTab() === 'evidencias') {
+          <div class="content-card evidence-section">
+            <div class="card-header-flex">
+              <div>
+                <h2 class="card-title">Evidencias y Adjuntos Operativos</h2>
+                <p class="section-subtitle">
+                  Almacenamiento seguro y privado con integridad criptográfica SHA-256 e inspección MIME real (PROVISIONAL_FILE_POLICY).
+                </p>
+              </div>
+              <button class="btn btn-primary btn-sm" (click)="openUploadEvidenceModal()">
+                + Adjuntar Evidencia
+              </button>
+            </div>
+
+            <!-- Requisito de Evidencia Final según Categoría (CP-12 / RF-023) -->
+            @if (current.category?.requiresEvidence) {
+              @if (hasMissingFinalEvidence()) {
+                <div class="evidence-requirement-banner warning">
+                  <span class="banner-icon">⚠️</span>
+                  <div>
+                    <strong>Requisito Obligatorio de Cierre (CP-12 / RF-023):</strong>
+                    Esta categoría (<em>{{ current.category?.name }}</em>) exige al menos un archivo en etapa <strong>FINAL</strong> para poder solicitar o confirmar el cierre.
+                  </div>
+                </div>
+              } @else {
+                <div class="evidence-requirement-banner success">
+                  <span class="banner-icon">✅</span>
+                  <div>
+                    <strong>Requisito Cumplido:</strong> Se ha aportado evidencia en etapa <strong>FINAL</strong> para el cierre de esta novedad.
+                  </div>
+                </div>
+              }
+            } @else {
+              <div class="evidence-requirement-banner info">
+                <span class="banner-icon">ℹ️</span>
+                <div>
+                  Esta categoría (<em>{{ current.category?.name }}</em>) es administrativa y no exige evidencia final mandatoria para el cierre.
+                </div>
+              </div>
+            }
+
+            @if (!current.attachments || current.attachments.length === 0) {
+              <div class="empty-state-box">
+                <p class="empty-text">No hay evidencias ni documentos adjuntos en esta novedad.</p>
+                <button class="btn btn-outline btn-sm" (click)="openUploadEvidenceModal()">
+                  Adjuntar la primera evidencia
+                </button>
+              </div>
+            } @else {
+              <div class="attachments-grid">
+                @for (att of current.attachments; track att.id) {
+                  <div class="attachment-card stage-border-{{ att.stage.toLowerCase() }}">
+                    <div class="attachment-header">
+                      <span class="stage-badge stage-{{ att.stage.toLowerCase() }}">
+                        {{ att.stage }}
+                      </span>
+                      <span class="file-size-badge">{{ formatFileSize(att.fileSize) }}</span>
+                    </div>
+
+                    <div class="attachment-body">
+                      <div class="file-title-group">
+                        <span class="file-icon">📄</span>
+                        <div class="file-info-col">
+                          <span class="file-name" [title]="att.fileName">{{ att.fileName }}</span>
+                          <span class="file-mime">{{ att.mimeType }}</span>
+                        </div>
+                      </div>
+
+                      @if (att.activity) {
+                        <div class="attachment-activity-tag">
+                          📋 Actividad: {{ att.activity.title }}
+                        </div>
+                      }
+                    </div>
+
+                    <div class="attachment-footer">
+                      <div class="uploader-details">
+                        <span class="uploader-name">
+                          👤 {{ att.uploadedBy?.firstName }} {{ att.uploadedBy?.lastName }}
+                        </span>
+                        <span class="upload-date">{{ att.createdAt | date:'short' }}</span>
+                      </div>
+
+                      <button class="btn-download" (click)="downloadEvidence(att)" title="Descargar archivo original">
+                        📥 Descargar
+                      </button>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        <!-- CONTENIDO PESTAÑA 4: HISTORIAL DE AUDITORÍA -->
         @if (activeTab() === 'historial') {
           <div class="content-card">
             <h2 class="card-title">Historial Cronológico de Auditoría (RF-026)</h2>
@@ -646,6 +782,265 @@
             <button class="btn btn-secondary" (click)="showReassignActivityModal.set(false)">Cancelar</button>
             <button class="btn btn-primary" [disabled]="actionLoading() || !reassignActivityUserId" (click)="submitReassignActivity()">
               {{ actionLoading() ? 'Reasignando...' : 'Reasignar Actividad' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- MODAL 7: Adjuntar Evidencia (F4 / RF-021 / PROVISIONAL_FILE_POLICY) -->
+    @if (showUploadEvidenceModal()) {
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>📷 Adjuntar Evidencia Documental</h3>
+            <button class="modal-close" (click)="showUploadEvidenceModal.set(false)">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">
+              Almacenamiento seguro y privado con validación de integridad SHA-256 e inspección MIME real (JPG, PNG, WEBP, PDF, TXT, DOCX).
+            </p>
+
+            <div class="form-group">
+              <label>Seleccionar Archivo (Máx 15MB) *</label>
+              <input
+                type="file"
+                class="form-control"
+                (change)="onFileSelected($event)"
+                accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              />
+              @if (selectedFile) {
+                <span class="file-chosen-info">
+                  📄 {{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})
+                </span>
+              }
+            </div>
+
+            <div class="form-group">
+              <label>Etapa de la Evidencia (RF-022) *</label>
+              <select [(ngModel)]="selectedEvidenceStage" class="form-control">
+                <option value="INICIAL">Etapa INICIAL (Diagnóstico / Estado previo)</option>
+                <option value="EJECUCION">Etapa EJECUCIÓN (Trabajo en proceso / Avance)</option>
+                <option value="FINAL">Etapa FINAL (Resultado terminado / Requisito de cierre)</option>
+                <option value="SOPORTE">Etapa SOPORTE (Facturas, cotizaciones, actas)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Vincular a Actividad (opcional):</label>
+              <select [(ngModel)]="selectedEvidenceActivityId" class="form-control">
+                <option value="">General (Sin actividad específica)</option>
+                @for (act of current.activities || []; track act.id) {
+                  <option [value]="act.id">📋 {{ act.title }}</option>
+                }
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="showUploadEvidenceModal.set(false)">Cancelar</button>
+            <button
+              class="btn btn-primary"
+              [disabled]="actionLoading() || !selectedFile"
+              (click)="submitUploadEvidence()"
+            >
+              {{ actionLoading() ? 'Subiendo y verificando...' : 'Subir Evidencia' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- MODAL 8: Solicitar Cierre Operativo (F5 / RF-023 / CP-12 / CP-13) -->
+    @if (showRequestClosureModal()) {
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Solicitar Cierre Operativo</h3>
+            <button class="modal-close" (click)="showRequestClosureModal.set(false)">✕</button>
+          </div>
+          <div class="modal-body">
+            @if (hasMissingFinalEvidence()) {
+              <div class="alert-box error">
+                <span class="alert-icon">⚠️</span>
+                <div>
+                  <strong>Requisito Bloqueante (CP-12 / RF-023):</strong> La categoría <em>{{ current.category?.name }}</em> exige al menos una evidencia en etapa <strong>FINAL</strong> antes de permitir el cierre.
+                </div>
+              </div>
+            } @else {
+              <p class="modal-desc">
+                La solicitud enviará la novedad a estado <strong>PENDIENTE_CIERRE</strong> y notificará a la Dirección Operativa para verificación y visto bueno definitivo (RF-024).
+              </p>
+            }
+
+            <div class="form-group">
+              <label>Notas o Conclusiones de Cierre (opcional):</label>
+              <textarea
+                [(ngModel)]="closureNotes"
+                rows="4"
+                class="form-control"
+                placeholder="Detalle el trabajo final realizado, recomendaciones de mantenimiento o resultados..."
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="showRequestClosureModal.set(false)">Cancelar</button>
+            <button
+              class="btn btn-primary"
+              [disabled]="actionLoading() || hasMissingFinalEvidence()"
+              (click)="submitRequestClosure()"
+            >
+              {{ actionLoading() ? 'Enviando...' : 'Enviar Solicitud de Cierre' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- MODAL 9: Cierre Definitivo / Verificación (F5 / RF-024 / CP-14) -->
+    @if (showCloseModal()) {
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Aprobar Cierre Definitivo</h3>
+            <button class="modal-close" (click)="showCloseModal.set(false)">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">
+              Como Director Operativo, confirme que los trabajos ejecutados y las evidencias aportadas cumplen a cabalidad con los estándares técnicos y de calidad exigidos (RF-024).
+            </p>
+
+            <div class="form-group">
+              <label>Observaciones de Verificación y Cierre (opcional):</label>
+              <textarea
+                [(ngModel)]="closureObservations"
+                rows="4"
+                class="form-control"
+                placeholder="Ingrese sus observaciones de verificación, visto bueno técnico o felicitaciones..."
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="showCloseModal.set(false)">Cancelar</button>
+            <button
+              class="btn btn-success"
+              [disabled]="actionLoading()"
+              (click)="submitClose()"
+            >
+              {{ actionLoading() ? 'Verificando y cerrando...' : '✅ Confirmar Cierre Definitivo' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- MODAL 10: Devolver con Observaciones (F5 / RF-025 / CP-15) -->
+    @if (showReturnModal()) {
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Devolver Solicitud con Observaciones</h3>
+            <button class="modal-close" (click)="showReturnModal.set(false)">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">
+              Devuelve la novedad a estado <strong>EN_ATENCION</strong> indicando al responsable las correcciones requeridas antes de poder cerrarla (RF-025 / CP-15).
+            </p>
+
+            <div class="form-group">
+              <label>Motivo Obligatorio de Devolución *</label>
+              <textarea
+                [(ngModel)]="returnReason"
+                rows="4"
+                class="form-control"
+                placeholder="Detalle de forma precisa qué falta por subsanar, qué evidencia corregir o qué trabajo requiere revisión..."
+                required
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="showReturnModal.set(false)">Cancelar</button>
+            <button
+              class="btn btn-warning"
+              [disabled]="actionLoading() || !returnReason.trim()"
+              (click)="submitReturn()"
+            >
+              {{ actionLoading() ? 'Devolviendo...' : '↩️ Devolver Solicitud' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- MODAL 11: Reabrir Caso Cerrado (F5 / RF-027 / CP-16) -->
+    @if (showReopenModal()) {
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Reapertura Formal de Novedad Cerrada</h3>
+            <button class="modal-close" (click)="showReopenModal.set(false)">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">
+              Facultad exclusiva de la Dirección Operativa. Devuelve la novedad cerrada a estado <strong>EN_ATENCION</strong> con registro formal de auditoría y notificación al responsable (RF-027 / CP-16).
+            </p>
+
+            <div class="form-group">
+              <label>Motivo Obligatorio de Reapertura *</label>
+              <textarea
+                [(ngModel)]="reopenReason"
+                rows="4"
+                class="form-control"
+                placeholder="Explique las circunstancias sobrevinientes o reincidencias que justifican la reapertura formal..."
+                required
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="showReopenModal.set(false)">Cancelar</button>
+            <button
+              class="btn btn-primary"
+              [disabled]="actionLoading() || !reopenReason.trim()"
+              (click)="submitReopen()"
+            >
+              {{ actionLoading() ? 'Reabriendo...' : '🔄 Confirmar Reapertura' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- MODAL 12: Descartar Novedad (F5 / RF-028) -->
+    @if (showDiscardModal()) {
+      <div class="modal-backdrop">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Descartar Novedad</h3>
+            <button class="modal-close" (click)="showDiscardModal.set(false)">✕</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">
+              Facultad exclusiva del Director Operativo para registros iniciales improcedentes o duplicados (RF-028). La novedad pasará a estado <strong>DESCARTADA</strong>.
+            </p>
+
+            <div class="form-group">
+              <label>Motivo Obligatorio de Descarte *</label>
+              <textarea
+                [(ngModel)]="discardReason"
+                rows="4"
+                class="form-control"
+                placeholder="Explique por qué se descarta la novedad (ej: reporte duplicado, fuera de alcance contractual, falsa alarma)..."
+                required
+              ></textarea>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" (click)="showDiscardModal.set(false)">Cancelar</button>
+            <button
+              class="btn btn-danger"
+              [disabled]="actionLoading() || !discardReason.trim()"
+              (click)="submitDiscard()"
+            >
+              {{ actionLoading() ? 'Descartando...' : '🚫 Descartar Novedad' }}
             </button>
           </div>
         </div>

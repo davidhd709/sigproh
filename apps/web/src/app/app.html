@@ -121,6 +121,60 @@
           </div>
         }
 
+        <!-- Campana de Notificaciones Operativas F5 -->
+        <div class="notifications-wrapper">
+          <button
+            type="button"
+            class="notifications-bell-btn"
+            (click)="toggleNotificationsDropdown()"
+            title="Notificaciones operativas"
+          >
+            🔔
+            @if (unreadNotificationsCount() > 0) {
+              <span class="notifications-badge">{{ unreadNotificationsCount() }}</span>
+            }
+          </button>
+
+          @if (showNotificationsDropdown()) {
+            <div class="notifications-dropdown-panel">
+              <div class="notifications-dropdown-header">
+                <span class="dropdown-title">Notificaciones</span>
+                @if (unreadNotificationsCount() > 0) {
+                  <button
+                    type="button"
+                    class="btn-mark-all"
+                    (click)="markAllNotificationsAsRead()"
+                  >
+                    Marcar todas leídas
+                  </button>
+                }
+              </div>
+
+              <div class="notifications-list">
+                @if (notificationsLoading()) {
+                  <div class="notif-loading">Cargando notificaciones...</div>
+                } @else if (notifications().length === 0) {
+                  <div class="notif-empty">No tienes notificaciones recientes.</div>
+                } @else {
+                  @for (n of notifications(); track n.id) {
+                    <div
+                      class="notification-item"
+                      [class.unread]="!n.isRead"
+                      (click)="onNotificationClick(n)"
+                    >
+                      <div class="notif-item-header">
+                        <span class="notif-item-title">{{ n.title }}</span>
+                        <span class="notif-item-time">{{ n.createdAt | date:'short' }}</span>
+                      </div>
+                      <p class="notif-item-message">{{ n.message }}</p>
+                    </div>
+                  }
+                }
+              </div>
+            </div>
+          }
+        </div>
+
         @if (authService.currentUser(); as user) {
           <div class="user-chip">
             <div class="user-avatar">{{ user.firstName ? user.firstName[0] : 'U' }}</div>

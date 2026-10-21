@@ -4,13 +4,17 @@ export type IssueStatus =
   | 'REGISTRADA'
   | 'EN_REVISION'
   | 'ASIGNADA'
+  | 'EN_ATENCION'
+  | 'PENDIENTE_CIERRE'
+  | 'CERRADA'
+  | 'DESCARTADA'
   | 'EN_PROCESO'
   | 'ATENDIDA'
   | 'DEVUELTA'
   | 'VERIFICADA'
-  | 'CERRADA'
-  | 'REABIERTA'
-  | 'DESCARTADA';
+  | 'REABIERTA';
+
+export type EvidenceStage = 'INICIAL' | 'EJECUCION' | 'FINAL' | 'SOPORTE';
 
 export type IssueEventType =
   | 'CREACION'
@@ -19,17 +23,27 @@ export type IssueEventType =
   | 'REASIGNACION'
   | 'CAMBIO_PRIORIDAD'
   | 'MEDIDA_URGENTE'
+  | 'ACTIVIDAD_CREADA'
+  | 'ACTIVIDAD_ASIGNADA'
+  | 'ACTIVIDAD_REASIGNADA'
+  | 'ACTIVIDAD_ESTADO'
+  | 'COMENTARIO_AGREGADO'
+  | 'EVIDENCIA_ADJUNTADA'
+  | 'DEVOLUCION'
+  | 'SOLICITUD_CIERRE'
+  | 'CIERRE_DEFINITIVO'
+  | 'REAPERTURA'
+  | 'DESCARTE'
   | 'CAMBIO_ESTADO'
   | 'COMENTARIO'
-  | 'CIERRE'
-  | 'REAPERTURA'
-  | 'DESCARTE';
+  | 'CIERRE';
 
 export interface Category {
   id: string;
   name: string;
   scope: IssueScope;
   description?: string;
+  requiresEvidence?: boolean;
 }
 
 export interface PropertyZone {
@@ -105,10 +119,12 @@ export interface Issue {
   urgentMeasures?: string;
   createdAt: string;
   updatedAt: string;
+  closedAt?: string;
   assignments?: IssueAssignment[];
   events?: IssueEvent[];
   activities?: IssueActivity[];
   comments?: IssueComment[];
+  attachments?: IssueAttachment[];
 }
 
 export type ActivityStatus =
@@ -190,4 +206,59 @@ export interface CreateIssuePayload {
   propertyZoneId?: string;
   internalAreaId?: string;
   urgentMeasures?: string;
+}
+
+export interface IssueAttachment {
+  id: string;
+  issueId: string;
+  activityId?: string;
+  activity?: { id: string; title: string };
+  uploadedById: string;
+  uploadedBy?: UserSummary;
+  stage: EvidenceStage;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  sha256: string;
+  createdAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  organizationId: string;
+  recipientId: string;
+  issueId?: string;
+  issue?: {
+    id: string;
+    code: string;
+    title: string;
+    priority: IssuePriority;
+    status: IssueStatus;
+    scope: IssueScope;
+  };
+  title: string;
+  message: string;
+  isRead: boolean;
+  readAt?: string;
+  createdAt: string;
+}
+
+export interface RequestClosurePayload {
+  notes?: string;
+}
+
+export interface CloseIssuePayload {
+  closureObservations?: string;
+}
+
+export interface ReturnIssuePayload {
+  reason: string;
+}
+
+export interface ReopenIssuePayload {
+  reason: string;
+}
+
+export interface DiscardIssuePayload {
+  reason: string;
 }

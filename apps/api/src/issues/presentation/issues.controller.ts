@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -6,8 +7,13 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { IssueScope } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../../auth/infrastructure/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/infrastructure/guards/roles.guard';
@@ -24,6 +30,12 @@ import { CreateActivityDto } from './dto/create-activity.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 import { AssignActivityDto } from './dto/assign-activity.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { CreateAttachmentDto } from './dto/create-attachment.dto';
+import { RequestClosureDto } from './dto/request-closure.dto';
+import { CloseIssueDto } from './dto/close-issue.dto';
+import { ReturnIssueDto } from './dto/return-issue.dto';
+import { ReopenIssueDto } from './dto/reopen-issue.dto';
+import { DiscardIssueDto } from './dto/discard-issue.dto';
 
 @Controller()
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -156,6 +168,104 @@ export class IssuesController {
     @Query('scope') scope?: IssueScope,
   ) {
     return this.issuesService.listCategories(user, scope);
+  }
+
+  // --- Endpoints de Adjuntos / Evidencias (F4 / RF-021, RF-022, PEN-07) ---
+
+  @Post('issues/:id/attachments')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadAttachment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+    @Body() dto: CreateAttachmentDto,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Debe proporcionar un archivo en el campo "file"');
+    }
+    return this.issuesService.uploadAttachment(user, id, file, dto);
+  }
+
+  @Get('issues/:id/attachments')
+  async listAttachments(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query('activityId') activityId?: string,
+  ) {
+    return this.issuesService.listAttachments(user, id, activityId);
+  }
+
+  @Get('issues/:id/attachments/:attachmentId/download')
+  async downloadAttachment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, attachment } = await this.issuesService.getAttachmentFile(
+      user,
+      id,
+      attachmentId,
+    );
+
+    res.set({
+      'Content-Type': attachment.mimeType,
+      'Content-Disposition': `attachment; filename="${encodeURIComponent(attachment.fileName)}"`,
+      'Content-Length': buffer.length,
+    });
+
+    res.send(buffer);
+  }
+
+  // --- Endpoints de Cierre, Devolución, Reapertura y Descarte (F5 / RF-012, RF-023, RF-024, RF-025, RF-026, CP-12 a CP-16) ---
+
+  @Post('issues/:id/request-closure')
+  async requestClosure(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: RequestClosureDto,
+  ) {
+    return this.issuesService.requestClosure(user, id, dto);
+  }
+
+  @Post('issues/:id/close')
+  @DirectorOnly()
+  async close(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: CloseIssueDto,
+  ) {
+    return this.issuesService.close(user, id, dto);
+  }
+
+  @Post('issues/:id/return')
+  @DirectorOnly()
+  async return(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ReturnIssueDto,
+  ) {
+    return this.issuesService.return(user, id, dto);
+  }
+
+  @Post('issues/:id/reopen')
+  @DirectorOnly()
+  async reopen(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ReopenIssueDto,
+  ) {
+    return this.issuesService.reopen(user, id, dto);
+  }
+
+  @Post('issues/:id/discard')
+  @DirectorOnly()
+  async discard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: DiscardIssueDto,
+  ) {
+    return this.issuesService.discard(user, id, dto);
   }
 }
 

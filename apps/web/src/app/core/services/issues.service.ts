@@ -4,9 +4,16 @@ import { Observable } from 'rxjs';
 import {
   Category,
   CreateIssuePayload,
+  EvidenceStage,
   Issue,
+  IssueAttachment,
   IssuePriority,
   IssueScope,
+  RequestClosurePayload,
+  CloseIssuePayload,
+  ReturnIssuePayload,
+  ReopenIssuePayload,
+  DiscardIssuePayload,
 } from '../models/issue.model';
 import { getApiBaseUrl } from './auth.service';
 
@@ -183,6 +190,107 @@ export class IssuesService {
     return this.http.get<import('../models/issue.model').IssueComment[]>(
       `${this.apiUrl}/issues/${issueId}/comments`,
       { headers: this.getAuthHeaders(), params },
+    );
+  }
+
+  // --- F4 / RF-021, RF-022: Adjuntos y Evidencias ---
+
+  uploadAttachment(
+    issueId: string,
+    file: File,
+    stage: EvidenceStage = 'SOPORTE',
+    activityId?: string,
+  ): Observable<IssueAttachment> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('stage', stage);
+    if (activityId) {
+      formData.append('activityId', activityId);
+    }
+
+    return this.http.post<IssueAttachment>(
+      `${this.apiUrl}/issues/${issueId}/attachments`,
+      formData,
+      { headers: this.getAuthHeaders() },
+    );
+  }
+
+  listAttachments(
+    issueId: string,
+    activityId?: string,
+  ): Observable<IssueAttachment[]> {
+    let params = new HttpParams();
+    if (activityId) params = params.set('activityId', activityId);
+    return this.http.get<IssueAttachment[]>(
+      `${this.apiUrl}/issues/${issueId}/attachments`,
+      { headers: this.getAuthHeaders(), params },
+    );
+  }
+
+  downloadAttachment(issueId: string, attachmentId: string): Observable<Blob> {
+    return this.http.get(
+      `${this.apiUrl}/issues/${issueId}/attachments/${attachmentId}/download`,
+      {
+        headers: this.getAuthHeaders(),
+        responseType: 'blob',
+      },
+    );
+  }
+
+  // --- F5 / RF-012, RF-023, RF-024, RF-025, RF-026: Ciclo Operativo de Cierre ---
+
+  requestClosure(
+    issueId: string,
+    payload: RequestClosurePayload,
+  ): Observable<Issue> {
+    return this.http.post<Issue>(
+      `${this.apiUrl}/issues/${issueId}/request-closure`,
+      payload,
+      { headers: this.getAuthHeaders() },
+    );
+  }
+
+  closeIssue(
+    issueId: string,
+    payload: CloseIssuePayload,
+  ): Observable<Issue> {
+    return this.http.post<Issue>(
+      `${this.apiUrl}/issues/${issueId}/close`,
+      payload,
+      { headers: this.getAuthHeaders() },
+    );
+  }
+
+  returnIssue(
+    issueId: string,
+    payload: ReturnIssuePayload,
+  ): Observable<Issue> {
+    return this.http.post<Issue>(
+      `${this.apiUrl}/issues/${issueId}/return`,
+      payload,
+      { headers: this.getAuthHeaders() },
+    );
+  }
+
+  reopenIssue(
+    issueId: string,
+    payload: ReopenIssuePayload,
+  ): Observable<Issue> {
+    return this.http.post<Issue>(
+      `${this.apiUrl}/issues/${issueId}/reopen`,
+      payload,
+      { headers: this.getAuthHeaders() },
+    );
+  }
+
+  discardIssue(
+    issueId: string,
+    payload: DiscardIssuePayload,
+  ): Observable<Issue> {
+    return this.http.post<Issue>(
+      `${this.apiUrl}/issues/${issueId}/discard`,
+      payload,
+      { headers: this.getAuthHeaders() },
     );
   }
 

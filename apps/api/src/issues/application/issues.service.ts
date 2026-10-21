@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   ActivityStatus,
+  EvidenceStage,
   IssueEventType,
   IssuePriority,
   IssueScope,
@@ -16,6 +17,8 @@ import {
 import { PrismaService } from '../../shared/infrastructure/database/prisma.service';
 import { AuthenticatedUser } from '../../auth/domain/authenticated-user.type';
 import { ScopeAuthorizationService } from '../../organization/application/scope-authorization.service';
+import { PrivateStorageService } from '../infrastructure/private-storage.service';
+import { PROVISIONAL_FILE_POLICY } from '../infrastructure/provisional-file-policy.config';
 import { CreateIssueDto } from '../presentation/dto/create-issue.dto';
 import { AssignPrincipalDto } from '../presentation/dto/assign-principal.dto';
 import { UpdatePriorityDto } from '../presentation/dto/update-priority.dto';
@@ -25,12 +28,19 @@ import { CreateActivityDto } from '../presentation/dto/create-activity.dto';
 import { UpdateActivityDto } from '../presentation/dto/update-activity.dto';
 import { AssignActivityDto } from '../presentation/dto/assign-activity.dto';
 import { CreateCommentDto } from '../presentation/dto/create-comment.dto';
+import { CreateAttachmentDto } from '../presentation/dto/create-attachment.dto';
+import { RequestClosureDto } from '../presentation/dto/request-closure.dto';
+import { CloseIssueDto } from '../presentation/dto/close-issue.dto';
+import { ReturnIssueDto } from '../presentation/dto/return-issue.dto';
+import { ReopenIssueDto } from '../presentation/dto/reopen-issue.dto';
+import { DiscardIssueDto } from '../presentation/dto/discard-issue.dto';
 
 @Injectable()
 export class IssuesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scopeAuth: ScopeAuthorizationService,
+    private readonly privateStorage: PrivateStorageService,
   ) {}
 
   /**
@@ -719,6 +729,13 @@ export class IssuesService {
             activity: { select: { id: true, title: true } },
           },
           orderBy: { createdAt: 'asc' },
+        },
+        attachments: {
+          include: {
+            uploadedBy: { select: { id: true, firstName: true, lastName: true, email: true, role: true } },
+            activity: { select: { id: true, title: true } },
+          },
+          orderBy: { createdAt: 'desc' },
         },
       },
     });
@@ -1712,6 +1729,574 @@ export class IssuesService {
         },
       },
       orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  // --- GESTIÓN DE ADJUNTOS Y EVIDENCIAS (F4 / RF-021, RF-022, PEN-07) ---
+
+  async uploadAttachment(
+    user: AuthenticatedUser,
+    issueId: string,
+    file: { buffer: Buffer; originalname: string; mimetype: string },
+    dto: CreateAttachmentDto,
+  ) {
+    if (user.role === Role.ADMINISTRADOR) {
+      throw new ForbiddenException(
+        'El rol Administrador del sistema no tiene autorización para adjuntar evidencias operativas',
+      );
+    }
+
+    const issue = await this.prisma.issue.findUnique({
+      where: { id: issueId },
+    });
+
+    if (!issue || issue.organizationId !== user.organizationId) {
+      throw new NotFoundException('Novedad no encontrada');
+    }
+
+    if (issue.propertyId) {
+      await this.scopeAuth.validatePropertyAccess(user, issue.propertyId);
+    } else if (issue.internalAreaId) {
+      await this.scopeAuth.validateInternalAreaAccess(user, issue.internalAreaId);
+    }
+
+    if (issue.status === IssueStatus.CERRADA || issue.status === IssueStatus.DESCARTADA) {
+      throw new BadRequestException(
+        'No es posible adjuntar evidencias a una novedad que se encuentra cerrada o descartada',
+      );
+    }
+
+    if (dto.activityId) {
+      const activity = await this.prisma.issueActivity.findFirst({
+        where: { id: dto.activityId, issueId: issue.id },
+      });
+      if (!activity) {
+        throw new BadRequestException(
+          'La actividad especificada no pertenece a esta novedad (integridad referencial)',
+        );
+      }
+    }
+
+    const currentAttachmentCount = await this.prisma.issueAttachment.count({
+      where: { issueId: issue.id },
+    });
+    if (currentAttachmentCount >= PROVISIONAL_FILE_POLICY.maxAttachmentsPerIssue) {
+      throw new BadRequestException(
+        `Se ha alcanzado el límite máximo de ${PROVISIONAL_FILE_POLICY.maxAttachmentsPerIssue} adjuntos por novedad (PEN-07 provisional)`,
+      );
+    }
+
+    const stored = await this.privateStorage.storeFile(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+    );
+
+    const stage = dto.stage || EvidenceStage.SOPORTE;
+
+    return this.prisma.$transaction(async (tx) => {
+      const attachment = await tx.issueAttachment.create({
+        data: {
+          issueId: issue.id,
+          activityId: dto.activityId || null,
+          uploadedById: user.id,
+          stage,
+          fileName: stored.fileName,
+          fileSize: stored.fileSize,
+          mimeType: stored.mimeType,
+          sha256: stored.sha256,
+          storageKey: stored.storageKey,
+        },
+        include: {
+          uploadedBy: {
+            select: { id: true, firstName: true, lastName: true, role: true },
+          },
+          activity: {
+            select: { id: true, title: true },
+          },
+        },
+      });
+
+      await tx.issueEvent.create({
+        data: {
+          issueId: issue.id,
+          userId: user.id,
+          eventType: IssueEventType.EVIDENCIA_ADJUNTADA,
+          summary: `Evidencia adjuntada (${stage}): ${stored.fileName} (${(stored.fileSize / 1024).toFixed(1)} KB) por ${user.email}`,
+          details: {
+            attachmentId: attachment.id,
+            fileName: stored.fileName,
+            fileSize: stored.fileSize,
+            mimeType: stored.mimeType,
+            sha256: stored.sha256,
+            stage,
+            activityId: dto.activityId || null,
+          },
+        },
+      });
+
+      return attachment;
+    });
+  }
+
+  async listAttachments(
+    user: AuthenticatedUser,
+    issueId: string,
+    activityId?: string,
+  ) {
+    if (user.role === Role.ADMINISTRADOR) {
+      throw new ForbiddenException(
+        'El rol Administrador del sistema no tiene autorización para acceder a evidencias operativas',
+      );
+    }
+
+    const issue = await this.prisma.issue.findUnique({
+      where: { id: issueId },
+    });
+
+    if (!issue || issue.organizationId !== user.organizationId) {
+      throw new NotFoundException('Novedad no encontrada');
+    }
+
+    if (issue.propertyId) {
+      await this.scopeAuth.validatePropertyAccess(user, issue.propertyId);
+    } else if (issue.internalAreaId) {
+      await this.scopeAuth.validateInternalAreaAccess(user, issue.internalAreaId);
+    }
+
+    const where: any = { issueId: issue.id };
+    if (activityId) where.activityId = activityId;
+
+    return this.prisma.issueAttachment.findMany({
+      where,
+      include: {
+        uploadedBy: {
+          select: { id: true, firstName: true, lastName: true, role: true },
+        },
+        activity: {
+          select: { id: true, title: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async getAttachmentFile(
+    user: AuthenticatedUser,
+    issueId: string,
+    attachmentId: string,
+  ) {
+    if (user.role === Role.ADMINISTRADOR) {
+      throw new ForbiddenException(
+        'El rol Administrador del sistema no tiene autorización para descargar evidencias operativas',
+      );
+    }
+
+    const issue = await this.prisma.issue.findUnique({
+      where: { id: issueId },
+    });
+
+    if (!issue || issue.organizationId !== user.organizationId) {
+      throw new NotFoundException('Novedad no encontrada');
+    }
+
+    if (issue.propertyId) {
+      await this.scopeAuth.validatePropertyAccess(user, issue.propertyId);
+    } else if (issue.internalAreaId) {
+      await this.scopeAuth.validateInternalAreaAccess(user, issue.internalAreaId);
+    }
+
+    const attachment = await this.prisma.issueAttachment.findFirst({
+      where: { id: attachmentId, issueId: issue.id },
+    });
+
+    if (!attachment) {
+      throw new NotFoundException('Evidencia no encontrada para esta novedad');
+    }
+
+    const fileBuffer = await this.privateStorage.getFile(attachment.storageKey);
+
+    return {
+      buffer: fileBuffer,
+      attachment,
+    };
+  }
+
+  // --- CICLO DE CIERRE, DEVOLUCIÓN, REAPERTURA Y DESCARTE (F5 / RF-012, RF-023, RF-024, RF-025, RF-026, CP-12 a CP-16) ---
+
+  async requestClosure(
+    user: AuthenticatedUser,
+    issueId: string,
+    dto: RequestClosureDto,
+  ) {
+    if (user.role === Role.ADMINISTRADOR) {
+      throw new ForbiddenException(
+        'El rol Administrador del sistema no tiene autorización para gestionar cierres operativos',
+      );
+    }
+
+    const issue = await this.prisma.issue.findUnique({
+      where: { id: issueId },
+      include: {
+        category: true,
+        activities: true,
+        attachments: true,
+      },
+    });
+
+    if (!issue || issue.organizationId !== user.organizationId) {
+      throw new NotFoundException('Novedad no encontrada');
+    }
+
+    if (issue.propertyId) {
+      await this.scopeAuth.validatePropertyAccess(user, issue.propertyId);
+    } else if (issue.internalAreaId) {
+      await this.scopeAuth.validateInternalAreaAccess(user, issue.internalAreaId);
+    }
+
+    const isDirector = user.role === Role.DIRECTOR_OPERATIVO;
+    const isAssignedLead = issue.assignedUserId === user.id;
+
+    if (!isDirector && !isAssignedLead) {
+      throw new ForbiddenException(
+        'Solo el responsable principal asignado o el Director Operativo pueden solicitar el cierre de la novedad (RF-024)',
+      );
+    }
+
+    if (
+      issue.status !== IssueStatus.ASIGNADA &&
+      issue.status !== IssueStatus.EN_ATENCION
+    ) {
+      throw new BadRequestException(
+        `No es posible solicitar el cierre de una novedad en estado ${issue.status}. Debe estar ASIGNADA o EN_ATENCION`,
+      );
+    }
+
+    const pendingActivities = issue.activities.filter(
+      (a) =>
+        a.status === ActivityStatus.PENDIENTE ||
+        a.status === ActivityStatus.EN_CURSO ||
+        a.status === ActivityStatus.BLOQUEADA,
+    );
+
+    if (pendingActivities.length > 0) {
+      throw new BadRequestException(
+        `Todas las actividades de la novedad deben estar completadas o canceladas antes de solicitar el cierre (${pendingActivities.length} actividad(es) pendiente(s)) (RF-018)`,
+      );
+    }
+
+    if (issue.category.requiresEvidence) {
+      const hasFinalEvidence = issue.attachments.some(
+        (att) => att.stage === EvidenceStage.FINAL,
+      );
+      if (!hasFinalEvidence) {
+        throw new BadRequestException(
+          'La categoría exige evidencia en etapa FINAL antes de solicitar el cierre (CP-12 / RF-023)',
+        );
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedIssue = await tx.issue.update({
+        where: { id: issue.id },
+        data: {
+          status: IssueStatus.PENDIENTE_CIERRE,
+        },
+      });
+
+      await tx.issueEvent.create({
+        data: {
+          issueId: issue.id,
+          userId: user.id,
+          eventType: IssueEventType.SOLICITUD_CIERRE,
+          summary: `Solicitud de cierre registrada por ${user.email}`,
+          details: {
+            notes: dto.notes || null,
+            requestedBy: user.id,
+          },
+        },
+      });
+
+      const directors = await tx.user.findMany({
+        where: {
+          organizationId: user.organizationId,
+          role: Role.DIRECTOR_OPERATIVO,
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      for (const director of directors) {
+        await tx.notification.create({
+          data: {
+            organizationId: user.organizationId,
+            recipientId: director.id,
+            issueId: issue.id,
+            title: `Solicitud de cierre pendiente: ${issue.code}`,
+            message: `El responsable ${user.email} ha solicitado verificar y cerrar la novedad ${issue.code}.`,
+          },
+        });
+      }
+
+      return updatedIssue;
+    });
+  }
+
+  async close(user: AuthenticatedUser, issueId: string, dto: CloseIssueDto) {
+    if (user.role !== Role.DIRECTOR_OPERATIVO) {
+      throw new ForbiddenException(
+        'Únicamente el Director Operativo tiene autorización para cerrar definitivamente una novedad (RF-025 / CP-14)',
+      );
+    }
+
+    const issue = await this.prisma.issue.findUnique({
+      where: { id: issueId },
+    });
+
+    if (!issue || issue.organizationId !== user.organizationId) {
+      throw new NotFoundException('Novedad no encontrada');
+    }
+
+    if (
+      issue.status !== IssueStatus.PENDIENTE_CIERRE &&
+      issue.status !== IssueStatus.EN_ATENCION &&
+      issue.status !== IssueStatus.ASIGNADA
+    ) {
+      throw new BadRequestException(
+        `No es posible cerrar definitivamente una novedad en estado ${issue.status}`,
+      );
+    }
+
+    const now = new Date();
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedIssue = await tx.issue.update({
+        where: { id: issue.id },
+        data: {
+          status: IssueStatus.CERRADA,
+          closedAt: now,
+        },
+      });
+
+      await tx.issueEvent.create({
+        data: {
+          issueId: issue.id,
+          userId: user.id,
+          eventType: IssueEventType.CIERRE_DEFINITIVO,
+          summary: `Cierre definitivo verificado y aprobado por el Director Operativo (${user.email})`,
+          details: {
+            observations: dto.closureObservations || null,
+            closedAt: now.toISOString(),
+          },
+        },
+      });
+
+      const recipients = new Set<string>();
+      if (issue.assignedUserId && issue.assignedUserId !== user.id) {
+        recipients.add(issue.assignedUserId);
+      }
+      if (issue.createdById && issue.createdById !== user.id) {
+        recipients.add(issue.createdById);
+      }
+
+      for (const recipientId of recipients) {
+        await tx.notification.create({
+          data: {
+            organizationId: user.organizationId,
+            recipientId,
+            issueId: issue.id,
+            title: `Novedad cerrada: ${issue.code}`,
+            message: `La novedad ${issue.code} ha sido cerrada formalmente por la Dirección Operativa.`,
+          },
+        });
+      }
+
+      return updatedIssue;
+    });
+  }
+
+  async return(user: AuthenticatedUser, issueId: string, dto: ReturnIssueDto) {
+    if (user.role !== Role.DIRECTOR_OPERATIVO) {
+      throw new ForbiddenException(
+        'Únicamente el Director Operativo tiene autorización para devolver una solicitud de cierre (RF-025)',
+      );
+    }
+
+    const issue = await this.prisma.issue.findUnique({
+      where: { id: issueId },
+    });
+
+    if (!issue || issue.organizationId !== user.organizationId) {
+      throw new NotFoundException('Novedad no encontrada');
+    }
+
+    if (
+      issue.status !== IssueStatus.PENDIENTE_CIERRE &&
+      issue.status !== IssueStatus.EN_REVISION
+    ) {
+      throw new BadRequestException(
+        `Solo es posible devolver novedades en estado PENDIENTE_CIERRE o EN_REVISION (estado actual: ${issue.status})`,
+      );
+    }
+
+    const newStatus =
+      issue.status === IssueStatus.PENDIENTE_CIERRE
+        ? IssueStatus.EN_ATENCION
+        : IssueStatus.REGISTRADA;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedIssue = await tx.issue.update({
+        where: { id: issue.id },
+        data: { status: newStatus },
+      });
+
+      await tx.issueEvent.create({
+        data: {
+          issueId: issue.id,
+          userId: user.id,
+          eventType: IssueEventType.DEVOLUCION,
+          summary: `Devolución de novedad por la Dirección Operativa: ${dto.reason}`,
+          details: {
+            reason: dto.reason,
+            previousStatus: issue.status,
+            newStatus,
+          },
+        },
+      });
+
+      if (issue.assignedUserId && issue.assignedUserId !== user.id) {
+        await tx.notification.create({
+          data: {
+            organizationId: user.organizationId,
+            recipientId: issue.assignedUserId,
+            issueId: issue.id,
+            title: `Devolución de novedad: ${issue.code}`,
+            message: `La solicitud de cierre de la novedad ${issue.code} ha sido devuelta. Motivo: ${dto.reason}`,
+          },
+        });
+      }
+
+      return updatedIssue;
+    });
+  }
+
+  async reopen(user: AuthenticatedUser, issueId: string, dto: ReopenIssueDto) {
+    if (user.role !== Role.DIRECTOR_OPERATIVO) {
+      throw new ForbiddenException(
+        'Únicamente el Director Operativo tiene autorización para reabrir novedades cerradas (RF-025 / CP-16)',
+      );
+    }
+
+    const issue = await this.prisma.issue.findUnique({
+      where: { id: issueId },
+    });
+
+    if (!issue || issue.organizationId !== user.organizationId) {
+      throw new NotFoundException('Novedad no encontrada');
+    }
+
+    if (issue.status !== IssueStatus.CERRADA) {
+      throw new BadRequestException(
+        `Solo es posible reabrir novedades que se encuentren en estado CERRADA (estado actual: ${issue.status}) (CP-16)`,
+      );
+    }
+
+    const previousClosedAt = issue.closedAt;
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedIssue = await tx.issue.update({
+        where: { id: issue.id },
+        data: {
+          status: IssueStatus.EN_ATENCION,
+          closedAt: null,
+        },
+      });
+
+      await tx.issueEvent.create({
+        data: {
+          issueId: issue.id,
+          userId: user.id,
+          eventType: IssueEventType.REAPERTURA,
+          summary: `Reapertura de novedad por la Dirección Operativa: ${dto.reason}`,
+          details: {
+            reason: dto.reason,
+            previousClosedAt: previousClosedAt ? previousClosedAt.toISOString() : null,
+          },
+        },
+      });
+
+      if (issue.assignedUserId && issue.assignedUserId !== user.id) {
+        await tx.notification.create({
+          data: {
+            organizationId: user.organizationId,
+            recipientId: issue.assignedUserId,
+            issueId: issue.id,
+            title: `Reapertura de novedad: ${issue.code}`,
+            message: `La novedad ${issue.code} ha sido reabierta por la Dirección Operativa. Motivo: ${dto.reason}`,
+          },
+        });
+      }
+
+      return updatedIssue;
+    });
+  }
+
+  async discard(user: AuthenticatedUser, issueId: string, dto: DiscardIssueDto) {
+    if (user.role !== Role.DIRECTOR_OPERATIVO) {
+      throw new ForbiddenException(
+        'Únicamente el Director Operativo tiene autorización para descartar novedades (RF-012 / PEN-13)',
+      );
+    }
+
+    const issue = await this.prisma.issue.findUnique({
+      where: { id: issueId },
+    });
+
+    if (!issue || issue.organizationId !== user.organizationId) {
+      throw new NotFoundException('Novedad no encontrada');
+    }
+
+    if (
+      issue.status !== IssueStatus.REGISTRADA &&
+      issue.status !== IssueStatus.EN_REVISION
+    ) {
+      throw new BadRequestException(
+        `Solo es posible descartar novedades en estado REGISTRADA o EN_REVISION (estado actual: ${issue.status})`,
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedIssue = await tx.issue.update({
+        where: { id: issue.id },
+        data: { status: IssueStatus.DESCARTADA },
+      });
+
+      await tx.issueEvent.create({
+        data: {
+          issueId: issue.id,
+          userId: user.id,
+          eventType: IssueEventType.DESCARTE,
+          summary: `Novedad descartada por la Dirección Operativa: ${dto.reason}`,
+          details: {
+            reason: dto.reason,
+            previousStatus: issue.status,
+          },
+        },
+      });
+
+      if (issue.createdById && issue.createdById !== user.id) {
+        await tx.notification.create({
+          data: {
+            organizationId: user.organizationId,
+            recipientId: issue.createdById,
+            issueId: issue.id,
+            title: `Novedad descartada: ${issue.code}`,
+            message: `La novedad ${issue.code} ha sido descartada. Motivo: ${dto.reason}`,
+          },
+        });
+      }
+
+      return updatedIssue;
     });
   }
 }

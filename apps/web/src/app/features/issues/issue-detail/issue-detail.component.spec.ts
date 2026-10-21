@@ -23,6 +23,14 @@ describe('IssueDetailComponent', () => {
       updateActivity: vi.fn(),
       assignActivity: vi.fn(),
       createComment: vi.fn(),
+      uploadAttachment: vi.fn(),
+      listAttachments: vi.fn().mockReturnValue(of([])),
+      downloadAttachment: vi.fn(),
+      requestClosure: vi.fn(),
+      closeIssue: vi.fn(),
+      returnIssue: vi.fn(),
+      reopenIssue: vi.fn(),
+      discardIssue: vi.fn(),
     };
 
     mockAuthService = {
@@ -259,6 +267,205 @@ describe('IssueDetailComponent', () => {
     expect(mockIssuesService.getCandidates).toHaveBeenCalledWith('issue-300');
     expect(component.candidates()).toHaveLength(1);
     expect(component.activeTab()).toBe('comentarios');
+  });
+
+  describe('F4: Evidencias y Adjuntos (RF-021, RF-022)', () => {
+    it('debe rechazar la subida si no hay un archivo seleccionado', () => {
+      const mockIssue: any = { id: 'issue-400', code: 'NOV-2026-0080' };
+      component.issue.set(mockIssue);
+      component.selectedFile = null;
+
+      component.submitUploadEvidence();
+
+      expect(component.errorMessage()).toContain('Debe seleccionar un archivo válido');
+      expect(mockIssuesService.uploadAttachment).not.toHaveBeenCalled();
+    });
+
+    it('debe subir la evidencia con la etapa seleccionada y recargar la novedad', () => {
+      const mockIssue: any = { id: 'issue-400', code: 'NOV-2026-0080' };
+      component.issue.set(mockIssue);
+      const testFile = new File(['dummy content'], 'reporte.pdf', { type: 'application/pdf' });
+      component.selectedFile = testFile;
+      component.selectedEvidenceStage = 'FINAL';
+      component.selectedEvidenceActivityId = 'act-1';
+
+      mockIssuesService.uploadAttachment.mockReturnValue(
+        of({ id: 'att-1', fileName: 'reporte.pdf', stage: 'FINAL' }),
+      );
+      mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
+
+      component.submitUploadEvidence();
+
+      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith(
+        'issue-400',
+        testFile,
+        'FINAL',
+        'act-1',
+      );
+      expect(component.successMessage()).toContain('Evidencia adjuntada exitosamente');
+      expect(component.selectedFile).toBeNull();
+      expect(mockIssuesService.getIssueById).toHaveBeenCalledWith('issue-400');
+    });
+
+    it('debe invocar downloadAttachment al solicitar descarga', () => {
+      const mockIssue: any = { id: 'issue-400', code: 'NOV-2026-0080' };
+      component.issue.set(mockIssue);
+      const att: any = { id: 'att-10', fileName: 'foto.jpg', stage: 'INICIAL', fileSize: 1024 };
+
+      const blob = new Blob(['image data'], { type: 'image/jpeg' });
+      mockIssuesService.downloadAttachment.mockReturnValue(of(blob));
+
+      // Mock DOM methods used in downloadEvidence
+      const mockCreateObjectURL = vi.fn().mockReturnValue('blob:http://localhost/test');
+      const mockRevokeObjectURL = vi.fn();
+      window.URL.createObjectURL = mockCreateObjectURL;
+      window.URL.revokeObjectURL = mockRevokeObjectURL;
+
+      component.downloadEvidence(att);
+
+      expect(mockIssuesService.downloadAttachment).toHaveBeenCalledWith('issue-400', 'att-10');
+      expect(mockCreateObjectURL).toHaveBeenCalledWith(blob);
+    });
+  });
+
+  describe('F5: Cierre Operativo, Verificación, Devolución, Reapertura y Descarte', () => {
+    it('hasMissingFinalEvidence retorna true si la categoría exige evidencia y no hay FINAL', () => {
+      const mockIssue: any = {
+        id: 'issue-500',
+        category: { name: 'Mantenimiento Correctivo', requiresEvidence: true },
+        attachments: [
+          { id: 'att-1', stage: 'INICIAL' },
+          { id: 'att-2', stage: 'EJECUCION' },
+        ],
+      };
+      component.issue.set(mockIssue);
+
+      expect(component.hasMissingFinalEvidence()).toBe(true);
+
+      // Si se agrega una evidencia FINAL
+      mockIssue.attachments.push({ id: 'att-3', stage: 'FINAL' });
+      component.issue.set({ ...mockIssue });
+      expect(component.hasMissingFinalEvidence()).toBe(false);
+    });
+
+    it('hasMissingFinalEvidence retorna false si la categoría NO exige evidencia', () => {
+      const mockIssue: any = {
+        id: 'issue-501',
+        category: { name: 'Gestión Administrativa', requiresEvidence: false },
+        attachments: [],
+      };
+      component.issue.set(mockIssue);
+
+      expect(component.hasMissingFinalEvidence()).toBe(false);
+    });
+
+    it('solicitar cierre invoca requestClosure y actualiza la novedad', () => {
+      const mockIssue: any = { id: 'issue-502', status: 'EN_ATENCION' };
+      component.issue.set(mockIssue);
+      component.closureNotes = 'Trabajo terminado satisfactoriamente';
+
+      mockIssuesService.requestClosure.mockReturnValue(
+        of({ id: 'issue-502', status: 'PENDIENTE_CIERRE' }),
+      );
+      mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
+
+      component.submitRequestClosure();
+
+      expect(mockIssuesService.requestClosure).toHaveBeenCalledWith('issue-502', {
+        notes: 'Trabajo terminado satisfactoriamente',
+      });
+      expect(component.successMessage()).toContain('Solicitud de cierre enviada a la Dirección');
+      expect(component.showRequestClosureModal()).toBe(false);
+    });
+
+    it('aprobar cierre definitivo como Director invoca closeIssue', () => {
+      const mockIssue: any = { id: 'issue-503', status: 'PENDIENTE_CIERRE' };
+      component.issue.set(mockIssue);
+      component.closureObservations = 'Verificado en campo a conformidad';
+
+      mockIssuesService.closeIssue.mockReturnValue(
+        of({ id: 'issue-503', status: 'CERRADA' }),
+      );
+      mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
+
+      component.submitClose();
+
+      expect(mockIssuesService.closeIssue).toHaveBeenCalledWith('issue-503', {
+        closureObservations: 'Verificado en campo a conformidad',
+      });
+      expect(component.successMessage()).toContain('Novedad cerrada definitivamente');
+    });
+
+    it('devolver novedad exige motivo obligatorio e invoca returnIssue', () => {
+      const mockIssue: any = { id: 'issue-504', status: 'PENDIENTE_CIERRE' };
+      component.issue.set(mockIssue);
+
+      // Sin motivo
+      component.returnReason = '   ';
+      component.submitReturn();
+      expect(component.errorMessage()).toContain('El motivo de devolución es obligatorio');
+      expect(mockIssuesService.returnIssue).not.toHaveBeenCalled();
+
+      // Con motivo
+      component.returnReason = 'Falta ajustar la tornillería';
+      mockIssuesService.returnIssue.mockReturnValue(
+        of({ id: 'issue-504', status: 'EN_ATENCION' }),
+      );
+      mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
+
+      component.submitReturn();
+
+      expect(mockIssuesService.returnIssue).toHaveBeenCalledWith('issue-504', {
+        reason: 'Falta ajustar la tornillería',
+      });
+      expect(component.successMessage()).toContain('Solicitud devuelta al responsable');
+    });
+
+    it('reabrir novedad cerrada exige motivo obligatorio e invoca reopenIssue', () => {
+      const mockIssue: any = { id: 'issue-505', status: 'CERRADA' };
+      component.issue.set(mockIssue);
+
+      component.reopenReason = ' ';
+      component.submitReopen();
+      expect(component.errorMessage()).toContain('El motivo de reapertura es obligatorio');
+      expect(mockIssuesService.reopenIssue).not.toHaveBeenCalled();
+
+      component.reopenReason = 'Reincidencia de fuga de agua';
+      mockIssuesService.reopenIssue.mockReturnValue(
+        of({ id: 'issue-505', status: 'EN_ATENCION' }),
+      );
+      mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
+
+      component.submitReopen();
+
+      expect(mockIssuesService.reopenIssue).toHaveBeenCalledWith('issue-505', {
+        reason: 'Reincidencia de fuga de agua',
+      });
+      expect(component.successMessage()).toContain('Novedad reabierta formalmente');
+    });
+
+    it('descartar novedad exige motivo obligatorio e invoca discardIssue', () => {
+      const mockIssue: any = { id: 'issue-506', status: 'REGISTRADA' };
+      component.issue.set(mockIssue);
+
+      component.discardReason = '';
+      component.submitDiscard();
+      expect(component.errorMessage()).toContain('El motivo de descarte es obligatorio');
+      expect(mockIssuesService.discardIssue).not.toHaveBeenCalled();
+
+      component.discardReason = 'Reporte duplicado de la novedad NOV-2026-0001';
+      mockIssuesService.discardIssue.mockReturnValue(
+        of({ id: 'issue-506', status: 'DESCARTADA' }),
+      );
+      mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
+
+      component.submitDiscard();
+
+      expect(mockIssuesService.discardIssue).toHaveBeenCalledWith('issue-506', {
+        reason: 'Reporte duplicado de la novedad NOV-2026-0001',
+      });
+      expect(component.successMessage()).toContain('Novedad descartada formalmente');
+    });
   });
 });
 

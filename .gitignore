@@ -29,3 +29,7 @@ apps/api/.agents/
 apps/api/.claude/
 apps/api/.windsurf/
 apps/api/skills-lock.json
+
+# Storage & Uploads
+apps/api/uploads/*
+!apps/api/uploads/.gitkeep

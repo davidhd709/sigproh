@@ -1,8 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, effect } from '@angular/core';
 import { RouterModule, RouterOutlet, Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService, AvailableAccount } from './core/services/auth.service';
+import { NotificationsService } from './core/services/notifications.service';
+import { AppNotification } from './core/models/issue.model';
 
 @Component({
   imports: [CommonModule, RouterModule, RouterOutlet, FormsModule],
@@ -12,6 +14,7 @@ import { AuthService, AvailableAccount } from './core/services/auth.service';
 })
 export class App {
   readonly authService = inject(AuthService);
+  readonly notificationsService = inject(NotificationsService);
   private readonly router = inject(Router);
 
   // Formulario de credenciales auténticas
@@ -19,6 +22,82 @@ export class App {
   loginPassword = '';
   readonly loginSubmitting = signal<boolean>(false);
   readonly loginError = signal<string | null>(null);
+
+  // In-app Notifications State
+  readonly unreadNotificationsCount = signal<number>(0);
+  readonly notifications = signal<AppNotification[]>([]);
+  readonly showNotificationsDropdown = signal<boolean>(false);
+  readonly notificationsLoading = signal<boolean>(false);
+
+  constructor() {
+    effect(() => {
+      const user = this.authService.currentUser();
+      if (user) {
+        this.refreshNotifications();
+      } else {
+        this.notifications.set([]);
+        this.unreadNotificationsCount.set(0);
+        this.showNotificationsDropdown.set(false);
+      }
+    });
+  }
+
+  refreshNotifications(): void {
+    this.notificationsLoading.set(true);
+    this.notificationsService.getUnreadCount().subscribe({
+      next: (res) => {
+        this.unreadNotificationsCount.set(res.unreadCount);
+      },
+      error: () => {},
+    });
+
+    this.notificationsService.getNotifications(false).subscribe({
+      next: (items) => {
+        this.notifications.set(items);
+        this.notificationsLoading.set(false);
+      },
+      error: () => {
+        this.notificationsLoading.set(false);
+      },
+    });
+  }
+
+  toggleNotificationsDropdown(): void {
+    const next = !this.showNotificationsDropdown();
+    this.showNotificationsDropdown.set(next);
+    if (next) {
+      this.refreshNotifications();
+    }
+  }
+
+  onNotificationClick(notif: AppNotification): void {
+    if (!notif.isRead) {
+      this.notificationsService.markAsRead(notif.id).subscribe({
+        next: () => {
+          this.unreadNotificationsCount.update((c) => Math.max(0, c - 1));
+          this.notifications.update((list) =>
+            list.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n)),
+          );
+        },
+      });
+    }
+
+    this.showNotificationsDropdown.set(false);
+    if (notif.issueId) {
+      this.router.navigate(['/issues', notif.issueId]);
+    }
+  }
+
+  markAllNotificationsAsRead(): void {
+    this.notificationsService.markAllAsRead().subscribe({
+      next: () => {
+        this.unreadNotificationsCount.set(0);
+        this.notifications.update((list) =>
+          list.map((n) => ({ ...n, isRead: true })),
+        );
+      },
+    });
+  }
 
   onAccountChange(newEmail: string): void {
     if (!newEmail) return;

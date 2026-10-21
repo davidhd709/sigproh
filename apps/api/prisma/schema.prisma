@@ -238,6 +238,7 @@ model Category {
   scope          IssueScope
   name           String
   description    String?
+  requiresEvidence Boolean    @default(true)
   isActive       Boolean    @default(true)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt

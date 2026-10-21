@@ -262,30 +262,42 @@ async function main(): Promise<void> {
       scope: 'PROPIEDAD' as const,
       name: 'Mantenimiento Locativo',
       description: 'Reparaciones locativas, pintura, albañilería',
+      requiresEvidence: true,
     },
     {
       id: '00000000-0000-0000-0000-000000000041',
       scope: 'PROPIEDAD' as const,
       name: 'Equipos y Maquinaria',
       description: 'Ascensores, motobombas, plantas eléctricas',
+      requiresEvidence: true,
     },
     {
       id: '00000000-0000-0000-0000-000000000042',
       scope: 'PROPIEDAD' as const,
       name: 'Seguridad y Accesos',
       description: 'Puertas vehiculares, cámaras, citofonía',
+      requiresEvidence: true,
     },
     {
       id: '00000000-0000-0000-0000-000000000043',
       scope: 'INTERNA' as const,
       name: 'Gestión Operativa',
       description: 'Novedades internas operativas de EG S.A.S.',
+      requiresEvidence: true,
     },
     {
       id: '00000000-0000-0000-0000-000000000044',
       scope: 'INTERNA' as const,
       name: 'Tecnología y Sistemas',
       description: 'Equipos de cómputo, redes y software',
+      requiresEvidence: true,
+    },
+    {
+      id: '00000000-0000-0000-0000-000000000045',
+      scope: 'PROPIEDAD' as const,
+      name: 'Gestión Administrativa',
+      description: 'Comunicaciones, avisos o circulares que no requieren evidencia física de cierre',
+      requiresEvidence: false,
     },
   ];
 
@@ -298,13 +310,18 @@ async function main(): Promise<void> {
           name: cat.name,
         },
       },
-      update: { description: cat.description, isActive: true },
+      update: {
+        description: cat.description,
+        requiresEvidence: cat.requiresEvidence,
+        isActive: true,
+      },
       create: {
         id: cat.id,
         organizationId: organization.id,
         scope: cat.scope,
         name: cat.name,
         description: cat.description,
+        requiresEvidence: cat.requiresEvidence,
         isActive: true,
       },
     });
