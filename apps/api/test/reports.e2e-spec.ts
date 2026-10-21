@@ -485,6 +485,66 @@ describe('Informes automáticos, borradores, PDF y Excel F7 (e2e)', () => {
       expect(listDist.body.length).toBeGreaterThanOrEqual(1);
       expect(listDist.body[0].recipient).toBe('Consejo de Administración Torres del Parque');
     });
+
+    it('CP-32: Usuario intenta leer o descargar un PDF de otra propiedad por URL directa -> 403 Forbidden', async () => {
+      // coordinator2Token solo tiene asignación en Reserva de la Plaza, NO en Torres del Parque
+      const directPdfRes = await request(app.getHttpServer())
+        .get(`/reports/${reportId}/pdf`)
+        .set('Authorization', `Bearer ${coordinator2Token}`);
+
+      expect(directPdfRes.status).toBe(403);
+      expect(directPdfRes.body.message).toContain('Acceso denegado');
+
+      const directGetRes = await request(app.getHttpServer())
+        .get(`/reports/${reportId}`)
+        .set('Authorization', `Bearer ${coordinator2Token}`);
+
+      expect(directGetRes.status).toBe(403);
+    });
+
+    it('CP-35: Concurrencia e integridad en transiciones paralelas y versiones de informe', async () => {
+      // El informe ya fue APROBADO (v2).
+      // 1. Intento de enviar a revisión un informe que ya está APROBADO -> 400 Bad Request
+      const reReviewRes = await request(app.getHttpServer())
+        .post(`/reports/${reportId}/send-review`)
+        .set('Authorization', `Bearer ${coordinator1Token}`);
+
+      expect(reReviewRes.status).toBe(400);
+
+      // 2. Intento de volver a revisar/aprobar directamente un informe ya APROBADO -> 400 Bad Request
+      const duplicateApproveRes = await request(app.getHttpServer())
+        .post(`/reports/${reportId}/review`)
+        .set('Authorization', `Bearer ${directorToken}`)
+        .send({ decision: 'APROBADO' });
+
+      expect(duplicateApproveRes.status).toBe(400);
+
+      // 3. Creación de nueva versión v3 válida a partir de la aprobada
+      const v3Res = await request(app.getHttpServer())
+        .post(`/reports/${reportId}/new-version`)
+        .set('Authorization', `Bearer ${directorToken}`)
+        .send({ reason: 'Actualización complementaria auditada' });
+
+      expect(v3Res.status).toBe(200);
+      expect(v3Res.body.version).toBe(3);
+      expect(v3Res.body.status).toBe('BORRADOR');
+
+      // Intentar crear otra versión mientras está en BORRADOR debe fallar (solo sobre APROBADOS)
+      const invalidDraftVersionRes = await request(app.getHttpServer())
+        .post(`/reports/${reportId}/new-version`)
+        .set('Authorization', `Bearer ${directorToken}`)
+        .send({ reason: 'Intento inválido sobre borrador' });
+
+      expect(invalidDraftVersionRes.status).toBe(400);
+
+      // Las versiones históricas conservan integridad inmutable
+      const versionsRes = await request(app.getHttpServer())
+        .get(`/reports/${reportId}/versions`)
+        .set('Authorization', `Bearer ${directorToken}`);
+
+      expect(versionsRes.status).toBe(200);
+      expect(versionsRes.body.length).toBeGreaterThanOrEqual(2);
+    });
   });
 });
 

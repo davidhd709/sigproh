@@ -62,6 +62,11 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
       data: { isActive: true },
     });
 
+    // Asegurar que las categorías estén activas
+    await prisma.category.updateMany({
+      data: { isActive: true },
+    });
+
     // Login Coordinador 1 (asignado a Torres del Parque y Operaciones)
     const c1Res = await request(app.getHttpServer())
       .post('/auth/login')
@@ -150,6 +155,48 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
         propertyId: torresDelParqueId, // Error: no debe tener propertyId
       })
       .expect(400);
+  });
+
+  it('CP-04: No hay responsable sugerible en el ámbito -> queda sin responsable asignado ni aleatorio (RN-031)', async () => {
+    // Si se crea una novedad donde no hay responsable líder activo definido, queda sin asignar
+    const uniqueCode = `AT_${Date.now().toString().slice(-6)}`;
+    const unassignedArea = await prisma.internalArea.create({
+      data: {
+        organizationId: '00000000-0000-0000-0000-000000000001',
+        name: `Área Temporal Sin Líder ${uniqueCode}`,
+        code: uniqueCode,
+      },
+    });
+
+    try {
+      const unassignedIssueRes = await request(app.getHttpServer())
+        .post('/issues')
+        .set('Authorization', `Bearer ${directorToken}`)
+        .send({
+          scope: 'INTERNA',
+          title: 'Novedad en área sin líder sugerido',
+          description: 'Debe quedar sin asignar y no asignarse a un usuario aleatorio',
+          priority: 'MEDIA',
+          categoryId: categoryInternaId,
+          internalAreaId: unassignedArea.id,
+        })
+        .expect(201);
+
+      expect(unassignedIssueRes.body.assignedUserId).toBeNull();
+      expect(unassignedIssueRes.body.assignedUser).toBeFalsy();
+      expect(unassignedIssueRes.body.status).toBe('EN_REVISION');
+    } finally {
+      const issuesToDelete = await prisma.issue.findMany({
+        where: { internalAreaId: unassignedArea.id },
+        select: { id: true },
+      });
+      const ids = issuesToDelete.map((i) => i.id);
+      if (ids.length > 0) {
+        await prisma.issueEvent.deleteMany({ where: { issueId: { in: ids } } });
+        await prisma.issue.deleteMany({ where: { id: { in: ids } } });
+      }
+      await prisma.internalArea.delete({ where: { id: unassignedArea.id } });
+    }
   });
 
   it('PEN-03: Auxiliar de Gerencia no puede marcar novedades inicialmente críticas', async () => {
@@ -1085,6 +1132,47 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
         .expect(200);
 
       expect(finalCountRes.body.unreadCount).toBe(0);
+    });
+
+    it('CP-17: Desactivar una categoría con casos anteriores -> el historial y detalle de los casos permanece totalmente legible', async () => {
+      try {
+        // 1. Desactivar la categoría en la base de datos
+        await prisma.category.update({
+          where: { id: categoryPropiedadId },
+          data: { isActive: false },
+        });
+
+        // 2. Intentar crear una NUEVA novedad con esta categoría desactivada debe ser rechazada (400)
+        await request(app.getHttpServer())
+          .post('/issues')
+          .set('Authorization', `Bearer ${coordinator1Token}`)
+          .send({
+            scope: 'PROPIEDAD',
+            propertyId: torresDelParqueId,
+            categoryId: categoryPropiedadId,
+            priority: 'BAJA',
+            title: 'Intento con categoría inactiva',
+            description: 'No debe permitirse',
+          })
+          .expect(400);
+
+        // 3. Consultar la novedad histórica que ya tenía asignada esta categoría
+        const issueDetailRes = await request(app.getHttpServer())
+          .get(`/issues/${createdIssueId}`)
+          .set('Authorization', `Bearer ${coordinator1Token}`)
+          .expect(200);
+
+        // El nombre y detalle de la categoría permanece legible e intacto en el caso histórico
+        expect(issueDetailRes.body.category).toBeDefined();
+        expect(issueDetailRes.body.category.id).toBe(categoryPropiedadId);
+        expect(issueDetailRes.body.category.name).toBe('Mantenimiento Locativo');
+      } finally {
+        // Restauramos siempre la categoría a activa
+        await prisma.category.update({
+          where: { id: categoryPropiedadId },
+          data: { isActive: true },
+        });
+      }
     });
   });
 });

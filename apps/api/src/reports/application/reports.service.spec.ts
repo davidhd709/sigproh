@@ -78,6 +78,9 @@ describe('ReportsService', () => {
         create: vi.fn(),
         findMany: vi.fn().mockResolvedValue([]),
       },
+      user: {
+        findUnique: vi.fn().mockResolvedValue({ firstName: 'Carlos', lastName: 'Director' }),
+      },
       issue: {
         findMany: vi.fn().mockResolvedValue([]),
         count: vi.fn().mockResolvedValue(0),
