@@ -3,6 +3,9 @@ import { IssuesListComponent } from './features/issues/issues-list/issues-list.c
 import { IssueCreateComponent } from './features/issues/issue-create/issue-create.component';
 import { IssueDetailComponent } from './features/issues/issue-detail/issue-detail.component';
 import { DashboardComponent } from './features/dashboard/dashboard.component';
+import { ReportsListComponent } from './features/reports/reports-list/reports-list.component';
+import { ReportCreateComponent } from './features/reports/report-create/report-create.component';
+import { ReportDetailComponent } from './features/reports/report-detail/report-detail.component';
 
 export const routes: Routes = [
   {
@@ -14,6 +17,21 @@ export const routes: Routes = [
     path: 'dashboard',
     component: DashboardComponent,
     title: 'SIGPROH — Tablero de Control e Indicadores',
+  },
+  {
+    path: 'reports',
+    component: ReportsListComponent,
+    title: 'SIGPROH — Informes de Gestión Operativa',
+  },
+  {
+    path: 'reports/new',
+    component: ReportCreateComponent,
+    title: 'SIGPROH — Nuevo Borrador de Informe',
+  },
+  {
+    path: 'reports/:id',
+    component: ReportDetailComponent,
+    title: 'SIGPROH — Detalle y Vista Previa de Informe',
   },
   {
     path: 'issues',

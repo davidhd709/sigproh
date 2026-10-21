@@ -6,6 +6,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { IssuesModule } from './issues/issues.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OrganizationModule } from './organization/organization.module';
+import { ReportsModule } from './reports/reports.module';
 import { PrismaModule } from './shared/infrastructure/database/prisma.module';
 
 @Module({
@@ -16,6 +17,7 @@ import { PrismaModule } from './shared/infrastructure/database/prisma.module';
     IssuesModule,
     NotificationsModule,
     DashboardModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

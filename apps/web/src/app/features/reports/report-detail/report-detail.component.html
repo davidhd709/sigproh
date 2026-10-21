@@ -1,0 +1,435 @@
+<div class="detail-container" *ngIf="report() as rep">
+  <!-- Barra superior con navegación y acciones rápidas -->
+  <div class="top-nav">
+    <a routerLink="/reports" class="back-link">← Volver a la Lista de Informes</a>
+    <div class="top-actions">
+      <button
+        *ngIf="canEdit()"
+        class="btn btn-primary btn-save"
+        (click)="saveDraft()"
+        [disabled]="isSaving()"
+      >
+        <span *ngIf="isSaving()" class="spinner-sm"></span>
+        <span>{{ isSaving() ? 'Guardando...' : '💾 Guardar Borrador' }}</span>
+      </button>
+
+      <button
+        *ngIf="canEdit()"
+        class="btn btn-secondary"
+        (click)="refreshData()"
+        [disabled]="isRefreshing()"
+        title="Recalcula novedades e indicadores sin alterar los textos redactados"
+      >
+        <span *ngIf="isRefreshing()" class="spinner-sm"></span>
+        <span>{{ isRefreshing() ? 'Actualizando...' : '🔄 Actualizar Datos Fuente' }}</span>
+      </button>
+
+      <button
+        class="btn btn-pdf"
+        (click)="downloadPdf()"
+        [disabled]="isDownloading()"
+      >
+        📄 Descargar PDF
+      </button>
+
+      <button
+        class="btn btn-excel"
+        (click)="downloadExcel()"
+        [disabled]="isDownloading()"
+      >
+        📊 Exportar Excel
+      </button>
+    </div>
+  </div>
+
+  <!-- Alertas -->
+  <div *ngIf="errorMessage()" class="alert alert-error mt-2">
+    <span>⚠️</span>
+    <span>{{ errorMessage() }}</span>
+  </div>
+
+  <div *ngIf="successMessage()" class="alert alert-success mt-2">
+    <span>✅</span>
+    <span>{{ successMessage() }}</span>
+  </div>
+
+  <!-- Banner del Informe -->
+  <div class="report-banner">
+    <div class="banner-left">
+      <div class="badge-row">
+        <span class="badge badge-code">{{ rep.code }}</span>
+        <span class="badge badge-version">v{{ rep.version }}</span>
+        <span [ngClass]="['badge', getStatusBadgeClass(rep.status)]">{{ rep.status }}</span>
+        <span class="badge badge-scope">{{ rep.scope }}</span>
+      </div>
+      <h1 class="banner-title">{{ rep.title }}</h1>
+      <p class="banner-subtitle">
+        <span *ngIf="rep.propertyName">🏢 Propiedad: <strong>{{ rep.propertyName }}</strong> | </span>
+        <span *ngIf="rep.internalAreaName">💼 Área: <strong>{{ rep.internalAreaName }}</strong> | </span>
+        Periodo: <strong>{{ rep.periodStart }}</strong> al <strong>{{ rep.periodEnd }}</strong> | 
+        Fecha de Corte (CP-34): <strong>{{ rep.cutoffDate }} (UTC-5)</strong>
+      </p>
+    </div>
+  </div>
+
+  <!-- Navegación por Pestañas -->
+  <div class="tabs-bar">
+    <button
+      class="tab-btn"
+      [class.active]="activeTab === 'PREVIEW'"
+      (click)="setTab('PREVIEW')"
+    >
+      👁️ Vista Previa del Documento
+    </button>
+    <button
+      *ngIf="canEdit()"
+      class="tab-btn"
+      [class.active]="activeTab === 'EDIT_TEXTS'"
+      (click)="setTab('EDIT_TEXTS')"
+    >
+      ✏️ Redacción y Secciones Opcionales
+    </button>
+    <button
+      *ngIf="canEdit()"
+      class="tab-btn"
+      [class.active]="activeTab === 'EVIDENCES'"
+      (click)="setTab('EVIDENCES')"
+    >
+      📸 Selección de Evidencias ({{ selectedEvidences().size }})
+    </button>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- PESTAÑA 1: VISTA PREVIA DEL DOCUMENTO      -->
+  <!-- ========================================== -->
+  <div *ngIf="activeTab === 'PREVIEW'" class="preview-paper">
+    <!-- Encabezado Institucional -->
+    <div class="doc-header">
+      <div class="doc-brand">
+        <h2 class="doc-brand-title">EG S.A.S. — PLATAFORMA SIGPROH</h2>
+        <p class="doc-brand-subtitle">GESTIÓN Y CONTROL DE NOVEDADES OPERATIVAS</p>
+      </div>
+      <div class="doc-code-box">
+        <span class="font-bold">{{ rep.code }}</span>
+        <span class="text-xs">v{{ rep.version }} · {{ rep.status }}</span>
+      </div>
+    </div>
+
+    <!-- Título y Metadatos -->
+    <div class="doc-meta-card">
+      <h3 class="doc-title">{{ rep.title }}</h3>
+      <div class="doc-meta-grid">
+        <div><strong>Ámbito:</strong> {{ rep.scope }}</div>
+        <div>
+          <strong>Ubicación:</strong>
+          {{ rep.propertyName || rep.internalAreaName || 'Consolidado General' }}
+        </div>
+        <div><strong>Periodo:</strong> {{ rep.periodStart }} al {{ rep.periodEnd }}</div>
+        <div><strong>Fecha de Corte:</strong> {{ rep.cutoffDate }} (UTC-5)</div>
+        <div><strong>Elaborado por:</strong> {{ rep.createdByName }}</div>
+        <div><strong>Fecha Emisión:</strong> {{ rep.createdAt.split('T')[0] }}</div>
+      </div>
+    </div>
+
+    <!-- 1. Introducción -->
+    <div *ngIf="rep.showIntroduction && rep.introduction" class="doc-section">
+      <h4 class="doc-section-title">1. INTRODUCCIÓN</h4>
+      <p class="doc-paragraph">{{ rep.introduction }}</p>
+    </div>
+
+    <!-- 2. KPIs e Indicadores -->
+    <div *ngIf="rep.showKpis && rep.operationalData?.kpis as kpis" class="doc-section">
+      <h4 class="doc-section-title">2. RESUMEN EJECUTIVO DE INDICADORES (CP-34)</h4>
+      <div class="kpi-grid">
+        <div class="kpi-box blue">
+          <span class="kpi-value">{{ kpis.totalRegisteredInPeriod }}</span>
+          <span class="kpi-label">Registradas en Periodo</span>
+        </div>
+        <div class="kpi-box green">
+          <span class="kpi-value">{{ kpis.totalClosedInPeriod }}</span>
+          <span class="kpi-label">Cerradas en Periodo</span>
+        </div>
+        <div class="kpi-box amber">
+          <span class="kpi-value">{{ kpis.totalOpenAtCutoff }}</span>
+          <span class="kpi-label">Abiertas al Corte (CP-34)</span>
+        </div>
+        <div class="kpi-box red">
+          <span class="kpi-value">{{ kpis.totalCriticalInPeriod }}</span>
+          <span class="kpi-label">Novedades Críticas</span>
+        </div>
+        <div class="kpi-box purple">
+          <span class="kpi-value">{{ kpis.averageResolutionDays }}d</span>
+          <span class="kpi-label">Tiempo Prom. Resolución</span>
+        </div>
+        <div class="kpi-box indigo">
+          <span class="kpi-value">{{ rep.operationalData?.activities?.completionRatePercent || 0 }}%</span>
+          <span class="kpi-label">Cumplimiento Actividades</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Relación de Novedades -->
+    <div *ngIf="rep.showIssuesList && rep.operationalData?.issuesList as issues" class="doc-section">
+      <h4 class="doc-section-title">3. RELACIÓN DE NOVEDADES OPERATIVAS ({{ issues.length }})</h4>
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Título / Ubicación</th>
+            <th>Categoría</th>
+            <th>Prioridad</th>
+            <th>Estado</th>
+            <th>Fechas / Responsable</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let is of issues">
+            <td class="font-mono text-primary font-bold">{{ is.code }}</td>
+            <td>
+              <strong>{{ is.title }}</strong>
+              <div class="text-xs text-muted">{{ is.locationName }}</div>
+            </td>
+            <td>{{ is.categoryName }}</td>
+            <td>
+              <span class="badge" [class.badge-red]="is.priority === 'CRITICA'">
+                {{ is.priority }}
+              </span>
+            </td>
+            <td>{{ is.status }}</td>
+            <td class="text-xs">
+              <div>Reg: {{ is.createdAt.split('T')[0] }}</div>
+              <div class="text-muted">{{ is.assignedUserName || 'Sin Asignar' }}</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 4. Actividades Operativas -->
+    <div *ngIf="rep.showActivities && rep.operationalData?.activitiesList as activities" class="doc-section">
+      <h4 class="doc-section-title">4. GESTIONES Y ACTIVIDADES OPERATIVAS ({{ activities.length }})</h4>
+      <div class="activities-doc-list">
+        <div *ngFor="let act of activities.slice(0, 15)" class="activity-doc-card">
+          <div class="act-header">
+            <strong>[{{ act.issueCode }}] {{ act.title }}</strong>
+            <span class="badge badge-scope">{{ act.status }}</span>
+          </div>
+          <div class="text-sm text-muted">
+            Asignado a: {{ act.assignedUserName || 'Sin Asignar' }} | 
+            {{ act.completedAt ? 'Completada: ' + act.completedAt.split('T')[0] : 'Límite: ' + (act.dueDate ? act.dueDate.split('T')[0] : 'N/A') }}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Evidencias Seleccionadas -->
+    <div *ngIf="rep.showEvidences && rep.selectedAttachmentIds.length > 0" class="doc-section">
+      <h4 class="doc-section-title">5. EVIDENCIAS AUTORIZADAS SELECCIONADAS ({{ rep.selectedAttachmentIds.length }})</h4>
+      <div class="evidences-doc-grid">
+        <div
+          *ngFor="let ev of rep.operationalData?.availableEvidences"
+          [hidden]="!isEvidenceSelected(ev.id)"
+          class="evidence-doc-card"
+        >
+          <div class="ev-badge-stage">{{ ev.stage }}</div>
+          <div class="ev-filename">📁 {{ ev.fileName }}</div>
+          <div class="ev-meta">
+            Novedad: {{ ev.issueCode }} | {{ (ev.fileSize / 1024).toFixed(0) }} KB
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6. Observaciones y Recomendaciones -->
+    <div *ngIf="rep.showObservations && rep.observations" class="doc-section">
+      <h4 class="doc-section-title">6. OBSERVACIONES GENERALES</h4>
+      <p class="doc-paragraph">{{ rep.observations }}</p>
+    </div>
+
+    <div *ngIf="rep.showRecommendations && rep.recommendations" class="doc-section">
+      <h4 class="doc-section-title">7. RECOMENDACIONES TÉCNICAS Y OPERATIVAS</h4>
+      <p class="doc-paragraph">{{ rep.recommendations }}</p>
+    </div>
+
+    <div *ngIf="rep.showFinalComments && rep.finalComments" class="doc-section">
+      <h4 class="doc-section-title">8. COMENTARIOS FINALES</h4>
+      <p class="doc-paragraph">{{ rep.finalComments }}</p>
+    </div>
+
+    <!-- Pie de Control Documental -->
+    <div class="doc-footer">
+      <div class="doc-footer-title">CONTROL DOCUMENTAL Y VALIDEZ INSTITUCIONAL</div>
+      <p class="text-xs text-muted mb-0">
+        Elaborado por: {{ rep.createdByName }} | Fecha de Emisión: {{ rep.createdAt.split('T')[0] }} | Versión Registrada: v{{ rep.version }}
+      </p>
+      <p class="text-xs text-muted mt-1">
+        Documento oficial generado por la Plataforma SIGPROH — EG S.A.S.
+      </p>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- PESTAÑA 2: REDACCIÓN Y OPCIONES            -->
+  <!-- ========================================== -->
+  <div *ngIf="activeTab === 'EDIT_TEXTS'" class="edit-pane">
+    <div class="card p-4">
+      <h3 class="card-title">Campos Redactados Editables (RF-033, CP-19)</h3>
+      <p class="text-muted text-sm mb-4">
+        Los cambios realizados en estas secciones se guardan exclusivamente en el informe y <strong>nunca alteran</strong> las novedades ni las métricas de origen (RN-125, RN-206).
+      </p>
+
+      <div class="form-group mb-3">
+        <label for="editTitle" class="form-label">Título del Informe</label>
+        <input
+          id="editTitle"
+          type="text"
+          [(ngModel)]="editTitle"
+          class="form-control"
+        />
+      </div>
+
+      <div class="form-group mb-3">
+        <label for="editIntro" class="form-label">1. Introducción Redactada</label>
+        <textarea
+          id="editIntro"
+          [(ngModel)]="editIntroduction"
+          rows="4"
+          class="form-control"
+          placeholder="Introducción sobre el alcance del periodo y la propiedad..."
+        ></textarea>
+      </div>
+
+      <div class="form-group mb-3">
+        <label for="editObs" class="form-label">2. Observaciones Generales</label>
+        <textarea
+          id="editObs"
+          [(ngModel)]="editObservations"
+          rows="4"
+          class="form-control"
+          placeholder="Observaciones de relevancia sobre las gestiones efectuadas..."
+        ></textarea>
+      </div>
+
+      <div class="form-group mb-3">
+        <label for="editRec" class="form-label">3. Recomendaciones Técnicas</label>
+        <textarea
+          id="editRec"
+          [(ngModel)]="editRecommendations"
+          rows="4"
+          class="form-control"
+          placeholder="Recomendaciones preventivas, correctivas o de mejoras..."
+        ></textarea>
+      </div>
+
+      <div class="form-group mb-4">
+        <label for="editFin" class="form-label">4. Comentarios Finales</label>
+        <textarea
+          id="editFin"
+          [(ngModel)]="editFinalComments"
+          rows="3"
+          class="form-control"
+          placeholder="Conclusiones o comentarios adicionales..."
+        ></textarea>
+      </div>
+
+      <hr class="divider" />
+
+      <h3 class="card-title mt-4">Visibilidad de Secciones en el Documento</h3>
+      <p class="text-muted text-sm mb-3">
+        Active o desactive las secciones opcionales que aparecerán en la vista previa y en el PDF oficial:
+      </p>
+
+      <div class="toggles-grid">
+        <label class="toggle-item">
+          <input type="checkbox" [(ngModel)]="showIntroduction" />
+          <span>Introducción</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" [(ngModel)]="showKpis" />
+          <span>Resumen de Indicadores (KPIs)</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" [(ngModel)]="showIssuesList" />
+          <span>Relación de Novedades</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" [(ngModel)]="showActivities" />
+          <span>Gestiones y Actividades</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" [(ngModel)]="showEvidences" />
+          <span>Galería de Evidencias</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" [(ngModel)]="showObservations" />
+          <span>Observaciones Generales</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" [(ngModel)]="showRecommendations" />
+          <span>Recomendaciones</span>
+        </label>
+        <label class="toggle-item">
+          <input type="checkbox" [(ngModel)]="showFinalComments" />
+          <span>Comentarios Finales</span>
+        </label>
+      </div>
+
+      <div class="mt-4 text-right">
+        <button class="btn btn-primary" (click)="saveDraft()" [disabled]="isSaving()">
+          💾 Guardar Cambios
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- PESTAÑA 3: SELECCIÓN DE EVIDENCIAS         -->
+  <!-- ========================================== -->
+  <div *ngIf="activeTab === 'EVIDENCES'" class="evidences-pane">
+    <div class="card p-4">
+      <div class="d-flex justify-between items-center mb-3">
+        <div>
+          <h3 class="card-title">Evidencias Disponibles en el Periodo (RF-034)</h3>
+          <p class="text-muted text-sm mb-0">
+            Marque las fotografías o soportes que desea incluir en el informe impreso/PDF. No altera los archivos originales.
+          </p>
+        </div>
+        <button class="btn btn-primary btn-sm" (click)="saveDraft()" [disabled]="isSaving()">
+          💾 Guardar Selección
+        </button>
+      </div>
+
+      <div
+        *ngIf="rep.operationalData?.availableEvidences as evidences"
+        class="evidences-selection-grid"
+      >
+        <div
+          *ngFor="let ev of evidences"
+          class="evidence-select-card"
+          [class.selected]="isEvidenceSelected(ev.id)"
+          (click)="toggleEvidence(ev.id)"
+        >
+          <input
+            type="checkbox"
+            [checked]="isEvidenceSelected(ev.id)"
+            (change)="toggleEvidence(ev.id)"
+            (click)="$event.stopPropagation()"
+            class="ev-checkbox"
+          />
+          <div class="ev-content">
+            <span class="badge badge-scope">{{ ev.stage }}</span>
+            <strong class="ev-name mt-1">{{ ev.fileName }}</strong>
+            <div class="text-xs text-muted mt-1">
+              Caso: {{ ev.issueCode }} | {{ (ev.fileSize / 1024).toFixed(0) }} KB
+            </div>
+            <div class="text-xs text-muted">Subido por: {{ ev.uploadedByName }}</div>
+          </div>
+        </div>
+
+        <div *ngIf="evidences.length === 0" class="empty-card">
+          <p class="text-muted">No hay evidencias adjuntas en los casos comprendidos en este periodo.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

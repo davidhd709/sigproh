@@ -1,0 +1,192 @@
+<div class="reports-container">
+  <!-- Header con título y botón de acción -->
+  <header class="page-header">
+    <div>
+      <div class="badge-header">Fase 7 · Documentación Oficial</div>
+      <h1 class="page-title">Informes de Gestión Operativa</h1>
+      <p class="page-subtitle">
+        Elaboración de borradores, indicadores consolidados, vistas previas y exportación en PDF y Excel (CP-18 a CP-20, CP-33, CP-34).
+      </p>
+    </div>
+    <button class="btn btn-primary" (click)="openCreate()">
+      <span class="icon">➕</span> Nuevo Informe
+    </button>
+  </header>
+
+  <!-- Mensajes de Alerta -->
+  <div *ngIf="errorMessage()" class="alert alert-error">
+    <span>⚠️</span>
+    <span>{{ errorMessage() }}</span>
+  </div>
+
+  <div *ngIf="successMessage()" class="alert alert-success">
+    <span>✅</span>
+    <span>{{ successMessage() }}</span>
+  </div>
+
+  <!-- Barra de Filtros y Búsqueda -->
+  <section class="filters-card">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input
+        type="text"
+        [(ngModel)]="searchTerm"
+        (input)="onFilterChange()"
+        placeholder="Buscar por código (INF-...) o título del informe..."
+        class="form-control search-input"
+      />
+    </div>
+
+    <div class="filters-group">
+      <div class="filter-item">
+        <label for="scopeFilter">Ámbito:</label>
+        <select
+          id="scopeFilter"
+          [(ngModel)]="selectedScope"
+          (change)="onFilterChange()"
+          class="form-control"
+        >
+          <option value="">Todos los ámbitos</option>
+          <option value="PROPIEDAD">Propiedad Horizontal</option>
+          <option value="INTERNA">Gestión Interna</option>
+          <option value="CONSOLIDADO" *ngIf="currentUser()?.role !== 'COORDINADOR_OPERATIVO'">Consolidado General</option>
+        </select>
+      </div>
+
+      <div class="filter-item">
+        <label for="statusFilter">Estado:</label>
+        <select
+          id="statusFilter"
+          [(ngModel)]="selectedStatus"
+          (change)="onFilterChange()"
+          class="form-control"
+        >
+          <option value="">Todos los estados</option>
+          <option value="BORRADOR">Borrador</option>
+          <option value="EN_REVISION">En Revisión</option>
+          <option value="DEVUELTO">Devuelto</option>
+          <option value="APROBADO">Aprobado</option>
+        </select>
+      </div>
+
+      <button class="btn btn-secondary btn-sm" (click)="resetFilters()">
+        Limpiar
+      </button>
+    </div>
+  </section>
+
+  <!-- Estado de Carga -->
+  <div *ngIf="isLoading()" class="loading-state">
+    <div class="spinner"></div>
+    <p>Cargando informes de gestión...</p>
+  </div>
+
+  <!-- Tabla de Informes -->
+  <div *ngIf="!isLoading()" class="table-container">
+    <table *ngIf="reports().length > 0; else emptyState" class="reports-table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Título</th>
+          <th>Ámbito / Ubicación</th>
+          <th>Periodo & Corte (UTC-5)</th>
+          <th>Estado</th>
+          <th>Versión</th>
+          <th>Elaborado Por</th>
+          <th class="text-right">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          *ngFor="let report of reports()"
+          (click)="openDetail(report.id)"
+          class="clickable-row"
+        >
+          <td class="font-mono text-primary font-bold">
+            {{ report.code }}
+          </td>
+          <td>
+            <div class="report-title-cell">
+              <strong>{{ report.title }}</strong>
+            </div>
+          </td>
+          <td>
+            <span class="badge badge-scope">
+              {{ getScopeBadge(report.scope) }}
+            </span>
+            <div *ngIf="report.propertyName" class="text-muted text-sm mt-1">
+              🏢 {{ report.propertyName }}
+            </div>
+            <div *ngIf="report.internalAreaName" class="text-muted text-sm mt-1">
+              💼 {{ report.internalAreaName }}
+            </div>
+          </td>
+          <td class="text-sm">
+            <div>{{ report.periodStart }} al {{ report.periodEnd }}</div>
+            <div class="text-muted text-xs">Corte: {{ report.cutoffDate }}</div>
+          </td>
+          <td>
+            <span [ngClass]="['badge', getStatusClass(report.status)]">
+              {{ report.status }}
+            </span>
+          </td>
+          <td>
+            <span class="badge badge-version">v{{ report.version }}</span>
+          </td>
+          <td class="text-sm text-muted">
+            {{ report.createdByName }}
+          </td>
+          <td class="text-right" (click)="$event.stopPropagation()">
+            <div class="action-buttons">
+              <button
+                class="btn-icon"
+                title="Editar / Ver Borrador"
+                (click)="openDetail(report.id)"
+              >
+                ✏️
+              </button>
+              <button
+                class="btn-icon btn-pdf"
+                title="Descargar PDF Oficial"
+                (click)="downloadPdf($event, report)"
+                [disabled]="downloadingId() === report.id"
+              >
+                📄
+              </button>
+              <button
+                class="btn-icon btn-excel"
+                title="Exportar Datos a Excel"
+                (click)="downloadExcel($event, report)"
+                [disabled]="downloadingId() === report.id"
+              >
+                📊
+              </button>
+              <button
+                *ngIf="report.status === 'BORRADOR'"
+                class="btn-icon btn-delete"
+                title="Eliminar Borrador"
+                (click)="deleteReport($event, report)"
+              >
+                🗑️
+              </button>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Estado Vacío -->
+    <ng-template #emptyState>
+      <div class="empty-card">
+        <div class="empty-icon">📁</div>
+        <h3>No se encontraron informes</h3>
+        <p class="text-muted">
+          No hay informes registrados que coincidan con los filtros seleccionados. Puede generar un nuevo borrador haciendo clic en "Nuevo Informe".
+        </p>
+        <button class="btn btn-primary mt-3" (click)="openCreate()">
+          ➕ Crear Primer Borrador
+        </button>
+      </div>
+    </ng-template>
+  </div>
+</div>

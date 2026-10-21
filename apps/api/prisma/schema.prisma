@@ -20,6 +20,20 @@ enum IssueScope {
   INTERNA
 }
 
+enum ReportScope {
+  PROPIEDAD
+  INTERNA
+  CONSOLIDADO
+}
+
+enum ReportStatus {
+  BORRADOR
+  EN_REVISION
+  DEVUELTO
+  APROBADO
+}
+
+
 enum IssuePriority {
   BAJA
   MEDIA
@@ -83,6 +97,8 @@ model Organization {
   issues        Issue[]
   issueSequences IssueSequence[]
   notifications Notification[]
+  reports       Report[]
+  reportSequences ReportSequence[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -117,6 +133,8 @@ model User {
   activitiesCreated   IssueActivity[]      @relation("ActivityCreatedBy")
   issueComments       IssueComment[]
   attachmentsUploaded IssueAttachment[]    @relation("AttachmentUploadedBy")
+  reportsCreated      Report[]             @relation("ReportCreatedBy")
+  reportsApproved     Report[]             @relation("ReportApprovedBy")
 
   @@unique([organizationId, email])
   @@index([organizationId])
@@ -155,6 +173,7 @@ model Property {
   zones        PropertyZone[]
   assignments  PropertyAssignment[]
   issues       Issue[]
+  reports      Report[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -208,6 +227,7 @@ model InternalArea {
   organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   assignments  AreaAssignment[]
   issues       Issue[]
+  reports      Report[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -448,6 +468,86 @@ model IssueAttachment {
   @@index([stage])
   @@map("issue_attachments")
 }
+
+model Report {
+  id             String       @id @default(uuid())
+  organizationId String
+  code           String       // Ej: INF-2026-0001
+  scope          ReportScope
+  title          String
+
+  propertyId     String?
+  internalAreaId String?
+
+  periodStart    DateTime
+  periodEnd      DateTime
+  cutoffDate     DateTime
+
+  status         ReportStatus @default(BORRADOR)
+  version        Int          @default(1)
+
+  // Textos editables por el autor (RF-033 / CP-19)
+  introduction    String?
+  observations    String?
+  recommendations String?
+  finalComments   String?
+
+  // IDs de evidencias seleccionadas para el informe (RF-034)
+  selectedAttachmentIds String[] @default([])
+
+  // Configuración de visibilidad de secciones (opcionales)
+  showIntroduction    Boolean @default(true)
+  showKpis            Boolean @default(true)
+  showIssuesList      Boolean @default(true)
+  showActivities      Boolean @default(true)
+  showEvidences       Boolean @default(true)
+  showPendingIssues   Boolean @default(true)
+  showObservations    Boolean @default(true)
+  showRecommendations Boolean @default(true)
+  showFinalComments   Boolean @default(true)
+
+  // Datos operacionales cacheados/congelados (RF-032 / RF-035)
+  operationalData     Json?
+
+  createdById    String
+  approvedById   String?
+  approvedAt     DateTime?
+  approvalNotes  String?
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  property       Property?     @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  internalArea   InternalArea? @relation(fields: [internalAreaId], references: [id], onDelete: Restrict)
+  createdBy      User          @relation("ReportCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvedBy     User?         @relation("ReportApprovedBy", fields: [approvedById], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([scope])
+  @@index([propertyId])
+  @@index([internalAreaId])
+  @@index([createdById])
+  @@index([status])
+  @@map("reports")
+}
+
+model ReportSequence {
+  id             String       @id @default(uuid())
+  organizationId String
+  year           Int
+  lastValue      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, year])
+  @@index([organizationId])
+  @@map("report_sequences")
+}
+
 
 
 

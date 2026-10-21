@@ -1,0 +1,255 @@
+<div class="create-container">
+  <div class="breadcrumb">
+    <a routerLink="/reports" class="breadcrumb-link">← Volver a Informes</a>
+  </div>
+
+  <header class="create-header">
+    <div class="badge-header">Fase 7 · Nuevo Borrador</div>
+    <h1 class="page-title">Generar Borrador de Informe</h1>
+    <p class="page-subtitle">
+      El sistema recopilará automáticamente las novedades, actividades e indicadores del periodo seleccionado para el ámbito indicado (RF-031, RF-032).
+    </p>
+  </header>
+
+  <div *ngIf="errorMessage()" class="alert alert-error">
+    <span>⚠️</span>
+    <span>{{ errorMessage() }}</span>
+  </div>
+
+  <form (ngSubmit)="onSubmit()" class="create-form">
+    <!-- Paso 1: Definición de Ámbito y Ubicación -->
+    <section class="form-section">
+      <h2 class="section-title">1. Ámbito y Destinatario</h2>
+
+      <div class="form-group">
+        <label class="form-label">Ámbito del Informe *</label>
+        <div class="scope-options">
+          <label class="scope-card" [class.selected]="scope === 'PROPIEDAD'">
+            <input
+              type="radio"
+              name="scope"
+              value="PROPIEDAD"
+              [(ngModel)]="scope"
+              (change)="onScopeChange()"
+            />
+            <div class="scope-info">
+              <span class="scope-icon">🏢</span>
+              <strong>Propiedad Horizontal</strong>
+              <small>Edificio o conjunto residencial con novedades y actividades específicas.</small>
+            </div>
+          </label>
+
+          <label class="scope-card" [class.selected]="scope === 'INTERNA'">
+            <input
+              type="radio"
+              name="scope"
+              value="INTERNA"
+              [(ngModel)]="scope"
+              (change)="onScopeChange()"
+            />
+            <div class="scope-info">
+              <span class="scope-icon">💼</span>
+              <strong>Gestión Interna</strong>
+              <small>Área operativa de EG S.A.S. (Mantenimiento, Logística, etc.).</small>
+            </div>
+          </label>
+
+          <label
+            *ngIf="currentUser()?.role !== 'COORDINADOR_OPERATIVO'"
+            class="scope-card"
+            [class.selected]="scope === 'CONSOLIDADO'"
+          >
+            <input
+              type="radio"
+              name="scope"
+              value="CONSOLIDADO"
+              [(ngModel)]="scope"
+              (change)="onScopeChange()"
+            />
+            <div class="scope-info">
+              <span class="scope-icon">📊</span>
+              <strong>Consolidado Gerencial</strong>
+              <small>Visión general corporativa de todas las propiedades y áreas autorizadas.</small>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Selector si es Propiedad -->
+      <div *ngIf="scope === 'PROPIEDAD'" class="form-group mt-3">
+        <label for="propertySelect" class="form-label">Propiedad Horizontal *</label>
+        <select
+          id="propertySelect"
+          [(ngModel)]="propertyId"
+          (change)="updateDefaultTitle()"
+          name="propertyId"
+          class="form-control"
+          required
+        >
+          <option value="" disabled>Seleccione una propiedad autorizada</option>
+          <option *ngFor="let prop of properties()" [value]="prop.id">
+            {{ prop.name }} ({{ prop.code }})
+          </option>
+        </select>
+      </div>
+
+      <!-- Selector si es Área Interna -->
+      <div *ngIf="scope === 'INTERNA'" class="form-group mt-3">
+        <label for="areaSelect" class="form-label">Área Interna *</label>
+        <select
+          id="areaSelect"
+          [(ngModel)]="internalAreaId"
+          (change)="updateDefaultTitle()"
+          name="internalAreaId"
+          class="form-control"
+          required
+        >
+          <option value="" disabled>Seleccione un área interna autorizada</option>
+          <option *ngFor="let area of internalAreas()" [value]="area.id">
+            {{ area.name }} ({{ area.code }})
+          </option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Paso 2: Periodo y Fechas de Corte -->
+    <section class="form-section">
+      <h2 class="section-title">2. Periodo de Análisis y Fecha de Corte (CP-34)</h2>
+
+      <!-- Presets rápidos -->
+      <div class="presets-bar">
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'THIS_MONTH'"
+          (click)="applyPreset('THIS_MONTH')"
+        >
+          Mes Actual
+        </button>
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'LAST_MONTH'"
+          (click)="applyPreset('LAST_MONTH')"
+        >
+          Mes Anterior
+        </button>
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'LAST_30_DAYS'"
+          (click)="applyPreset('LAST_30_DAYS')"
+        >
+          Últimos 30 Días
+        </button>
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'THIS_YEAR'"
+          (click)="applyPreset('THIS_YEAR')"
+        >
+          Año en Curso
+        </button>
+      </div>
+
+      <div class="grid-3 mt-3">
+        <div class="form-group">
+          <label for="periodStart" class="form-label">Fecha Inicial *</label>
+          <input
+            id="periodStart"
+            type="date"
+            name="periodStart"
+            [(ngModel)]="periodStart"
+            (change)="selectedPreset = 'CUSTOM'; updateDefaultTitle()"
+            class="form-control"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="periodEnd" class="form-label">Fecha Final *</label>
+          <input
+            id="periodEnd"
+            type="date"
+            name="periodEnd"
+            [(ngModel)]="periodEnd"
+            (change)="selectedPreset = 'CUSTOM'; cutoffDate = periodEnd; updateDefaultTitle()"
+            class="form-control"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="cutoffDate" class="form-label">Fecha de Corte (CP-34) *</label>
+          <input
+            id="cutoffDate"
+            type="date"
+            name="cutoffDate"
+            [(ngModel)]="cutoffDate"
+            class="form-control"
+            required
+          />
+          <small class="text-muted">Zona Horaria Colombia (UTC-5)</small>
+        </div>
+      </div>
+    </section>
+
+    <!-- Paso 3: Título y Textos Iniciales -->
+    <section class="form-section">
+      <h2 class="section-title">3. Título y Contenido Preliminar</h2>
+
+      <div class="form-group">
+        <label for="title" class="form-label">Título del Informe *</label>
+        <input
+          id="title"
+          type="text"
+          name="title"
+          [(ngModel)]="title"
+          class="form-control"
+          placeholder="Ej: Informe Operativo — Torres del Parque (Mayo 2026)"
+          maxlength="200"
+          required
+        />
+      </div>
+
+      <div class="form-group mt-3">
+        <label for="intro" class="form-label">Introducción Redactada (Opcional)</label>
+        <textarea
+          id="intro"
+          name="introduction"
+          [(ngModel)]="introduction"
+          rows="3"
+          class="form-control"
+          placeholder="Redacte una introducción contextual sobre las condiciones del periodo y el alcance de este documento..."
+        ></textarea>
+      </div>
+
+      <div class="form-group mt-3">
+        <label for="obs" class="form-label">Observaciones Generales Iniciales (Opcional)</label>
+        <textarea
+          id="obs"
+          name="observations"
+          [(ngModel)]="observations"
+          rows="3"
+          class="form-control"
+          placeholder="Observaciones de relevancia sobre la operación, novedades atendidas o aspectos destacados..."
+        ></textarea>
+      </div>
+    </section>
+
+    <!-- Botones de Acción -->
+    <div class="form-actions">
+      <button type="button" class="btn btn-secondary" (click)="cancel()">
+        Cancelar
+      </button>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        [disabled]="isSubmitting()"
+      >
+        <span *ngIf="isSubmitting()" class="spinner-sm"></span>
+        <span>{{ isSubmitting() ? 'Generando borrador...' : '⚡ Generar Borrador e Indicadores' }}</span>
+      </button>
+    </div>
+  </form>
+</div>
