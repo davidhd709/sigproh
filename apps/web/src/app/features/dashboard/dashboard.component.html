@@ -1,0 +1,452 @@
+<div class="dashboard-container">
+  <!-- Header Principal -->
+  <div class="dashboard-header">
+    <div class="header-left">
+      <div class="badge-fase">Fase 6 • Indicadores Operativos</div>
+      <h1 class="dashboard-title">Tablero de Control y Métricas Operativas</h1>
+      <p class="dashboard-subtitle">
+        Seguimiento en tiempo real con cálculo riguroso de cohortes, fechas reales de eventos y fecha de corte (RF-029, RF-030, CP-34).
+      </p>
+    </div>
+  </div>
+
+  <!-- Barra de Filtros Interactivos -->
+  <div class="filters-card">
+    <div class="filter-row presets-row">
+      <span class="filter-label">Período de Análisis:</span>
+      <div class="preset-buttons">
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'THIS_MONTH'"
+          (click)="onPresetChange('THIS_MONTH')"
+        >
+          Mes Actual
+        </button>
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'LAST_MONTH'"
+          (click)="onPresetChange('LAST_MONTH')"
+        >
+          Mes Anterior
+        </button>
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'LAST_30_DAYS'"
+          (click)="onPresetChange('LAST_30_DAYS')"
+        >
+          Últimos 30 Días
+        </button>
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'THIS_YEAR'"
+          (click)="onPresetChange('THIS_YEAR')"
+        >
+          Año en Curso
+        </button>
+        <button
+          type="button"
+          class="btn-preset"
+          [class.active]="selectedPreset === 'CUSTOM'"
+          (click)="selectedPreset = 'CUSTOM'"
+        >
+          Personalizado
+        </button>
+      </div>
+    </div>
+
+    <div class="filter-row inputs-row">
+      <div class="form-group-filter">
+        <label>Desde:</label>
+        <input
+          type="date"
+          [(ngModel)]="filterStartDate"
+          class="form-control-filter"
+        />
+      </div>
+
+      <div class="form-group-filter">
+        <label>Hasta (Corte):</label>
+        <input
+          type="date"
+          [(ngModel)]="filterEndDate"
+          class="form-control-filter"
+        />
+      </div>
+
+      <div class="form-group-filter">
+        <label>Ámbito:</label>
+        <select [(ngModel)]="filterScope" class="form-control-filter" (change)="filterPropertyId = ''; filterInternalAreaId = ''">
+          <option value="">Todos los Ámbitos</option>
+          <option value="PROPIEDAD">🏢 Propiedades Horizontales</option>
+          <option value="INTERNA">🏛️ Áreas Internas</option>
+        </select>
+      </div>
+
+      @if (!filterScope || filterScope === 'PROPIEDAD') {
+        <div class="form-group-filter">
+          <label>Propiedad:</label>
+          <select [(ngModel)]="filterPropertyId" class="form-control-filter">
+            <option value="">Todas las Propiedades</option>
+            @for (p of properties(); track p.id) {
+              <option [value]="p.id">{{ p.name }}</option>
+            }
+          </select>
+        </div>
+      }
+
+      @if (!filterScope || filterScope === 'INTERNA') {
+        <div class="form-group-filter">
+          <label>Área Interna:</label>
+          <select [(ngModel)]="filterInternalAreaId" class="form-control-filter">
+            <option value="">Todas las Áreas</option>
+            @for (a of internalAreas(); track a.id) {
+              <option [value]="a.id">{{ a.name }}</option>
+            }
+          </select>
+        </div>
+      }
+
+      <div class="filter-actions">
+        <button type="button" class="btn btn-primary btn-sm" (click)="loadMetrics()">
+          🔍 Consultar
+        </button>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="resetFilters()">
+          ↺ Restablecer
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feedback y Estado de Carga -->
+  @if (errorMessage()) {
+    <div class="alert-box error">
+      <span class="alert-icon">⚠️</span>
+      <div>{{ errorMessage() }}</div>
+    </div>
+  }
+
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Calculando indicadores consolidados según eventos y fecha de corte...</p>
+    </div>
+  } @else if (metrics(); as data) {
+    <!-- Banner de Período y Fecha de Corte (RN-116, CP-34) -->
+    <div class="period-banner">
+      <div class="banner-left">
+        <span class="icon">📅</span>
+        <span class="period-text">
+          Período auditado: <strong>{{ data.period.startDate | date:'dd/MM/yyyy' }}</strong> al <strong>{{ data.period.endDate | date:'dd/MM/yyyy' }}</strong>
+          (Fecha de Corte: <strong>{{ data.period.cutoffDate | date:'medium' }}</strong>)
+        </span>
+      </div>
+      <span class="tz-badge">Zona Horaria: Colombia (UTC-5)</span>
+    </div>
+
+    <!-- TARJETAS DE KPIS PRINCIPALES (RN-101, RN-116, CP-34) -->
+    <div class="kpi-grid">
+      <!-- 1. Registradas en Período -->
+      <div class="kpi-card card-registered">
+        <div class="kpi-icon-wrapper blue">📈</div>
+        <div class="kpi-content">
+          <span class="kpi-label">Registradas en el Período</span>
+          <span class="kpi-value">{{ data.kpis.totalRegisteredInPeriod }}</span>
+          <span class="kpi-desc">Nuevos reportes en el rango</span>
+        </div>
+      </div>
+
+      <!-- 2. Cerradas en Período -->
+      <div class="kpi-card card-closed">
+        <div class="kpi-icon-wrapper green">✅</div>
+        <div class="kpi-content">
+          <span class="kpi-label">Cerradas en el Período</span>
+          <span class="kpi-value text-green">{{ data.kpis.totalClosedInPeriod }}</span>
+          <span class="kpi-desc">Verificadas a satisfacción</span>
+        </div>
+      </div>
+
+      <!-- 3. Abiertas a la Fecha de Corte (CP-34) -->
+      <div class="kpi-card card-open">
+        <div class="kpi-icon-wrapper amber">⏱️</div>
+        <div class="kpi-content">
+          <span class="kpi-label">Abiertas a la Fecha de Corte</span>
+          <span class="kpi-value text-amber">{{ data.kpis.totalOpenAtCutoff }}</span>
+          <span class="kpi-desc" title="Incluye casos de meses anteriores que continuaban en curso en la fecha de corte">
+            Incluye cohortes anteriores (CP-34)
+          </span>
+        </div>
+      </div>
+
+      <!-- 4. Críticas -->
+      <div class="kpi-card card-critical" [class.highlight-critical]="data.kpis.totalCriticalInPeriod > 0">
+        <div class="kpi-icon-wrapper red">🚨</div>
+        <div class="kpi-content">
+          <span class="kpi-label">Novedades Críticas</span>
+          <span class="kpi-value text-red">{{ data.kpis.totalCriticalInPeriod }}</span>
+          <span class="kpi-desc">Atención de alta prioridad</span>
+        </div>
+      </div>
+
+      <!-- 5. Tiempo Promedio de Resolución -->
+      <div class="kpi-card card-time">
+        <div class="kpi-icon-wrapper purple">⌛</div>
+        <div class="kpi-content">
+          <span class="kpi-label">Tiempo Promedio de Cierre</span>
+          <span class="kpi-value">
+            {{ data.kpis.averageResolutionDays }} <span class="unit">días</span>
+          </span>
+          <span class="kpi-desc">({{ data.kpis.averageResolutionHours }} horas registradas)</span>
+        </div>
+      </div>
+
+      <!-- 6. Eficiencia en Actividades -->
+      <div class="kpi-card card-activities">
+        <div class="kpi-icon-wrapper teal">📋</div>
+        <div class="kpi-content">
+          <span class="kpi-label">Cumplimiento Actividades</span>
+          <span class="kpi-value text-teal">{{ data.activities.completionRatePercent }}%</span>
+          <span class="kpi-desc">
+            {{ data.activities.completed }} de {{ data.activities.totalActivities }} tareas completadas
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN DE DISTRIBUCIONES (2 COLUMNAS) -->
+    <div class="charts-grid">
+      <!-- Columna 1: Distribución por Estado Operativo -->
+      <div class="dashboard-box">
+        <h2 class="box-title">Distribución por Estado Operativo (RF-029)</h2>
+        <div class="distribution-list">
+          @for (item of data.byStatus; track item.status) {
+            <div class="distribution-item">
+              <div class="item-header">
+                <span class="item-name">{{ item.status }}</span>
+                <span class="item-counts">
+                  <strong>{{ item.count }}</strong> ({{ item.percentage }}%)
+                </span>
+              </div>
+              <div class="progress-bar-bg">
+                <div
+                  class="progress-bar-fill"
+                  [ngClass]="getStatusClass(item.status)"
+                  [style.width.%]="item.percentage"
+                ></div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Columna 2: Distribución por Prioridad Actual -->
+      <div class="dashboard-box">
+        <h2 class="box-title">Distribución por Prioridad (DEC-07)</h2>
+        <div class="distribution-list">
+          @for (item of data.byPriority; track item.priority) {
+            <div class="distribution-item">
+              <div class="item-header">
+                <span class="item-name">
+                  {{ item.priority === 'CRITICA' ? '🚨 CRÍTICA' : item.priority }}
+                </span>
+                <span class="item-counts">
+                  <strong>{{ item.count }}</strong> ({{ item.percentage }}%)
+                </span>
+              </div>
+              <div class="progress-bar-bg">
+                <div
+                  class="progress-bar-fill"
+                  [ngClass]="getPriorityClass(item.priority)"
+                  [style.width.%]="item.percentage"
+                ></div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="activities-subgrid">
+          <div class="sub-stat">
+            <span class="sub-stat-label">En Curso</span>
+            <span class="sub-stat-val text-blue">{{ data.activities.inProgress }}</span>
+          </div>
+          <div class="sub-stat">
+            <span class="sub-stat-label">Pendientes</span>
+            <span class="sub-stat-val text-muted">{{ data.activities.pending }}</span>
+          </div>
+          <div class="sub-stat">
+            <span class="sub-stat-label">Bloqueadas</span>
+            <span class="sub-stat-val text-red">{{ data.activities.blocked }}</span>
+          </div>
+          <div class="sub-stat">
+            <span class="sub-stat-label">Canceladas</span>
+            <span class="sub-stat-val text-muted">{{ data.activities.canceled }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CASOS QUE REQUIEREN ATENCIÓN PRIORITARIA -->
+    @if (data.attentionRequiredCases && data.attentionRequiredCases.length > 0) {
+      <div class="dashboard-box attention-box">
+        <div class="attention-header">
+          <div class="attention-title-group">
+            <span class="attention-icon">⚠️</span>
+            <h2 class="box-title text-red">Casos con Atención Prioritaria Requerida</h2>
+          </div>
+          <span class="attention-badge">{{ data.attentionRequiredCases.length }} Casos</span>
+        </div>
+        <p class="section-subtitle">
+          Novedades críticas sin cerrar, con actividades bloqueadas o con más de 7 días abiertas.
+        </p>
+
+        <div class="attention-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Título</th>
+                <th>Ubicación</th>
+                <th>Prioridad</th>
+                <th>Estado</th>
+                <th>Días Abierta</th>
+                <th>Responsable</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of data.attentionRequiredCases; track item.id) {
+                <tr [class.row-critical]="item.priority === 'CRITICA'" [class.row-blocked]="item.hasBlockedActivities">
+                  <td>
+                    <span class="code-badge">{{ item.code }}</span>
+                  </td>
+                  <td>
+                    <div class="table-title">{{ item.title }}</div>
+                    @if (item.hasBlockedActivities) {
+                      <span class="badge-blocked">⚠️ Actividad Bloqueada</span>
+                    }
+                  </td>
+                  <td>{{ item.locationName }}</td>
+                  <td>
+                    <span class="priority-badge priority-{{ item.priority.toLowerCase() }}">
+                      {{ item.priority === 'CRITICA' ? '🚨 CRÍTICA' : item.priority }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="status-badge">{{ item.status }}</span>
+                  </td>
+                  <td>
+                    <span class="days-badge" [class.days-high]="item.daysOpen > 7">
+                      {{ item.daysOpen }} días
+                    </span>
+                  </td>
+                  <td>{{ item.assignedUserName || 'Sin asignar' }}</td>
+                  <td>
+                    <a [routerLink]="['/issues', item.id]" class="btn-table-action">
+                      Ver Caso →
+                    </a>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    }
+
+    <!-- RENDIMIENTO POR UBICACIÓN (PROPIEDADES Y ÁREAS) -->
+    <div class="dashboard-box">
+      <h2 class="box-title">Rendimiento Operativo por Ubicación (RF-029)</h2>
+      <p class="section-subtitle">
+        Desglose de casos registrados, abiertos a la fecha de corte y cerrados por copropiedad o área interna.
+      </p>
+
+      @if (!data.byLocation || data.byLocation.length === 0) {
+        <div class="empty-state-box">
+          <p class="empty-text">No se encontraron ubicaciones para los filtros aplicados.</p>
+        </div>
+      } @else {
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Ubicación</th>
+                <th>Ámbito</th>
+                <th>Registradas en Período</th>
+                <th>Abiertas al Corte</th>
+                <th>Cerradas en Período</th>
+                <th>Críticas</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (loc of data.byLocation; track loc.id) {
+                <tr>
+                  <td>
+                    <strong>{{ loc.name }}</strong>
+                    @if (loc.code) {
+                      <span class="loc-code">({{ loc.code }})</span>
+                    }
+                  </td>
+                  <td>
+                    <span class="scope-tag" [class.scope-prop]="loc.scope === 'PROPIEDAD'">
+                      {{ loc.scope === 'PROPIEDAD' ? '🏢 Propiedad' : '🏛️ Área Interna' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="stat-number">{{ loc.totalRegistered }}</span>
+                  </td>
+                  <td>
+                    <span class="stat-number text-amber">{{ loc.openAtCutoff }}</span>
+                  </td>
+                  <td>
+                    <span class="stat-number text-green">{{ loc.closedInPeriod }}</span>
+                  </td>
+                  <td>
+                    @if (loc.criticalCount > 0) {
+                      <span class="critical-pill">🚨 {{ loc.criticalCount }}</span>
+                    } @else {
+                      <span class="text-muted">0</span>
+                    }
+                  </td>
+                  <td>
+                    <a
+                      [routerLink]="['/issues']"
+                      [queryParams]="loc.scope === 'PROPIEDAD' ? { propertyId: loc.id } : { internalAreaId: loc.id }"
+                      class="btn-table-action"
+                    >
+                      Ver Novedades →
+                    </a>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </div>
+
+    <!-- CATEGORÍAS MÁS FRECUENTES -->
+    @if (data.byCategory && data.byCategory.length > 0) {
+      <div class="dashboard-box">
+        <h2 class="box-title">Incidencia por Categoría Operativa</h2>
+        <div class="category-chips-grid">
+          @for (cat of data.byCategory; track cat.categoryId) {
+            <div class="category-chip-card">
+              <div class="cat-header">
+                <span class="cat-name">{{ cat.categoryName }}</span>
+                <span class="cat-scope-tag">{{ cat.scope }}</span>
+              </div>
+              <div class="cat-stat">
+                <span class="cat-count">{{ cat.count }}</span>
+                <span class="cat-pct">{{ cat.percentage }}%</span>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+  }
+</div>
