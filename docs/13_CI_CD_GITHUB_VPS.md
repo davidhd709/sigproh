@@ -23,12 +23,11 @@ Si el proxy está dentro de otro contenedor, no apuntará a `127.0.0.1` del host
 
 ## Preparar el VPS
 
-El repositorio contiene configuración de ejemplo, no secretos de producción. Crea una carpeta de despliegue que pertenezca al usuario SSH, por ejemplo `/opt/sigproh`, y configura allí `.env.production` antes de activar el despliegue.
+El repositorio contiene configuración de ejemplo, no secretos de producción. Para mantener el proyecto bajo el directorio del usuario SSH, usa `/home/ingenierohenry/sigproh` como carpeta de despliegue y configura allí `.env.production` antes de activar el despliegue.
 
 ```bash
-sudo mkdir -p /opt/sigproh
-sudo chown USUARIO_SSH:USUARIO_SSH /opt/sigproh
-cd /opt/sigproh
+mkdir -p /home/ingenierohenry/sigproh
+cd /home/ingenierohenry/sigproh
 cp .env.production.example .env.production
 chmod 600 .env.production
 ```
@@ -50,7 +49,7 @@ En el repositorio `davidhd709/sigproh`, crea un Environment llamado `production`
 | `VPS_SSH_PORT` | Puerto SSH numérico. |
 | `VPS_SSH_PRIVATE_KEY` | Clave privada dedicada para este deploy, en formato OpenSSH. |
 | `VPS_KNOWN_HOSTS` | Línea `known_hosts` verificada para el host y puerto SSH. |
-| `VPS_DEPLOY_PATH` | Ruta absoluta del despliegue, por ejemplo `/opt/sigproh`. |
+| `VPS_DEPLOY_PATH` | Ruta absoluta del despliegue: `/home/ingenierohenry/sigproh`. |
 | `GHCR_USERNAME` | Usuario de GitHub que tiene acceso de lectura a los paquetes. |
 | `GHCR_READ_TOKEN` | PAT con alcance `read:packages`; no requiere acceso de escritura. |
 
@@ -79,7 +78,7 @@ Tras integrar el pull request, GitHub Actions publica y despliega el commit de `
 En el VPS, los comandos operativos básicos son:
 
 ```bash
-cd /opt/sigproh
+cd /home/ingenierohenry/sigproh
 docker compose --project-name sigproh --env-file .env.production -f docker-compose.production.yml ps
 docker compose --project-name sigproh --env-file .env.production -f docker-compose.production.yml logs --tail=100 api
 ```
