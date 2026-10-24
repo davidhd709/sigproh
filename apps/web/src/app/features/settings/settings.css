@@ -35,6 +35,17 @@
   color: #ffffff;
 }
 
+@media (max-width: 719px) {
+  .settings-tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .settings-tabs a {
+    height: 44px;
+  }
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
