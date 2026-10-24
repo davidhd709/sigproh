@@ -48,4 +48,4 @@ VOLUME ["/data/uploads"]
 EXPOSE 3000
 USER node
 
-CMD ["sh", "-c", "../../node_modules/.bin/prisma migrate deploy --config prisma7.config.ts && node dist/main.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy --config prisma7.config.ts && node dist/main.js"]
