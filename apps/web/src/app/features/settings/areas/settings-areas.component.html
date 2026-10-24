@@ -1,0 +1,177 @@
+<div class="page">
+  <header class="page-head">
+    <div>
+      <h1 class="page-title">Configuración</h1>
+      <p class="page-subtitle">Áreas internas de EG S.A.S. y sus responsables</p>
+    </div>
+    @if (canManage()) {
+      <button type="button" class="btn-primary" (click)="openNew()">
+        <app-icon name="plus" /> <span class="hide-sm">Nueva área</span>
+      </button>
+    }
+  </header>
+
+  <app-settings-nav />
+
+  @if (!canManage()) {
+    <div class="empty-state no-access">
+      <span class="empty-icon tone-danger"><app-icon name="ban" size="28px" /></span>
+      <h2>Sin permiso para esta sección</h2>
+      <p>Las áreas las administran el Director Operativo y el administrador.</p>
+    </div>
+  } @else {
+    @if (error()) {
+      <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ error() }}</span></div>
+    }
+    @if (notice() && !editingId()) {
+      <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ notice() }}</span></div>
+    }
+
+
+    @if (loading()) {
+      <ul class="entity-list" aria-busy="true">
+        @for (i of [1, 2]; track i) {
+          <li class="entity skeleton" style="height: 80px"></li>
+        }
+      </ul>
+    } @else if (areas().length === 0) {
+      <div class="empty-state">
+        <span class="empty-icon"><app-icon name="landmark" size="28px" /></span>
+        <h2>Aún no hay áreas internas</h2>
+        <p>Crea áreas como Mantenimiento, Sistemas o Logística para registrar novedades internas.</p>
+      </div>
+    } @else {
+      <ul class="entity-list">
+        @for (p of areas(); track p.id) {
+          <li class="entity" [class.inactive]="!p.isActive">
+            <span class="entity-icon"><app-icon name="landmark" size="20px" /></span>
+            <div class="entity-main">
+              <span class="entity-title">
+                {{ p.name }} <span class="code">{{ p.code }}</span>
+                @if (!p.isActive) {
+                  <span class="pill" data-tone="muted">Inactiva</span>
+                }
+              </span>
+              <span class="entity-sub">{{ p.description || 'Sin descripción' }}</span>
+              <span class="entity-tags">
+                @if (leadName(p); as lead) {
+                  <span class="tag lead">Principal: {{ lead }}</span>
+                } @else {
+                  <span class="pill pill-soft" data-tone="warning">Sin responsable principal</span>
+                }
+                <span class="tag">{{ p.assignments.length }} {{ p.assignments.length === 1 ? 'persona' : 'personas' }}</span>
+              </span>
+            </div>
+            <div class="entity-actions">
+              <button type="button" class="small-btn" (click)="openEdit(p)">Gestionar</button>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  <!-- Editor -->
+  @if (editingId()) {
+    <div class="modal-backdrop" role="presentation">
+      <div class="modal-card wide" role="dialog" aria-modal="true" aria-labelledby="areaTitle">
+        <div class="modal-header">
+          <h3 id="areaTitle">{{ editing()?.name || 'Nueva área' }}</h3>
+          <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="close()"><app-icon name="x" /></button>
+        </div>
+        <div class="modal-body">
+          @if (formError()) {
+            <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ formError() }}</span></div>
+          } @else if (notice() && editing()) {
+            <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ notice() }}</span></div>
+          }
+
+          <!-- Datos -->
+          <div class="inline-form">
+            <label class="field">
+              <span>Nombre *</span>
+              <input type="text" [(ngModel)]="form.name" />
+            </label>
+            <label class="field" style="flex: 0 1 140px">
+              <span>Código *</span>
+              <input type="text" [(ngModel)]="form.code" [disabled]="!!editing()" style="text-transform: uppercase" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Descripción</span>
+            <textarea [(ngModel)]="form.description" rows="2" placeholder="Qué atiende esta área"></textarea>
+          </label>
+          @if (!editing()) {
+            <small class="field-hint">El código identifica el área en novedades e informes y no se puede cambiar después.</small>
+          }
+          <div>
+            <button type="button" class="btn-primary" (click)="saveData()" [disabled]="saving()">
+              {{ editing() ? 'Guardar datos' : 'Crear área' }}
+            </button>
+          </div>
+
+          @if (editing(); as p) {
+            <!-- Coordinadores -->
+            <div class="sub-section">
+              <h4>Responsables</h4>
+              @if (p.assignments.length === 0) {
+                <p class="row-empty">Sin responsables. Las novedades de esta área no tendrán responsable sugerido.</p>
+              } @else {
+                <ul class="row-items">
+                  @for (a of p.assignments; track a.id) {
+                    <li>
+                      <span>
+                        {{ a.user.firstName }} {{ a.user.lastName }}
+                        <span class="code">{{ roleLabel(a.user.role) }}</span>
+                        @if (a.isLead) {
+                          <span class="tag lead">Principal</span>
+                        }
+                      </span>
+                      @if (!a.isLead) {
+                        <button type="button" class="small-btn" (click)="makeLead(p, a.user.id)">Hacer principal</button>
+                      }
+                      <button type="button" class="small-btn danger" (click)="unassign(p, a.user.id, a.user.firstName + ' ' + a.user.lastName)" [attr.aria-label]="'Retirar a ' + a.user.firstName">
+                        <app-icon name="x" />
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+              @if (candidatesFor(p).length > 0) {
+                <div class="inline-form">
+                  <label class="field">
+                    <span>Agregar persona</span>
+                    <select [(ngModel)]="newAssigneeId">
+                      <option value="">Selecciona…</option>
+                      @for (u of candidatesFor(p); track u.id) {
+                        <option [value]="u.id">{{ u.firstName }} {{ u.lastName }}</option>
+                      }
+                    </select>
+                  </label>
+                  <label class="check"><input type="checkbox" [(ngModel)]="newAssigneeLead" /> Principal</label>
+                  <button type="button" class="btn-secondary" (click)="assign(p)" [disabled]="!newAssigneeId || saving()">Agregar</button>
+                </div>
+              } @else {
+                <p class="row-empty">No hay más personas activas para asignar.</p>
+              }
+            </div>
+
+
+            <!-- Estado -->
+            <div class="sub-section">
+              <h4>Estado</h4>
+              <div class="inline-form">
+                <button type="button" class="small-btn" [class.danger]="p.isActive" (click)="toggleActive(p)">
+                  {{ p.isActive ? 'Desactivar área' : 'Activar área' }}
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" (click)="close()">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

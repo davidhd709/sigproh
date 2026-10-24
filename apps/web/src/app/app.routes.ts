@@ -48,6 +48,31 @@ export const routes: Routes = [
     component: IssueDetailComponent,
     title: 'SIGPROH — Detalle de Novedad',
   },
+  // Configuración: carga diferida (solo la usan administrador y director).
+  // Cada pantalla verifica el rol porque la sesión se restaura de forma asíncrona.
+  { path: 'settings', pathMatch: 'full', redirectTo: 'settings/properties' },
+  {
+    path: 'settings/users',
+    loadComponent: () => import('./features/settings/users/settings-users.component').then((m) => m.SettingsUsersComponent),
+    title: 'SIGPROH — Usuarios',
+  },
+  {
+    path: 'settings/properties',
+    loadComponent: () =>
+      import('./features/settings/properties/settings-properties.component').then((m) => m.SettingsPropertiesComponent),
+    title: 'SIGPROH — Propiedades',
+  },
+  {
+    path: 'settings/areas',
+    loadComponent: () => import('./features/settings/areas/settings-areas.component').then((m) => m.SettingsAreasComponent),
+    title: 'SIGPROH — Áreas internas',
+  },
+  {
+    path: 'settings/categories',
+    loadComponent: () =>
+      import('./features/settings/categories/settings-categories.component').then((m) => m.SettingsCategoriesComponent),
+    title: 'SIGPROH — Categorías',
+  },
   {
     path: '**',
     redirectTo: 'issues',

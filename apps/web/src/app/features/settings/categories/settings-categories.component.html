@@ -1,0 +1,128 @@
+<div class="page">
+  <header class="page-head">
+    <div>
+      <h1 class="page-title">Configuración</h1>
+      <p class="page-subtitle">Categorías de novedades y qué se exige para cerrarlas</p>
+    </div>
+  </header>
+
+  <app-settings-nav />
+
+  @if (!canManage()) {
+    <div class="empty-state no-access">
+      <span class="empty-icon tone-danger"><app-icon name="ban" size="28px" /></span>
+      <h2>Sin permiso para esta sección</h2>
+      <p>Las categorías las administran el Director Operativo y el administrador.</p>
+    </div>
+  } @else {
+    @if (error()) {
+      <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ error() }}</span></div>
+    }
+    @if (notice()) {
+      <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ notice() }}</span></div>
+    }
+
+    @for (g of groups(); track g.scope) {
+      <section class="section category-group">
+        <header class="section-head group-head">
+          <app-icon [name]="g.icon" />
+          <h2>{{ g.label }}</h2>
+          <button type="button" class="small-btn add" (click)="openNew(g.scope)"><app-icon name="plus" /> Nueva</button>
+        </header>
+
+        @if (loading()) {
+          <p class="row-empty">Cargando…</p>
+        } @else if (g.items.length === 0) {
+          <p class="row-empty">Sin categorías. Crea al menos una para poder registrar novedades de este ámbito.</p>
+        } @else {
+          <ul class="category-list">
+            @for (c of g.items; track c.id) {
+              <li [class.inactive]="!c.isActive">
+                <div class="cat-main">
+                  <span class="cat-name">
+                    {{ c.name }}
+                    @if (!c.isActive) {
+                      <span class="pill" data-tone="muted">Inactiva</span>
+                    }
+                  </span>
+                  <span class="cat-sub">
+                    {{ c.description || 'Sin descripción' }} ·
+                    {{ c._count?.issues ?? 0 }} {{ (c._count?.issues ?? 0) === 1 ? 'novedad' : 'novedades' }}
+                  </span>
+                </div>
+                <label class="switch" [title]="c.requiresEvidence ? 'Exige evidencia final para cerrar' : 'No exige evidencia final'">
+                  <input type="checkbox" [checked]="c.requiresEvidence" (change)="toggleEvidence(c)" [disabled]="saving() || !c.isActive" />
+                  <span class="switch-track"><span class="switch-thumb"></span></span>
+                  <span class="switch-label">Evidencia final</span>
+                </label>
+                <div class="cat-actions">
+                  <button type="button" class="small-btn" (click)="openEdit(c)">Editar</button>
+                  <button type="button" class="small-btn hide-sm" [class.danger]="c.isActive" (click)="toggleActive(c)">
+                    {{ c.isActive ? 'Desactivar' : 'Activar' }}
+                  </button>
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  }
+
+  @if (editing(); as target) {
+    <div class="modal-backdrop" role="presentation">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="catTitle">
+        <div class="modal-header">
+          <h3 id="catTitle">{{ target === 'new' ? 'Nueva categoría' : 'Editar categoría' }}</h3>
+          <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="editing.set(null)"><app-icon name="x" /></button>
+        </div>
+        <div class="modal-body">
+          @if (formError()) {
+            <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ formError() }}</span></div>
+          }
+          <label class="field">
+            <span>Ámbito</span>
+            <select [(ngModel)]="form.scope" [disabled]="target !== 'new'">
+              <option value="PROPIEDAD">Propiedades</option>
+              <option value="INTERNA">Áreas internas</option>
+            </select>
+            @if (target !== 'new') {
+              <small class="field-hint">El ámbito no se cambia porque las novedades registradas dependen de él.</small>
+            }
+          </label>
+          <label class="field">
+            <span>Nombre *</span>
+            <input type="text" [(ngModel)]="form.name" placeholder="Ej.: Ascensores" />
+          </label>
+          <label class="field">
+            <span>Descripción</span>
+            <textarea [(ngModel)]="form.description" rows="2" placeholder="Qué tipo de novedades agrupa"></textarea>
+          </label>
+          <label class="check">
+            <input type="checkbox" [(ngModel)]="form.requiresEvidence" />
+            Exigir al menos una evidencia de etapa final para cerrar
+          </label>
+          @if (target !== 'new' && target.isActive) {
+            <div class="sub-section">
+              <div class="inline-form">
+                <button type="button" class="small-btn danger" (click)="editing.set(null); toggleActive(target)">Desactivar categoría</button>
+              </div>
+            </div>
+          } @else if (target !== 'new') {
+            <div class="sub-section">
+              <div class="inline-form">
+                <button type="button" class="small-btn" (click)="editing.set(null); toggleActive(target)">Activar categoría</button>
+              </div>
+            </div>
+          }
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" (click)="editing.set(null)">Cancelar</button>
+          <button type="button" class="btn-primary" (click)="save()" [disabled]="saving()">
+            {{ saving() ? 'Guardando…' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

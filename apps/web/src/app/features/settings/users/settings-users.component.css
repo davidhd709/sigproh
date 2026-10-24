@@ -1,0 +1,37 @@
+.two-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.password-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.password-row input {
+  flex: 1;
+  font-family: var(--font-mono);
+}
+
+.password-row .small-btn {
+  height: 46px;
+  border-radius: var(--radius-sm);
+}
+
+.password-reveal {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.password-reveal code {
+  flex: 1;
+  font-size: 1.15rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  word-break: break-all;
+}

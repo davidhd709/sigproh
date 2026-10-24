@@ -1,0 +1,229 @@
+<div class="page">
+  <header class="page-head">
+    <div>
+      <h1 class="page-title">Configuración</h1>
+      <p class="page-subtitle">Cuentas de acceso y sus roles</p>
+    </div>
+    @if (canManage()) {
+      <button type="button" class="btn-primary" (click)="openNew()">
+        <app-icon name="plus" /> <span class="hide-sm">Nuevo usuario</span>
+      </button>
+    }
+  </header>
+
+  <app-settings-nav />
+
+  @if (!canManage()) {
+    <div class="empty-state no-access">
+      <span class="empty-icon tone-danger"><app-icon name="ban" size="28px" /></span>
+      <h2>Solo el administrador gestiona usuarios</h2>
+      <p>Pide al administrador del sistema que cree o modifique la cuenta.</p>
+    </div>
+  } @else {
+    @if (error()) {
+      <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ error() }}</span></div>
+    }
+    @if (notice()) {
+      <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ notice() }}</span></div>
+    }
+
+    <div class="toolbar">
+      <label class="search-box">
+        <app-icon name="search" size="18px" />
+        <input
+          type="search"
+          placeholder="Buscar por nombre o correo"
+          aria-label="Buscar usuarios"
+          [ngModel]="search()"
+          (ngModelChange)="search.set($event)"
+        />
+      </label>
+      <select aria-label="Filtrar por rol" [ngModel]="roleFilter()" (ngModelChange)="roleFilter.set($event)">
+        <option value="">Todos los roles</option>
+        @for (r of roles; track r) {
+          <option [value]="r">{{ roleLabel(r) }}</option>
+        }
+      </select>
+    </div>
+
+    @if (loading()) {
+      <ul class="entity-list" aria-busy="true">
+        @for (i of [1, 2, 3, 4]; track i) {
+          <li class="entity skeleton" style="height: 76px"></li>
+        }
+      </ul>
+    } @else if (filtered().length === 0) {
+      <div class="empty-state">
+        <span class="empty-icon"><app-icon name="users" size="28px" /></span>
+        <h2>Sin resultados</h2>
+        <p>Ningún usuario coincide con la búsqueda.</p>
+      </div>
+    } @else {
+      <ul class="entity-list">
+        @for (u of filtered(); track u.id) {
+          <li class="entity" [class.inactive]="!u.isActive">
+            <span class="entity-avatar">{{ initials(u.firstName, u.lastName) }}</span>
+            <div class="entity-main">
+              <span class="entity-title">
+                {{ u.firstName }} {{ u.lastName }}
+                @if (isSelf(u)) {
+                  <span class="tag">Tú</span>
+                }
+                @if (!u.isActive) {
+                  <span class="pill" data-tone="muted">Inactivo</span>
+                }
+              </span>
+              <span class="entity-sub">{{ u.email }}</span>
+              <span class="entity-tags">
+                <span class="pill pill-soft" data-tone="info">{{ roleLabel(u.role) }}</span>
+                @for (a of assignmentsSummary(u); track a) {
+                  <span class="tag">{{ a }}</span>
+                }
+                <span class="tag">{{ u.lastLoginAt ? 'Último ingreso ' + timeAgo(u.lastLoginAt) : 'Nunca ha ingresado' }}</span>
+              </span>
+            </div>
+            <div class="entity-actions">
+              <button type="button" class="small-btn" (click)="openEdit(u)">Editar</button>
+              <button type="button" class="small-btn hide-sm" (click)="openReset(u)">Contraseña</button>
+              @if (!isSelf(u)) {
+                <button type="button" class="small-btn hide-sm" [class.danger]="u.isActive" (click)="toggleActive(u)">
+                  {{ u.isActive ? 'Desactivar' : 'Activar' }}
+                </button>
+              }
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  <!-- Crear / editar -->
+  @if (editing(); as target) {
+    <div class="modal-backdrop" role="presentation">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="userFormTitle">
+        <div class="modal-header">
+          <h3 id="userFormTitle">{{ isNew() ? 'Nuevo usuario' : 'Editar usuario' }}</h3>
+          <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="editing.set(null)"><app-icon name="x" /></button>
+        </div>
+        <div class="modal-body">
+          @if (formError()) {
+            <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ formError() }}</span></div>
+          }
+          <div class="two-fields">
+            <label class="field">
+              <span>Nombre *</span>
+              <input type="text" [(ngModel)]="form.firstName" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Apellido *</span>
+              <input type="text" [(ngModel)]="form.lastName" autocomplete="off" />
+            </label>
+          </div>
+          <label class="field">
+            <span>Correo institucional *</span>
+            <input type="email" inputmode="email" [(ngModel)]="form.email" autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Rol *</span>
+            <select [(ngModel)]="form.role" [disabled]="target !== 'new' && isSelf(target)">
+              @for (r of roles; track r) {
+                <option [value]="r">{{ roleLabel(r) }}</option>
+              }
+            </select>
+            @if (target !== 'new' && isSelf(target)) {
+              <small class="field-hint">No puedes cambiar tu propio rol.</small>
+            } @else if (target !== 'new') {
+              <small class="field-hint">Si cambias el rol, la persona deberá iniciar sesión de nuevo.</small>
+            }
+          </label>
+          @if (isNew()) {
+            <label class="field">
+              <span>Contraseña inicial *</span>
+              <div class="password-row">
+                <input type="text" [(ngModel)]="form.password" autocomplete="new-password" spellcheck="false" />
+                <button type="button" class="small-btn" (click)="regenerate('form')"><app-icon name="refresh" /> Otra</button>
+              </div>
+              <small class="field-hint">Mínimo 10 caracteres. Entrégala a la persona por un canal seguro.</small>
+            </label>
+          } @else if (target !== 'new') {
+            <div class="sub-section">
+              <h4>Acceso</h4>
+              <div class="inline-form">
+                <button type="button" class="small-btn" (click)="editing.set(null); openReset(target)">
+                  <app-icon name="refresh" /> Restablecer contraseña
+                </button>
+                @if (!isSelf(target)) {
+                  <button type="button" class="small-btn" [class.danger]="target.isActive" (click)="editing.set(null); toggleActive(target)">
+                    {{ target.isActive ? 'Desactivar cuenta' : 'Activar cuenta' }}
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" (click)="editing.set(null)">Cancelar</button>
+          <button type="button" class="btn-primary" (click)="save()" [disabled]="saving()">
+            {{ saving() ? 'Guardando…' : isNew() ? 'Crear usuario' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Restablecer contraseña -->
+  @if (resetting(); as user) {
+    <div class="modal-backdrop" role="presentation">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="resetTitle">
+        <div class="modal-header">
+          <h3 id="resetTitle">Nueva contraseña</h3>
+          <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="resetting.set(null)"><app-icon name="x" /></button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            Para <strong>{{ user.firstName }} {{ user.lastName }}</strong>. Se cerrarán sus sesiones abiertas.
+          </p>
+          @if (formError()) {
+            <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ formError() }}</span></div>
+          }
+          <label class="field">
+            <span>Contraseña *</span>
+            <div class="password-row">
+              <input type="text" [(ngModel)]="resetPasswordValue" autocomplete="new-password" spellcheck="false" />
+              <button type="button" class="small-btn" (click)="regenerate('reset')"><app-icon name="refresh" /> Otra</button>
+            </div>
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" (click)="resetting.set(null)">Cancelar</button>
+          <button type="button" class="btn-primary" (click)="confirmReset()" [disabled]="saving()">
+            {{ saving() ? 'Guardando…' : 'Asignar contraseña' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Contraseña asignada: se muestra una sola vez -->
+  @if (revealedPassword(); as info) {
+    <div class="modal-backdrop" role="presentation">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="revealTitle">
+        <div class="modal-header">
+          <h3 id="revealTitle">Contraseña lista</h3>
+        </div>
+        <div class="modal-body">
+          <p class="modal-desc">
+            Entrégale esta contraseña a <strong>{{ info.user }}</strong>. Por seguridad no se volverá a mostrar.
+          </p>
+          <div class="password-reveal">
+            <code>{{ info.password }}</code>
+            <button type="button" class="small-btn" (click)="copy(info.password)">Copiar</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-primary" (click)="revealedPassword.set(null)">Listo</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

@@ -1,0 +1,214 @@
+<div class="page">
+  <header class="page-head">
+    <div>
+      <h1 class="page-title">Configuración</h1>
+      <p class="page-subtitle">Propiedades, sus zonas y coordinadores</p>
+    </div>
+    @if (canManage()) {
+      <button type="button" class="btn-primary" (click)="openNew()">
+        <app-icon name="plus" /> <span class="hide-sm">Nueva propiedad</span>
+      </button>
+    }
+  </header>
+
+  <app-settings-nav />
+
+  @if (!canManage()) {
+    <div class="empty-state no-access">
+      <span class="empty-icon tone-danger"><app-icon name="ban" size="28px" /></span>
+      <h2>Sin permiso para esta sección</h2>
+      <p>Las propiedades las administran el Director Operativo y el administrador.</p>
+    </div>
+  } @else {
+    @if (error()) {
+      <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ error() }}</span></div>
+    }
+    @if (notice() && !editingId()) {
+      <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ notice() }}</span></div>
+    }
+
+    <div class="toolbar">
+      <label class="search-box">
+        <app-icon name="search" size="18px" />
+        <input type="search" placeholder="Buscar por nombre o código" aria-label="Buscar propiedades" [ngModel]="search()" (ngModelChange)="search.set($event)" />
+      </label>
+    </div>
+
+    @if (loading()) {
+      <ul class="entity-list" aria-busy="true">
+        @for (i of [1, 2, 3]; track i) {
+          <li class="entity skeleton" style="height: 80px"></li>
+        }
+      </ul>
+    } @else if (filtered().length === 0) {
+      <div class="empty-state">
+        <span class="empty-icon"><app-icon name="building" size="28px" /></span>
+        <h2>{{ search() ? 'Sin resultados' : 'Aún no hay propiedades' }}</h2>
+        <p>{{ search() ? 'Ninguna propiedad coincide con la búsqueda.' : 'Crea la primera propiedad para empezar a registrar novedades.' }}</p>
+      </div>
+    } @else {
+      <ul class="entity-list">
+        @for (p of filtered(); track p.id) {
+          <li class="entity" [class.inactive]="!p.isActive">
+            <span class="entity-icon"><app-icon name="building" size="20px" /></span>
+            <div class="entity-main">
+              <span class="entity-title">
+                {{ p.name }} <span class="code">{{ p.code }}</span>
+                @if (!p.isActive) {
+                  <span class="pill" data-tone="muted">Inactiva</span>
+                }
+              </span>
+              <span class="entity-sub">{{ p.address || 'Sin dirección registrada' }}</span>
+              <span class="entity-tags">
+                @if (leadName(p); as lead) {
+                  <span class="tag lead">Principal: {{ lead }}</span>
+                } @else {
+                  <span class="pill pill-soft" data-tone="warning">Sin coordinador principal</span>
+                }
+                <span class="tag">{{ p.assignments.length }} {{ p.assignments.length === 1 ? 'coordinador' : 'coordinadores' }}</span>
+                <span class="tag">{{ p.zones.length }} {{ p.zones.length === 1 ? 'zona' : 'zonas' }}</span>
+              </span>
+            </div>
+            <div class="entity-actions">
+              <button type="button" class="small-btn" (click)="openEdit(p)">Gestionar</button>
+            </div>
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  <!-- Editor -->
+  @if (editingId()) {
+    <div class="modal-backdrop" role="presentation">
+      <div class="modal-card wide" role="dialog" aria-modal="true" aria-labelledby="propTitle">
+        <div class="modal-header">
+          <h3 id="propTitle">{{ editing()?.name || 'Nueva propiedad' }}</h3>
+          <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="close()"><app-icon name="x" /></button>
+        </div>
+        <div class="modal-body">
+          @if (formError()) {
+            <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ formError() }}</span></div>
+          } @else if (notice() && editing()) {
+            <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ notice() }}</span></div>
+          }
+
+          <!-- Datos -->
+          <div class="inline-form">
+            <label class="field">
+              <span>Nombre *</span>
+              <input type="text" [(ngModel)]="form.name" />
+            </label>
+            <label class="field" style="flex: 0 1 140px">
+              <span>Código *</span>
+              <input type="text" [(ngModel)]="form.code" [disabled]="!!editing()" style="text-transform: uppercase" />
+            </label>
+          </div>
+          <div class="inline-form">
+            <label class="field">
+              <span>Dirección</span>
+              <input type="text" [(ngModel)]="form.address" />
+            </label>
+            <label class="field" style="flex: 0 1 180px">
+              <span>NIT</span>
+              <input type="text" [(ngModel)]="form.nit" />
+            </label>
+          </div>
+          @if (!editing()) {
+            <small class="field-hint">El código identifica la propiedad en novedades e informes y no se puede cambiar después.</small>
+          }
+          <div>
+            <button type="button" class="btn-primary" (click)="saveData()" [disabled]="saving()">
+              {{ editing() ? 'Guardar datos' : 'Crear propiedad' }}
+            </button>
+          </div>
+
+          @if (editing(); as p) {
+            <!-- Coordinadores -->
+            <div class="sub-section">
+              <h4>Coordinadores</h4>
+              @if (p.assignments.length === 0) {
+                <p class="row-empty">Sin coordinadores. Las novedades de esta propiedad no tendrán responsable sugerido.</p>
+              } @else {
+                <ul class="row-items">
+                  @for (a of p.assignments; track a.id) {
+                    <li>
+                      <span>
+                        {{ a.user.firstName }} {{ a.user.lastName }}
+                        @if (a.isLead) {
+                          <span class="tag lead">Principal</span>
+                        }
+                      </span>
+                      @if (!a.isLead) {
+                        <button type="button" class="small-btn" (click)="makeLead(p, a.user.id)">Hacer principal</button>
+                      }
+                      <button type="button" class="small-btn danger" (click)="unassign(p, a.user.id, a.user.firstName + ' ' + a.user.lastName)" [attr.aria-label]="'Retirar a ' + a.user.firstName">
+                        <app-icon name="x" />
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+              @if (candidatesFor(p).length > 0) {
+                <div class="inline-form">
+                  <label class="field">
+                    <span>Agregar coordinador</span>
+                    <select [(ngModel)]="newAssigneeId">
+                      <option value="">Selecciona…</option>
+                      @for (u of candidatesFor(p); track u.id) {
+                        <option [value]="u.id">{{ u.firstName }} {{ u.lastName }}</option>
+                      }
+                    </select>
+                  </label>
+                  <label class="check"><input type="checkbox" [(ngModel)]="newAssigneeLead" /> Principal</label>
+                  <button type="button" class="btn-secondary" (click)="assign(p)" [disabled]="!newAssigneeId || saving()">Agregar</button>
+                </div>
+              } @else {
+                <p class="row-empty">No hay más coordinadores activos para asignar. Créalos en Usuarios.</p>
+              }
+            </div>
+
+            <!-- Zonas -->
+            <div class="sub-section">
+              <h4>Zonas</h4>
+              @if (p.zones.length === 0) {
+                <p class="row-empty">Sin zonas. Son opcionales (ej.: Torre A, Sótano 2, Piscina).</p>
+              } @else {
+                <ul class="row-items">
+                  @for (z of p.zones; track z.id) {
+                    <li>
+                      <span>{{ z.name }}</span>
+                      <button type="button" class="small-btn danger" (click)="removeZone(p, z.id, z.name)" [attr.aria-label]="'Quitar zona ' + z.name">
+                        <app-icon name="x" />
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+              <div class="inline-form">
+                <label class="field">
+                  <span>Nueva zona</span>
+                  <input type="text" [(ngModel)]="newZone" placeholder="Ej.: Torre B" (keydown.enter)="addZone(p)" />
+                </label>
+                <button type="button" class="btn-secondary" (click)="addZone(p)" [disabled]="!newZone.trim() || saving()">Agregar</button>
+              </div>
+            </div>
+
+            <!-- Estado -->
+            <div class="sub-section">
+              <h4>Estado</h4>
+              <div class="inline-form">
+                <button type="button" class="small-btn" [class.danger]="p.isActive" (click)="toggleActive(p)">
+                  {{ p.isActive ? 'Desactivar propiedad' : 'Activar propiedad' }}
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" (click)="close()">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
