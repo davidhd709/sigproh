@@ -43,6 +43,8 @@ export class LoginUseCase {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
+    await this.users.recordLogin(user.id);
+
     return {
       userId: user.id,
       organizationId: user.organizationId,

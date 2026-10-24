@@ -26,4 +26,8 @@ export class PrismaUserRepository implements UserRepository {
 
     return user;
   }
+
+  async recordLogin(userId: string): Promise<void> {
+    await this.prisma.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } });
+  }
 }

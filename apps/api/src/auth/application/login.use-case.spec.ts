@@ -5,6 +5,12 @@ import { PasswordHasherPort } from './password-hasher.port';
 import { UserRepository } from '../domain/user.repository';
 
 class FakeUserRepository extends UserRepository {
+  readonly logins: string[] = [];
+
+  async recordLogin(userId: string): Promise<void> {
+    this.logins.push(userId);
+  }
+
   async findByEmail(email: string) {
     if (email !== 'admin@sigproh.local') {
       return null;
@@ -75,5 +81,15 @@ describe('LoginUseCase', () => {
         password: 'Cambiar123!',
       }),
     ).rejects.toThrow('Credenciales inválidas');
+  });
+  it('registra el último ingreso solo cuando la contraseña es correcta', async () => {
+    const repo = new FakeUserRepository();
+    const useCase = new LoginUseCase(repo, new FakePasswordHasher());
+
+    await expect(useCase.execute({ email: 'admin@sigproh.local', password: 'incorrecta' })).rejects.toThrow();
+    expect(repo.logins).toEqual([]);
+
+    await useCase.execute({ email: 'admin@sigproh.local', password: 'Cambiar123!' });
+    expect(repo.logins).toEqual(['user-1']);
   });
 });

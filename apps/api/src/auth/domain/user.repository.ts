@@ -13,4 +13,6 @@ export type AuthUserRecord = {
 
 export abstract class UserRepository {
   abstract findByEmail(email: string): Promise<AuthUserRecord | null>;
+  /** Registra la fecha del último inicio de sesión exitoso. */
+  abstract recordLogin(userId: string): Promise<void>;
 }

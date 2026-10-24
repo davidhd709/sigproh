@@ -132,5 +132,9 @@ describe('AuthService', () => {
 
     expect(localStorage.getItem('sigproh_token')).toBeNull();
     expect(service.currentUser()).toBeNull();
+    // Revoca la sesión en el servidor enviando la cookie de refresco
+    const logoutReq = httpMock.expectOne((req) => req.url.includes('/auth/logout'));
+    expect(logoutReq.request.withCredentials).toBe(true);
+    logoutReq.flush(null, { status: 204, statusText: 'No Content' });
   });
 });

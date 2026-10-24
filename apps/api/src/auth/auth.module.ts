@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 
 import { RefreshTokenService } from './application/refresh-token.service';
+import { AuthSessionService } from './application/auth-session.service';
 
 import { AccessTokenService } from './application/access-token.service';
 import { LoginUseCase } from './application/login.use-case';
@@ -35,6 +36,7 @@ if (!jwtSecret) {
   controllers: [AuthController],
   providers: [
     LoginUseCase,
+    AuthSessionService,
     AccessTokenService,
     RefreshTokenService,
     JwtAuthGuard,

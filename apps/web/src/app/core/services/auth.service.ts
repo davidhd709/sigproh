@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, tap, catchError, switchMap } from 'rxjs';
+import { Observable, tap, catchError, switchMap, map, finalize, shareReplay, throwError, timer } from 'rxjs';
 import { environment } from '../../../environments/environment';
 
 export interface CurrentUserProfile {
@@ -55,6 +55,13 @@ export class AuthService {
 
   readonly loading = signal<boolean>(false);
   readonly authError = signal<string | null>(null);
+  /** true mientras se recupera una sesión guardada al abrir la app (evita mostrar el login un instante). */
+  readonly restoring = signal<boolean>(false);
+  /** Motivo por el que se cerró la sesión sin que el usuario lo pidiera (se muestra en el login). */
+  readonly sessionNotice = signal<string | null>(null);
+
+  /** Renovación en curso, compartida por todas las peticiones que reciban 401 a la vez. */
+  private refreshInFlight: Observable<string> | null = null;
 
   /** Cuentas de prueba para pruebas operativas: provistas exclusivamente por environment en desarrollo */
   readonly availableAccounts: AvailableAccount[] = environment.devAccounts;
@@ -67,13 +74,62 @@ export class AuthService {
     if (typeof localStorage === 'undefined') return;
     const token = localStorage.getItem('sigproh_token');
     if (token) {
-      this.fetchMe(token).subscribe({
-        error: () => {
-          localStorage.removeItem('sigproh_token');
-          this.currentUser.set(null);
-        },
-      });
+      // Si el token venció, el interceptor lo renueva con la cookie y reintenta /auth/me
+      this.restoring.set(true);
+      this.fetchMe(token)
+        .pipe(finalize(() => this.restoring.set(false)))
+        .subscribe({
+          error: () => {
+            localStorage.removeItem('sigproh_token');
+            this.currentUser.set(null);
+          },
+        });
     }
+  }
+
+  /**
+   * Pide un token de acceso nuevo usando la cookie httpOnly de refresco (que el backend rota).
+   * Si otra pestaña renovó al mismo tiempo (409), reintenta una vez con la cookie ya actualizada.
+   */
+  refreshAccessToken(): Observable<string> {
+    if (!this.refreshInFlight) {
+      const request = () =>
+        this.http.post<{ accessToken: string }>(`${this.apiUrl}/auth/refresh`, {}, { withCredentials: true });
+      this.refreshInFlight = request().pipe(
+        catchError((err) => (err.status === 409 ? timer(400).pipe(switchMap(request)) : throwError(() => err))),
+        map((res) => {
+          localStorage.setItem('sigproh_token', res.accessToken);
+          return res.accessToken;
+        }),
+        finalize(() => (this.refreshInFlight = null)),
+        shareReplay(1),
+      );
+    }
+    return this.refreshInFlight;
+  }
+
+  /** La sesión ya no se puede renovar: se limpia y el login explica por qué. */
+  expireSession(): void {
+    // Avisa tanto si la sesión estaba en uso como si se intentaba recuperar al abrir la app
+    if (!this.currentUser() && !this.restoring()) return;
+    this.clearLocalSession();
+    this.sessionNotice.set('Tu sesión expiró. Vuelve a iniciar sesión.');
+  }
+
+  /** El propio usuario cambia su contraseña; el backend cierra sus otras sesiones. */
+  changePassword(currentPassword: string, newPassword: string): Observable<void> {
+    const token = localStorage.getItem('sigproh_token');
+    return this.http
+      .post<{ accessToken: string }>(
+        `${this.apiUrl}/auth/change-password`,
+        { currentPassword, newPassword },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {}, withCredentials: true },
+      )
+      .pipe(
+        map((res) => {
+          localStorage.setItem('sigproh_token', res.accessToken);
+        }),
+      );
   }
 
   /**
@@ -82,9 +138,11 @@ export class AuthService {
   login(email: string, password: string): Observable<CurrentUserProfile> {
     this.loading.set(true);
     this.authError.set(null);
+    this.sessionNotice.set(null);
 
     return this.http
-      .post<LoginResponse>(`${this.apiUrl}/auth/login`, { email, password })
+      // withCredentials: el backend entrega la cookie httpOnly de refresco
+      .post<LoginResponse>(`${this.apiUrl}/auth/login`, { email, password }, { withCredentials: true })
       .pipe(
         switchMap((res) => {
           if (typeof localStorage !== 'undefined') {
@@ -155,6 +213,13 @@ export class AuthService {
    * Cierra la sesión activa y borra el token almacenado
    */
   logout(): void {
+    // Revoca la sesión en el servidor (y borra la cookie); no bloquea la salida si falla
+    this.http.post(`${this.apiUrl}/auth/logout`, {}, { withCredentials: true }).subscribe({ error: () => {} });
+    this.clearLocalSession();
+    this.sessionNotice.set(null);
+  }
+
+  private clearLocalSession(): void {
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem('sigproh_token');
     }
