@@ -667,7 +667,7 @@ export class IssuesService {
     if (query.mine) where.assignedUserId = user.id;
     if (query.pendingReview) where.status = IssueStatus.EN_REVISION;
 
-    return this.prisma.issue.findMany({
+    const issues = await this.prisma.issue.findMany({
       where,
       include: {
         category: { select: { id: true, name: true, scope: true } },
@@ -677,9 +677,54 @@ export class IssuesService {
         createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
         suggestedUser: { select: { id: true, firstName: true, lastName: true, email: true } },
         assignedUser: { select: { id: true, firstName: true, lastName: true, email: true } },
+        // Solo actividades abiertas, con lo mínimo para el resumen de bandeja
+        activities: {
+          where: { status: { notIn: [ActivityStatus.COMPLETADA, ActivityStatus.CANCELADA] } },
+          select: { status: true, dueDate: true, assignedUserId: true },
+        },
+        // Último hito del flujo de cierre, para saber si la novedad fue devuelta
+        events: {
+          where: { eventType: { in: IssuesService.CLOSURE_FLOW_EVENTS } },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { eventType: true, createdAt: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    const now = new Date();
+    return issues.map(({ activities, events, ...issue }) => ({
+      ...issue,
+      inbox: IssuesService.inboxSummary(activities ?? [], events?.[0], user.id, now),
+    }));
+  }
+
+  private static readonly CLOSURE_FLOW_EVENTS: IssueEventType[] = [
+    IssueEventType.SOLICITUD_CIERRE,
+    IssueEventType.DEVOLUCION,
+    IssueEventType.CIERRE_DEFINITIVO,
+    IssueEventType.REAPERTURA,
+  ];
+
+  /**
+   * Resumen para las bandejas por rol (RF-027): actividades abiertas, vencidas,
+   * bloqueadas, las asignadas al usuario y si la novedad quedó devuelta.
+   */
+  static inboxSummary(
+    activities: { status: ActivityStatus; dueDate: Date | null; assignedUserId: string | null }[],
+    lastClosureEvent: { eventType: IssueEventType; createdAt: Date } | undefined,
+    userId: string,
+    now: Date,
+  ) {
+    return {
+      openActivities: activities.length,
+      overdueActivities: activities.filter((a) => a.dueDate !== null && a.dueDate < now).length,
+      blockedActivities: activities.filter((a) => a.status === ActivityStatus.BLOQUEADA).length,
+      myOpenActivities: activities.filter((a) => a.assignedUserId === userId).length,
+      returned: lastClosureEvent?.eventType === IssueEventType.DEVOLUCION,
+      returnedAt: lastClosureEvent?.eventType === IssueEventType.DEVOLUCION ? lastClosureEvent.createdAt : null,
+    };
   }
 
   /**

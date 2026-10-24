@@ -93,6 +93,16 @@ export interface IssueEvent {
   user?: UserSummary;
 }
 
+/** Resumen calculado por el backend para las bandejas por rol (RF-027). */
+export interface IssueInboxSummary {
+  openActivities: number;
+  overdueActivities: number;
+  blockedActivities: number;
+  myOpenActivities: number;
+  returned: boolean;
+  returnedAt: string | null;
+}
+
 export interface Issue {
   id: string;
   code: string;
@@ -125,6 +135,8 @@ export interface Issue {
   activities?: IssueActivity[];
   comments?: IssueComment[];
   attachments?: IssueAttachment[];
+  /** Solo viene en la lista (GET /issues). */
+  inbox?: IssueInboxSummary;
 }
 
 export type ActivityStatus =

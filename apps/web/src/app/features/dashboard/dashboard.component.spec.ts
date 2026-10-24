@@ -6,12 +6,14 @@ import { DashboardComponent } from './dashboard.component';
 import { DashboardService } from '../../core/services/dashboard.service';
 import { IssuesService } from '../../core/services/issues.service';
 import { AuthService } from '../../core/services/auth.service';
+import { ReportService } from '../../core/services/report.service';
 
 describe('DashboardComponent', () => {
   let component: DashboardComponent;
   let fixture: ComponentFixture<DashboardComponent>;
   let mockDashboardService: any;
   let mockIssuesService: any;
+  let mockReportService: any;
   let mockAuthService: any;
 
   const mockMetricsData: any = {
@@ -88,7 +90,15 @@ describe('DashboardComponent', () => {
     mockIssuesService = {
       getProperties: vi.fn().mockReturnValue(of([{ id: 'prop-1', name: 'Torres del Parque' }])),
       getInternalAreas: vi.fn().mockReturnValue(of([{ id: 'area-1', name: 'Operaciones' }])),
+      getIssues: vi.fn().mockReturnValue(
+        of([
+          { id: 'i1', status: 'EN_REVISION', priority: 'MEDIA', assignedUserId: null, createdAt: new Date().toISOString() },
+          { id: 'i2', status: 'PENDIENTE_CIERRE', priority: 'ALTA', assignedUserId: 'c1', createdAt: new Date().toISOString() },
+          { id: 'i3', status: 'CERRADA', priority: 'CRITICA', assignedUserId: 'c1', createdAt: new Date().toISOString() },
+        ]),
+      ),
     };
+    mockReportService = { getReports: vi.fn().mockReturnValue(of([{ id: 'r1' }, { id: 'r2' }])) };
 
     mockAuthService = {
       currentUser: vi.fn().mockReturnValue({
@@ -106,6 +116,7 @@ describe('DashboardComponent', () => {
         { provide: DashboardService, useValue: mockMetricsData ? mockDashboardService : {} },
         { provide: IssuesService, useValue: mockIssuesService },
         { provide: AuthService, useValue: mockAuthService },
+        { provide: ReportService, useValue: mockReportService },
       ],
     }).compileComponents();
 
@@ -124,8 +135,8 @@ describe('DashboardComponent', () => {
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
 
-    expect(compiled.querySelector('.dashboard-title')?.textContent).toContain('Tablero de Control');
-    expect(compiled.querySelector('.period-banner')?.textContent).toContain('Fecha de Corte');
+    expect(compiled.querySelector('.dashboard-title')?.textContent).toContain('Resumen operativo');
+    expect(compiled.querySelector('.period-banner')?.textContent).toContain('Fecha de corte');
 
     // KPI values
     const kpiValues = compiled.querySelectorAll('.kpi-value');
@@ -142,7 +153,7 @@ describe('DashboardComponent', () => {
     expect(compiled.querySelector('.attention-box')).toBeTruthy();
     expect(compiled.textContent).toContain('NOV-2026-0010');
     expect(compiled.textContent).toContain('Fuga de agua en motobomba');
-    expect(compiled.textContent).toContain('⚠️ Actividad Bloqueada');
+    expect(compiled.querySelector('.badge-blocked')?.textContent).toContain('Actividad bloqueada');
   });
 
   it('aplica preajustes de período correctamente (LAST_30_DAYS, THIS_YEAR)', () => {
@@ -170,5 +181,17 @@ describe('DashboardComponent', () => {
 
     expect(component.metrics()).toBeNull();
     expect(component.errorMessage()).toContain('Acceso denegado (403)');
+  });
+
+  it('Tus pendientes: el director ve por revisar, sin responsable, por cerrar e informes por aprobar', () => {
+    fixture.detectChanges();
+    const pending = component.pending() ?? [];
+    const byKey = Object.fromEntries(pending.map((p) => [p.def.key, p.count]));
+
+    expect(byKey).toEqual(expect.objectContaining({ TO_REVIEW: 1, UNASSIGNED: 1, TO_CLOSE: 1 }));
+    // La crítica ya cerrada no cuenta como pendiente
+    expect(byKey['CRITICAL']).toBeUndefined();
+    expect(mockReportService.getReports).toHaveBeenCalledWith({ status: 'EN_REVISION' });
+    expect(component.reportsInReview()).toBe(2);
   });
 });
