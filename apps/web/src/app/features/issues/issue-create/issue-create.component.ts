@@ -1,24 +1,44 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { IconComponent } from '../../../shared/icon/icon.component';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { concatMap, from, map, of, catchError, toArray } from 'rxjs';
 import { IssuesService } from '../../../core/services/issues.service';
+import {
+  ACCEPT_ANY,
+  ACCEPT_IMAGES,
+  ALLOWED_FORMATS_LABEL,
+  FILE_POLICY,
+  MAX_SIZE_LABEL,
+  fileRejection,
+  formatBytes,
+} from '../../../shared/file-policy';
 import { AuthService } from '../../../core/services/auth.service';
 import {
   Category,
   CreateIssuePayload,
+  EvidenceStage,
   IssuePriority,
   IssueScope,
 } from '../../../core/models/issue.model';
 
+/** Archivo elegido en el formulario, pendiente de subir cuando exista la novedad. */
+interface PendingFile {
+  id: string;
+  file: File;
+  kind: 'PHOTO' | 'QUOTE';
+  previewUrl: string | null;
+}
+
 @Component({
   selector: 'app-issue-create',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [IconComponent, CommonModule, RouterModule, FormsModule],
   templateUrl: './issue-create.component.html',
   styleUrls: ['./issue-create.component.css'],
 })
-export class IssueCreateComponent implements OnInit {
+export class IssueCreateComponent implements OnInit, OnDestroy {
   private readonly issuesService = inject(IssuesService);
   private readonly router = inject(Router);
   readonly authService = inject(AuthService);
@@ -41,6 +61,19 @@ export class IssueCreateComponent implements OnInit {
   readonly loading = signal<boolean>(false);
   readonly errorMessage = signal<string | null>(null);
   readonly successMessage = signal<string | null>(null);
+
+  // Fotos y cotizaciones opcionales (se suben después de crear la novedad)
+  readonly acceptImages = ACCEPT_IMAGES;
+  readonly acceptQuotes = ACCEPT_ANY;
+  readonly formatsLabel = ALLOWED_FORMATS_LABEL;
+  readonly maxSizeLabel = MAX_SIZE_LABEL;
+  readonly formatBytes = formatBytes;
+  private fileSeq = 0;
+  readonly pendingFiles = signal<PendingFile[]>([]);
+  readonly photos = computed(() => this.pendingFiles().filter((f) => f.kind === 'PHOTO'));
+  readonly quotes = computed(() => this.pendingFiles().filter((f) => f.kind === 'QUOTE'));
+  readonly fileWarning = signal<string | null>(null);
+  readonly uploadProgress = signal<{ done: number; total: number } | null>(null);
 
   ngOnInit(): void {
     this.loadCatalogs();
@@ -95,6 +128,69 @@ export class IssueCreateComponent implements OnInit {
   getSelectedPropertyZones(): any[] {
     const prop = this.properties().find((p) => p.id === this.propertyId);
     return prop?.zones || [];
+  }
+
+  ngOnDestroy(): void {
+    this.pendingFiles().forEach((f) => f.previewUrl && URL.revokeObjectURL(f.previewUrl));
+  }
+
+  onFilesSelected(event: Event, kind: PendingFile['kind']): void {
+    const input = event.target as HTMLInputElement;
+    const chosen = Array.from(input.files ?? []);
+    input.value = ''; // permite volver a elegir el mismo archivo tras quitarlo
+    if (chosen.length === 0) return;
+
+    const allowed = kind === 'PHOTO' ? FILE_POLICY.imageTypes : undefined;
+    const rejected: string[] = [];
+    const accepted: PendingFile[] = [];
+    for (const file of chosen) {
+      const reason = fileRejection(file, allowed);
+      if (reason) {
+        rejected.push(reason);
+        continue;
+      }
+      if (this.pendingFiles().length + accepted.length >= FILE_POLICY.maxAttachmentsPerIssue) {
+        rejected.push(`Máximo ${FILE_POLICY.maxAttachmentsPerIssue} archivos por novedad.`);
+        break;
+      }
+      accepted.push({
+        id: `f${++this.fileSeq}`,
+        file,
+        kind,
+        previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      });
+    }
+
+    this.pendingFiles.update((list) => [...list, ...accepted]);
+    this.fileWarning.set(rejected.length ? rejected.join(' ') : null);
+  }
+
+  removeFile(id: string): void {
+    const target = this.pendingFiles().find((f) => f.id === id);
+    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+    this.pendingFiles.update((list) => list.filter((f) => f.id !== id));
+  }
+
+  /** Sube los archivos uno por uno; devuelve los nombres que fallaron. */
+  private uploadPending(issueId: string) {
+    const files = this.pendingFiles();
+    this.uploadProgress.set({ done: 0, total: files.length });
+    return from(files).pipe(
+      concatMap((pending) => {
+        // Fotos = estado al reportar; cotizaciones = soporte documental
+        const stage: EvidenceStage = pending.kind === 'PHOTO' ? 'INICIAL' : 'SOPORTE';
+        return this.issuesService.uploadAttachment(issueId, pending.file, stage).pipe(
+          map(() => null),
+          catchError(() => of(pending.file.name)),
+        );
+      }),
+      map((failed) => {
+        this.uploadProgress.update((p) => (p ? { ...p, done: p.done + 1 } : p));
+        return failed;
+      }),
+      toArray(),
+      map((results) => results.filter((name): name is string => name !== null)),
+    );
   }
 
   onSubmit(): void {
@@ -159,11 +255,29 @@ export class IssueCreateComponent implements OnInit {
 
     this.issuesService.createIssue(payload).subscribe({
       next: (created) => {
-        this.loading.set(false);
-        this.successMessage.set(`Novedad registrada exitosamente con código ${created.code}.`);
-        setTimeout(() => {
-          this.router.navigate(['/issues', created.id]);
-        }, 1200);
+        const goToDetail = () => setTimeout(() => this.router.navigate(['/issues', created.id]), 1200);
+
+        if (this.pendingFiles().length === 0) {
+          this.loading.set(false);
+          this.successMessage.set(`Novedad registrada exitosamente con código ${created.code}.`);
+          goToDetail();
+          return;
+        }
+
+        // La novedad ya existe: si algún archivo falla no se pierde el registro
+        this.uploadPending(created.id).subscribe((failed) => {
+          this.loading.set(false);
+          this.uploadProgress.set(null);
+          if (failed.length === 0) {
+            this.successMessage.set(`Novedad ${created.code} registrada con sus archivos.`);
+          } else {
+            this.errorMessage.set(
+              `La novedad ${created.code} se registró, pero no se pudieron subir: ${failed.join(', ')}. ` +
+                'Puedes adjuntarlos desde el detalle.',
+            );
+          }
+          goToDetail();
+        });
       },
       error: (err) => {
         this.loading.set(false);

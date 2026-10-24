@@ -1,4 +1,19 @@
-import { Component, inject, signal, Input, effect } from '@angular/core';
+import { IconComponent } from '../../../shared/icon/icon.component';
+import { Component, DestroyRef, inject, signal, Input, effect, computed } from '@angular/core';
+import { IconName } from '../../../shared/icon/icon.component';
+import {
+  eventLabel,
+  initialsOf,
+  priorityLabel,
+  priorityTone,
+  roleLabel,
+  stageLabel,
+  stageTone,
+  statusLabel,
+  statusTone,
+  timeAgo,
+} from '../../../shared/presentation';
+import { ACCEPT_ANY, ALLOWED_FORMATS_LABEL, MAX_SIZE_LABEL } from '../../../shared/file-policy';
 import { CommonModule } from '@angular/common';
 import { RouterModule, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -14,10 +29,40 @@ import {
   IssuePriority,
 } from '../../../core/models/issue.model';
 
+type DetailAction =
+  | 'approve-closure'
+  | 'confirm-responsible'
+  | 'request-closure'
+  | 'reopen'
+  | 'urgent-measure'
+  | 'new-activity'
+  | 'reassign'
+  | 'change-priority'
+  | 'attach'
+  | 'return'
+  | 'discard';
+
+interface ActionItem {
+  key: DetailAction;
+  label: string;
+  icon: IconName;
+  tone?: 'success' | 'danger' | 'warning';
+  hint?: string;
+}
+
+/** Etapas visibles del flujo; cada estado del backend se ubica en una de ellas. */
+const FLOW_STEPS: { label: string; statuses: string[] }[] = [
+  { label: 'Reportada', statuses: ['REGISTRADA', 'EN_REVISION'] },
+  { label: 'Asignada', statuses: ['ASIGNADA'] },
+  { label: 'En atención', statuses: ['EN_ATENCION', 'EN_PROCESO', 'DEVUELTA', 'REABIERTA', 'ATENDIDA'] },
+  { label: 'Por cerrar', statuses: ['PENDIENTE_CIERRE', 'VERIFICADA'] },
+  { label: 'Cerrada', statuses: ['CERRADA'] },
+];
+
 @Component({
   selector: 'app-issue-detail',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [IconComponent, CommonModule, RouterModule, FormsModule],
   templateUrl: './issue-detail.component.html',
   styleUrls: ['./issue-detail.component.css'],
 })
@@ -27,6 +72,129 @@ export class IssueDetailComponent {
   readonly authService = inject(AuthService);
 
   @Input() id?: string;
+
+  // Presentación
+  readonly acceptFiles = ACCEPT_ANY;
+  readonly formatsLabel = ALLOWED_FORMATS_LABEL;
+  readonly maxSizeLabel = MAX_SIZE_LABEL;
+  readonly statusLabel = statusLabel;
+  readonly statusTone = statusTone;
+  readonly priorityLabel = priorityLabel;
+  readonly priorityTone = priorityTone;
+  readonly stageLabel = stageLabel;
+  readonly stageTone = stageTone;
+  readonly eventLabel = eventLabel;
+  readonly roleLabel = roleLabel;
+  readonly timeAgo = timeAgo;
+  readonly initials = initialsOf;
+
+  // ---------- Galería de fotos ----------
+  private readonly destroyRef = inject(DestroyRef);
+  /** URLs locales (blob) de las fotos ya descargadas, por id de adjunto. */
+  readonly photoUrls = signal<Record<string, string>>({});
+  private readonly requestedPhotos = new Set<string>();
+  readonly lightbox = signal<IssueAttachment | null>(null);
+  readonly photoAttachments = computed(() =>
+    (this.issue()?.attachments ?? []).filter((a) => a.mimeType.startsWith('image/')),
+  );
+  readonly documentAttachments = computed(() =>
+    (this.issue()?.attachments ?? []).filter((a) => !a.mimeType.startsWith('image/')),
+  );
+
+  // ---------- Progreso del flujo ----------
+  readonly flowSteps = FLOW_STEPS.map((s) => s.label);
+  readonly isDiscarded = computed(() => this.issue()?.status === 'DESCARTADA');
+  readonly currentStep = computed(() => {
+    const status = this.issue()?.status ?? '';
+    const idx = FLOW_STEPS.findIndex((s) => s.statuses.includes(status));
+    return idx === -1 ? 0 : idx;
+  });
+
+  // ---------- Acciones: una principal y el resto en "Más acciones" ----------
+  readonly showMoreActions = signal(false);
+  readonly actions = computed<ActionItem[]>(() => {
+    const current = this.issue();
+    const user = this.authService.currentUser();
+    if (!current || !user) return [];
+    const director = this.authService.isDirector();
+    const list: ActionItem[] = [];
+    const isCritical = current.priority === 'CRITICA' || current.initialPriority === 'CRITICA';
+
+    if (this.canClose() && current.status === 'PENDIENTE_CIERRE') {
+      list.push({ key: 'approve-closure', label: 'Aprobar cierre', icon: 'check-circle', tone: 'success' });
+    }
+    if (director && !current.assignedUserId) {
+      list.push({ key: 'confirm-responsible', label: 'Confirmar responsable', icon: 'user' });
+    }
+    if (isCritical && !current.urgentMeasures && current.status !== 'CERRADA' && current.status !== 'DESCARTADA') {
+      list.push({ key: 'urgent-measure', label: 'Registrar medida urgente', icon: 'alert-octagon', tone: 'danger' });
+    }
+    if (this.canRequestClosure()) {
+      list.push({
+        key: 'request-closure',
+        label: 'Solicitar cierre',
+        icon: 'flag',
+        hint: this.hasMissingFinalEvidence() ? 'Falta una evidencia de etapa final' : undefined,
+      });
+    }
+    if (this.canClose() && current.status !== 'PENDIENTE_CIERRE') {
+      list.push({ key: 'approve-closure', label: 'Cerrar novedad', icon: 'check-circle', tone: 'success' });
+    }
+    if (this.canReopen()) {
+      list.push({ key: 'reopen', label: 'Reabrir', icon: 'refresh' });
+    }
+    if (this.canCreateActivity() && current.status !== 'CERRADA' && current.status !== 'DESCARTADA') {
+      list.push({ key: 'new-activity', label: 'Nueva actividad', icon: 'plus' });
+    }
+    if (current.status !== 'CERRADA' && current.status !== 'DESCARTADA' && !this.authService.isAdmin()) {
+      list.push({ key: 'attach', label: 'Adjuntar foto o archivo', icon: 'camera' });
+    }
+    if (isCritical && current.urgentMeasures && current.status !== 'CERRADA' && current.status !== 'DESCARTADA') {
+      list.push({ key: 'urgent-measure', label: 'Agregar medida urgente', icon: 'alert-octagon' });
+    }
+    if (director && current.assignedUserId) {
+      list.push({ key: 'reassign', label: 'Reasignar responsable', icon: 'user' });
+    }
+    if (director) {
+      list.push({ key: 'change-priority', label: 'Cambiar prioridad', icon: 'zap' });
+    }
+    if (this.canReturn()) {
+      list.push({ key: 'return', label: 'Devolver solicitud', icon: 'undo', tone: 'warning' });
+    }
+    if (this.canDiscard()) {
+      list.push({ key: 'discard', label: 'Descartar', icon: 'ban', tone: 'danger' });
+    }
+    return list;
+  });
+  readonly primaryAction = computed(() => this.actions()[0] ?? null);
+  readonly moreActions = computed(() => this.actions().slice(1));
+
+  runAction(key: DetailAction): void {
+    this.showMoreActions.set(false);
+    switch (key) {
+      case 'approve-closure':
+        return this.openCloseModal();
+      case 'confirm-responsible':
+      case 'reassign':
+        return this.openAssignModal();
+      case 'request-closure':
+        return this.openRequestClosureModal();
+      case 'reopen':
+        return this.openReopenModal();
+      case 'urgent-measure':
+        return this.showUrgentMeasureModal.set(true);
+      case 'new-activity':
+        return this.openCreateActivityModal();
+      case 'change-priority':
+        return this.showPriorityModal.set(true);
+      case 'attach':
+        return this.openUploadEvidenceModal();
+      case 'return':
+        return this.openReturnModal();
+      case 'discard':
+        return this.openDiscardModal();
+    }
+  }
 
   readonly issue = signal<Issue | null>(null);
   readonly loading = signal<boolean>(true);
@@ -53,6 +221,21 @@ export class IssueDetailComponent {
   readonly candidatesLoading = signal<boolean>(false);
 
   constructor() {
+    // Descarga las fotos con la sesión del usuario (el almacenamiento es privado)
+    effect(() => {
+      const current = this.issue();
+      if (!current) return;
+      for (const att of this.photoAttachments()) {
+        if (this.requestedPhotos.has(att.id)) continue;
+        this.requestedPhotos.add(att.id);
+        this.issuesService.downloadAttachment(current.id, att.id).subscribe({
+          next: (blob) => this.photoUrls.update((m) => ({ ...m, [att.id]: URL.createObjectURL(blob) })),
+          error: () => this.requestedPhotos.delete(att.id),
+        });
+      }
+    });
+    this.destroyRef.onDestroy(() => Object.values(this.photoUrls()).forEach((u) => URL.revokeObjectURL(u)));
+
     effect(() => {
       const user = this.authService.currentUser();
       const issueId = this.id || this.route.snapshot.paramMap.get('id');

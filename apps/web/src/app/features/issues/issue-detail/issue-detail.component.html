@@ -1,559 +1,484 @@
-<div class="detail-container">
+<div class="page detail-page">
   @if (loading()) {
-    <div class="loading-state">
-      <div class="spinner"></div>
-      <p>Cargando información de la novedad...</p>
+    <div class="detail-skeleton" aria-busy="true">
+      <div class="skeleton sk-line"></div>
+      <div class="skeleton sk-title"></div>
+      <div class="skeleton sk-card"></div>
     </div>
   } @else if (issue(); as current) {
-    <!-- Breadcrumb y Header -->
-    <div class="detail-header">
-      <a routerLink="/issues" class="back-link">← Volver a Bandeja</a>
+    <a routerLink="/issues" class="back-link"><app-icon name="chevron-left" /> Novedades</a>
 
-      <div class="header-main">
-        <div class="code-and-scope">
-          <span class="code-badge">{{ current.code }}</span>
-          <span class="scope-tag" [class.scope-prop]="current.scope === 'PROPIEDAD'">
-            {{ current.scope === 'PROPIEDAD' ? '🏢 Propiedad Horizontal' : '🏛️ Área Interna' }}
-          </span>
-          <span class="location-tag">
-            {{ current.scope === 'PROPIEDAD' ? current.property?.name : current.internalArea?.name }}
-          </span>
-        </div>
-        <h1 class="issue-main-title">{{ current.title }}</h1>
+    <header class="detail-head">
+      <div class="detail-meta">
+        <span class="issue-code">{{ current.code }}</span>
+        <span class="sep">·</span>
+        <app-icon [name]="current.scope === 'PROPIEDAD' ? 'building' : 'landmark'" />
+        <span>{{ current.scope === 'PROPIEDAD' ? current.property?.name : current.internalArea?.name }}</span>
+        @if (current.propertyZone?.name) {
+          <span class="sep">·</span>
+          <span>{{ current.propertyZone?.name }}</span>
+        }
       </div>
-    </div>
-
-    <!-- Alertas de Feedback -->
-    @if (errorMessage()) {
-      <div class="alert-box error">
-        <span class="alert-icon">⚠️</span>
-        <div>{{ errorMessage() }}</div>
-      </div>
-    }
-
-    @if (successMessage()) {
-      <div class="alert-box success">
-        <span class="alert-icon">✅</span>
-        <div>{{ successMessage() }}</div>
-      </div>
-    }
-
-    <!-- Panel de Estado Rápido y Métricas de Novedad -->
-    <div class="status-summary-grid">
-      <!-- Tarjeta Prioridad -->
-      <div class="summary-card" [class.border-critical]="current.priority === 'CRITICA'">
-        <div class="card-label">Prioridad Actual</div>
-        <div class="card-val priority-val" [class.text-critical]="current.priority === 'CRITICA'">
-          {{ current.priority === 'CRITICA' ? '🚨 CRÍTICA' : current.priority }}
-        </div>
-        <div class="card-sub">
-          Prioridad inicial: <strong>{{ current.initialPriority }}</strong>
-          @if (current.priority !== current.initialPriority) {
-            <span class="tag-adjusted">Modificada</span>
+      <h1 class="detail-title">{{ current.title }}</h1>
+      <div class="detail-pills">
+        <span class="pill" [attr.data-tone]="priorityTone(current.priority)">
+          @if (current.priority === 'CRITICA') {
+            <app-icon name="alert-octagon" />
           }
-        </div>
-      </div>
-
-      <!-- Tarjeta Estado -->
-      <div class="summary-card">
-        <div class="card-label">Estado Operativo</div>
-        <div class="card-val status-val">
-          {{ current.status }}
-        </div>
-        <div class="card-sub">
-          Categoría: <strong>{{ current.category?.name }}</strong>
-        </div>
-      </div>
-
-      <!-- Tarjeta Responsable -->
-      <div class="summary-card">
-        <div class="card-label">Responsable Principal (DEC-04)</div>
-        @if (current.assignedUser) {
-          <div class="card-val confirmed-user">
-            👤 {{ current.assignedUser.firstName }} {{ current.assignedUser.lastName }}
-          </div>
-          <div class="card-sub user-badge confirmed">Confirmado por Director</div>
-        } @else if (current.suggestedUser) {
-          <div class="card-val suggested-user">
-            ⏳ {{ current.suggestedUser.firstName }} {{ current.suggestedUser.lastName }}
-          </div>
-          <div class="card-sub user-badge suggested">Propuesto (Líder) - Pendiente Confirmación</div>
-        } @else {
-          <div class="card-val unassigned">Sin asignar</div>
-          <div class="card-sub">Requiere asignación del Director</div>
+          Prioridad {{ priorityLabel(current.priority).toLowerCase() }}
+        </span>
+        @if (current.category?.name) {
+          <span class="detail-category">{{ current.category?.name }}</span>
         }
       </div>
-    </div>
+    </header>
 
-    <!-- Barra de Acciones Operativas (F3, F4, F5) -->
-    <div class="actions-toolbar">
-      <div class="toolbar-title">Acciones Operativas:</div>
-      <div class="toolbar-buttons">
-        <!-- Acción Director: Confirmar / Reasignar Responsable -->
-        @if (authService.isDirector()) {
-          <button class="btn btn-primary" (click)="openAssignModal()">
-            👤 {{ current.assignedUserId ? 'Reasignar Responsable' : 'Confirmar Responsable' }}
-          </button>
-          <button class="btn btn-outline" (click)="showPriorityModal.set(true)">
-            ⚡ Modificar Prioridad
-          </button>
-        }
+    @if (errorMessage()) {
+      <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ errorMessage() }}</span></div>
+    }
+    @if (successMessage()) {
+      <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ successMessage() }}</span></div>
+    }
 
-        <!-- Medidas urgentes si es crítica -->
-        @if (current.priority === 'CRITICA' || current.initialPriority === 'CRITICA') {
-          <button class="btn btn-warning" (click)="showUrgentMeasureModal.set(true)">
-            🚨 Registrar Medida Urgente
-          </button>
-        }
-
-        <!-- FLUJO DE CIERRE OPERATIVO F5 -->
-        @if (canRequestClosure()) {
-          <button
-            class="btn btn-closure-request"
-            (click)="openRequestClosureModal()"
-            [title]="hasMissingFinalEvidence() ? 'Atención: requiere evidencia final previa' : 'Solicitar visto bueno de cierre a la Dirección'"
+    <!-- Progreso del flujo -->
+    @if (isDiscarded()) {
+      <div class="flow flow-discarded"><app-icon name="ban" /> Esta novedad fue <strong>descartada</strong>.</div>
+    } @else {
+      <ol class="flow" aria-label="Etapa de la novedad">
+        @for (step of flowSteps; track step; let i = $index) {
+          <li
+            class="flow-step"
+            [class.done]="i < currentStep()"
+            [class.current]="i === currentStep()"
+            [attr.aria-current]="i === currentStep() ? 'step' : null"
           >
-            🏁 Solicitar Cierre
-            @if (hasMissingFinalEvidence()) {
-              <span class="evidence-warning-badge" title="Falta evidencia en etapa FINAL">⚠️</span>
-            }
-          </button>
+            <span class="flow-dot">
+              @if (i < currentStep()) {
+                <app-icon name="check" size="12px" />
+              }
+            </span>
+            <span class="flow-label">{{ i === currentStep() ? statusLabel(current.status) : step }}</span>
+          </li>
         }
+      </ol>
+    }
 
-        @if (canClose()) {
-          <button class="btn btn-success" (click)="openCloseModal()">
-            ✅ Aprobar Cierre Definitivo
-          </button>
-        }
-
-        @if (canReturn()) {
-          <button class="btn btn-warning" (click)="openReturnModal()">
-            ↩️ Devolver Solicitud
-          </button>
-        }
-
-        @if (canReopen()) {
-          <button class="btn btn-outline" (click)="openReopenModal()">
-            🔄 Reabrir Novedad
-          </button>
-        }
-
-        @if (canDiscard()) {
-          <button class="btn btn-danger" (click)="openDiscardModal()">
-            🚫 Descartar
-          </button>
-        }
-      </div>
-    </div>
-
-    <!-- Contenido Principal: Descripción y Medidas Urgentes -->
-    <div class="detail-content-layout">
-      <div class="main-column">
-        <!-- Bloque de Descripción -->
-        <div class="content-card">
-          <h2 class="card-title">Descripción de la Novedad</h2>
-          <p class="description-text">{{ current.description }}</p>
-
-          <div class="metadata-footer">
-            <span>Reportado por: <strong>{{ current.createdBy?.firstName }} {{ current.createdBy?.lastName }}</strong></span>
-            <span>Fecha de registro: <strong>{{ current.createdAt | date:'medium' }}</strong></span>
-          </div>
-        </div>
-
-        <!-- Panel de Medidas Urgentes (DEC-06 / RF-013) -->
-        @if (current.urgentMeasures || current.priority === 'CRITICA') {
-          <div class="content-card urgent-measures-card">
-            <div class="urgent-card-header">
-              <span class="icon">🚨</span>
-              <h2 class="card-title text-red">Medidas Urgentes de Atención Inmediata (DEC-06)</h2>
-            </div>
-            @if (current.urgentMeasures) {
-              <div class="urgent-measures-log">
-                <pre class="measures-pre">{{ current.urgentMeasures }}</pre>
-              </div>
-            } @else {
-              <div class="no-measures-warning">
-                ⚠️ Novedad crítica sin medidas urgentes registradas aún. El personal operativo en sitio debe registrar las actuaciones de mitigación.
-              </div>
-            }
-          </div>
-        }
-
-        <!-- PESTAÑAS DE GESTIÓN OPERATIVA F4 & F5 -->
-        <div class="tabs-header-nav">
+    <div class="detail-grid">
+      <!-- Siguiente paso -->
+      <section class="section area-actions next-step">
+        @if (primaryAction(); as main) {
           <button
-            class="tab-nav-btn"
-            [class.active]="activeTab() === 'actividades'"
-            (click)="selectTab('actividades')"
+            type="button"
+            class="main-action"
+            [attr.data-tone]="main.tone ?? 'primary'"
+            (click)="runAction(main.key)"
           >
-            📋 Actividades ({{ current.activities?.length || 0 }})
+            <app-icon [name]="main.icon" size="20px" />
+            <span>
+              {{ main.label }}
+              @if (main.hint) {
+                <small>{{ main.hint }}</small>
+              }
+            </span>
           </button>
-          <button
-            class="tab-nav-btn"
-            [class.active]="activeTab() === 'comentarios'"
-            (click)="selectTab('comentarios')"
-          >
-            💬 Comentarios ({{ current.comments?.length || 0 }})
-          </button>
-          <button
-            class="tab-nav-btn"
-            [class.active]="activeTab() === 'evidencias'"
-            (click)="selectTab('evidencias')"
-          >
-            📷 Evidencias ({{ current.attachments?.length || 0 }})
-          </button>
-          <button
-            class="tab-nav-btn"
-            [class.active]="activeTab() === 'historial'"
-            (click)="selectTab('historial')"
-          >
-            📜 Historial de Auditoría ({{ current.events?.length || 0 }})
-          </button>
-        </div>
-
-        <!-- CONTENIDO PESTAÑA 1: ACTIVIDADES -->
-        @if (activeTab() === 'actividades') {
-          <div class="content-card activities-section">
-            <div class="card-header-flex">
-              <div>
-                <h2 class="card-title">Actividades Operativas</h2>
-                <p class="section-subtitle">
-                  Gestión granular de tareas con control de concurrencia optimista (409) y responsabilidades específicas.
-                </p>
-              </div>
-              @if (canCreateActivity()) {
-                <button class="btn btn-primary btn-sm" (click)="openCreateActivityModal()">
-                  + Nueva Actividad
-                </button>
+          @if (moreActions().length > 0) {
+            <div class="more-wrap">
+              <button
+                type="button"
+                class="more-btn"
+                (click)="showMoreActions.set(!showMoreActions())"
+                [attr.aria-expanded]="showMoreActions()"
+                aria-haspopup="menu"
+              >
+                Más acciones <app-icon name="chevron-down" />
+              </button>
+              @if (showMoreActions()) {
+                <div class="more-backdrop" (click)="showMoreActions.set(false)"></div>
+                <div class="more-menu" role="menu">
+                  @for (a of moreActions(); track a.key + a.label) {
+                    <button type="button" role="menuitem" class="more-item" [attr.data-tone]="a.tone" (click)="runAction(a.key)">
+                      <app-icon [name]="a.icon" size="18px" /> {{ a.label }}
+                    </button>
+                  }
+                </div>
               }
             </div>
+          }
+        } @else {
+          <p class="no-actions">
+            <app-icon name="eye" /> Estás consultando esta novedad. No tienes acciones pendientes en ella.
+          </p>
+        }
+      </section>
 
-            @if (!current.activities || current.activities.length === 0) {
-              <div class="empty-state-box">
-                <p class="empty-text">No hay actividades registradas en esta novedad.</p>
-                @if (canCreateActivity()) {
-                  <button class="btn btn-outline btn-sm" (click)="openCreateActivityModal()">
-                    Crear la primera actividad
-                  </button>
+      <!-- Qué pasó -->
+      <section class="section area-summary">
+        <h2 class="block-title">Qué pasó</h2>
+        <p class="description-text">{{ current.description }}</p>
+
+        @if (photoAttachments().length > 0) {
+          <div class="gallery" [class.single]="photoAttachments().length === 1">
+            @for (photo of photoAttachments(); track photo.id) {
+              <button type="button" class="gallery-item" (click)="lightbox.set(photo)" [attr.aria-label]="'Ver foto ' + photo.fileName">
+                @if (photoUrls()[photo.id]; as url) {
+                  <img [src]="url" [alt]="photo.fileName" loading="lazy" />
+                } @else {
+                  <span class="gallery-loading skeleton"></span>
                 }
-              </div>
+                <span class="gallery-stage">{{ stageLabel(photo.stage) }}</span>
+              </button>
+            }
+          </div>
+        }
+
+        @if (documentAttachments().length > 0) {
+          <ul class="doc-chips">
+            @for (doc of documentAttachments(); track doc.id) {
+              <li>
+                <button type="button" class="doc-chip" (click)="downloadEvidence(doc)" [title]="'Descargar ' + doc.fileName">
+                  <app-icon name="file-text" />
+                  <span class="doc-chip-name">{{ doc.fileName }}</span>
+                  <span class="doc-chip-stage">{{ stageLabel(doc.stage) }}</span>
+                  <app-icon name="download" />
+                </button>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (current.urgentMeasures || current.priority === 'CRITICA') {
+          <div class="urgent" [class.urgent-missing]="!current.urgentMeasures">
+            <strong><app-icon name="alert-octagon" /> Medidas urgentes</strong>
+            @if (current.urgentMeasures) {
+              <p class="pre">{{ current.urgentMeasures }}</p>
             } @else {
-              <div class="activities-grid">
+              <p>Aún no se registran medidas de contención para esta novedad crítica.</p>
+            }
+          </div>
+        }
+      </section>
+
+      <!-- Datos -->
+      <section class="section area-facts facts">
+        <dl>
+          <div class="fact-wide">
+            <dt>Responsable</dt>
+            <dd>
+              @if (current.assignedUser; as u) {
+                <span class="person">
+                  <span class="avatar">{{ initials(u.firstName, u.lastName) }}</span>
+                  <span>{{ u.firstName }} {{ u.lastName }}</span>
+                </span>
+              } @else if (current.suggestedUser; as u) {
+                <span class="person suggested">
+                  <span class="avatar">{{ initials(u.firstName, u.lastName) }}</span>
+                  <span>
+                    {{ u.firstName }} {{ u.lastName }}
+                    <small class="fact-note">Sugerido · falta confirmar</small>
+                  </span>
+                </span>
+              } @else {
+                <span class="muted">Sin asignar</span>
+              }
+            </dd>
+          </div>
+          <div class="fact-wide">
+            <dt>Reportada por</dt>
+            <dd>
+              {{ current.createdBy?.firstName }} {{ current.createdBy?.lastName }}
+              <small class="fact-note">{{ current.createdAt | date: "d MMM y, h:mm a" }} · {{ timeAgo(current.createdAt) }}</small>
+            </dd>
+          </div>
+          @if (current.priority !== current.initialPriority) {
+            <div class="fact-wide">
+              <dt>Prioridad</dt>
+              <dd>
+                {{ priorityLabel(current.priority) }}
+                <small class="fact-note">Inicialmente {{ priorityLabel(current.initialPriority).toLowerCase() }}</small>
+              </dd>
+            </div>
+          }
+          @if (current.closedAt) {
+            <div class="fact-wide">
+              <dt>Cerrada</dt>
+              <dd>{{ current.closedAt | date: "d MMM y, h:mm a" }}</dd>
+            </div>
+          }
+        </dl>
+      </section>
+
+      <!-- Seguimiento -->
+      <div class="area-tabs">
+        <nav class="tabs" role="tablist" aria-label="Seguimiento">
+          <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'actividades'" [attr.aria-selected]="activeTab() === 'actividades'" (click)="selectTab('actividades')">
+            Actividades <span class="tab-count">{{ current.activities?.length || 0 }}</span>
+          </button>
+          <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'comentarios'" [attr.aria-selected]="activeTab() === 'comentarios'" (click)="selectTab('comentarios')">
+            Comentarios <span class="tab-count">{{ current.comments?.length || 0 }}</span>
+          </button>
+          <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'evidencias'" [attr.aria-selected]="activeTab() === 'evidencias'" (click)="selectTab('evidencias')">
+            Archivos <span class="tab-count">{{ current.attachments?.length || 0 }}</span>
+          </button>
+          <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'historial'" [attr.aria-selected]="activeTab() === 'historial'" (click)="selectTab('historial')">
+            Historial
+          </button>
+        </nav>
+
+        <!-- Actividades -->
+        @if (activeTab() === 'actividades') {
+          <section class="tab-panel">
+            @if (canCreateActivity()) {
+              <button type="button" class="add-row" (click)="openCreateActivityModal()">
+                <app-icon name="plus" /> Nueva actividad
+              </button>
+            }
+            @if (!current.activities || current.activities.length === 0) {
+              <p class="panel-empty">Todavía no hay actividades en esta novedad.</p>
+            } @else {
+              <ul class="activity-list">
                 @for (act of current.activities; track act.id) {
-                  <div class="activity-card" [class.border-completed]="act.status === 'COMPLETADA'" [class.border-blocked]="act.status === 'BLOQUEADA'">
-                    <div class="activity-header">
-                      <div class="activity-title-group">
-                        <span class="activity-status-badge status-{{ act.status.toLowerCase() }}">
-                          {{ act.status }}
-                        </span>
-                        <span class="version-tag" title="Versión de concurrencia optimista">v{{ act.version }}</span>
-                        <h3 class="activity-title">{{ act.title }}</h3>
-                      </div>
-                      <div class="activity-actions">
-                        @if (canModifyActivity(act)) {
-                          <button class="btn-action btn-status" (click)="openStatusModal(act)" title="Cambiar estado">
-                            ⚡ Estado
-                          </button>
-                        }
-                        @if (canCreateActivity()) {
-                          <button class="btn-action btn-reassign" (click)="openReassignActivityModal(act)" title="Reasignar responsable">
-                            👤 Reasignar
-                          </button>
-                        }
-                      </div>
+                  <li class="activity" [attr.data-tone]="statusTone(act.status)">
+                    <div class="activity-top">
+                      <span class="pill pill-soft" [attr.data-tone]="statusTone(act.status)">{{ statusLabel(act.status) }}</span>
+                      <h3 class="activity-title">{{ act.title }}</h3>
                     </div>
-
                     <p class="activity-description">{{ act.description }}</p>
-
                     @if (act.statusReason) {
-                      <div class="status-reason-callout">
-                        <strong>Motivo de {{ act.status }}:</strong> {{ act.statusReason }}
-                      </div>
+                      <p class="activity-reason"><strong>Motivo:</strong> {{ act.statusReason }}</p>
                     }
-
-                    <div class="activity-footer">
-                      <div class="assignee-info">
-                        <span class="label">Responsable:</span>
-                        @if (act.assignedUser) {
-                          <span class="val font-semibold">
-                            👤 {{ act.assignedUser.firstName }} {{ act.assignedUser.lastName }} ({{ act.assignedUser.role }})
+                    <div class="activity-foot">
+                      <span class="activity-meta">
+                        @if (act.assignedUser; as u) {
+                          <span class="person">
+                            <span class="avatar sm">{{ initials(u.firstName, u.lastName) }}</span>
+                            {{ u.firstName }} {{ u.lastName }}
                           </span>
                         } @else {
-                          <span class="val text-muted">Sin asignar</span>
-                        }
-                      </div>
-
-                      <div class="date-info">
-                        @if (act.dueDate) {
-                          <span class="due-date">📅 Límite: {{ act.dueDate | date:'shortDate' }}</span>
+                          <span class="muted">Sin responsable</span>
                         }
                         @if (act.completedAt) {
-                          <span class="completed-date">✅ Completada: {{ act.completedAt | date:'short' }}</span>
+                          <span><app-icon name="check-circle" /> {{ act.completedAt | date: 'd MMM' }}</span>
+                        } @else if (act.dueDate) {
+                          <span><app-icon name="calendar" /> Vence {{ act.dueDate | date: 'd MMM' }}</span>
                         }
-                      </div>
-                    </div>
-                  </div>
-                }
-              </div>
-            }
-          </div>
-        }
-
-        <!-- CONTENIDO PESTAÑA 2: COMENTARIOS -->
-        @if (activeTab() === 'comentarios') {
-          <div class="content-card comments-section">
-            <h2 class="card-title">Comentarios y Menciones (RF-020)</h2>
-            <p class="section-subtitle">
-              Comunicación operativa vinculada a actividades con notificación por mención a personal autorizado.
-            </p>
-
-            <!-- Formulario para agregar comentario -->
-            <div class="new-comment-form">
-              <div class="form-group">
-                <textarea
-                  [(ngModel)]="newCommentContent"
-                  rows="3"
-                  class="form-control"
-                  placeholder="Escriba un comentario o actualización de avance..."
-                ></textarea>
-              </div>
-
-              <div class="comment-selectors-row">
-                <div class="form-group-inline">
-                  <label>Vincular a Actividad (opcional):</label>
-                  <select [(ngModel)]="newCommentActivityId" class="form-control-sm">
-                    <option value="">General (Sin actividad específica)</option>
-                    @for (act of current.activities || []; track act.id) {
-                      <option [value]="act.id">📋 {{ act.title }}</option>
-                    }
-                  </select>
-                </div>
-
-                <div class="form-group-inline">
-                  <label>Mencionar Usuario (RF-020):</label>
-                  <select [(ngModel)]="newCommentMentionId" class="form-control-sm" [disabled]="candidatesLoading()">
-                    <option value="">{{ candidatesLoading() ? 'Cargando destinatarios...' : 'Ninguna mención' }}</option>
-                    @for (c of candidates(); track c.id) {
-                      <option [value]="c.id">@{{ c.firstName }} {{ c.lastName }} ({{ c.role }})</option>
-                    }
-                  </select>
-                </div>
-
-                <button class="btn btn-primary btn-sm" [disabled]="actionLoading()" (click)="submitComment()">
-                  {{ actionLoading() ? 'Publicando...' : '💬 Publicar Comentario' }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Listado de comentarios -->
-            <div class="comments-list">
-              @if (!current.comments || current.comments.length === 0) {
-                <div class="empty-state-box">
-                  <p class="empty-text">No hay comentarios registrados en esta novedad.</p>
-                </div>
-              } @else {
-                @for (c of current.comments; track c.id) {
-                  <div class="comment-item">
-                    <div class="comment-header">
-                      <div class="comment-author">
-                        <strong>{{ c.user?.firstName }} {{ c.user?.lastName }}</strong>
-                        <span class="author-role">({{ c.user?.role }})</span>
-                        @if (c.activity) {
-                          <span class="linked-activity-badge">
-                            📋 Actividad: {{ c.activity.title }}
-                          </span>
-                        }
-                      </div>
-                      <span class="comment-date">{{ c.createdAt | date:'short' }}</span>
-                    </div>
-
-                    <div class="comment-body">
-                      {{ c.content }}
-                    </div>
-
-                    @if (c.mentions && c.mentions.length > 0) {
-                      <div class="comment-mentions">
-                        <span class="mention-tag">👥 Notificación enviada por mención</span>
-                      </div>
-                    }
-                  </div>
-                }
-              }
-            </div>
-          </div>
-        }
-
-        <!-- CONTENIDO PESTAÑA 3: EVIDENCIAS (F4 / RF-021, RF-022) -->
-        @if (activeTab() === 'evidencias') {
-          <div class="content-card evidence-section">
-            <div class="card-header-flex">
-              <div>
-                <h2 class="card-title">Evidencias y Adjuntos Operativos</h2>
-                <p class="section-subtitle">
-                  Almacenamiento seguro y privado con integridad criptográfica SHA-256 e inspección MIME real (PROVISIONAL_FILE_POLICY).
-                </p>
-              </div>
-              <button class="btn btn-primary btn-sm" (click)="openUploadEvidenceModal()">
-                + Adjuntar Evidencia
-              </button>
-            </div>
-
-            <!-- Requisito de Evidencia Final según Categoría (CP-12 / RF-023) -->
-            @if (current.category?.requiresEvidence) {
-              @if (hasMissingFinalEvidence()) {
-                <div class="evidence-requirement-banner warning">
-                  <span class="banner-icon">⚠️</span>
-                  <div>
-                    <strong>Requisito Obligatorio de Cierre (CP-12 / RF-023):</strong>
-                    Esta categoría (<em>{{ current.category?.name }}</em>) exige al menos un archivo en etapa <strong>FINAL</strong> para poder solicitar o confirmar el cierre.
-                  </div>
-                </div>
-              } @else {
-                <div class="evidence-requirement-banner success">
-                  <span class="banner-icon">✅</span>
-                  <div>
-                    <strong>Requisito Cumplido:</strong> Se ha aportado evidencia en etapa <strong>FINAL</strong> para el cierre de esta novedad.
-                  </div>
-                </div>
-              }
-            } @else {
-              <div class="evidence-requirement-banner info">
-                <span class="banner-icon">ℹ️</span>
-                <div>
-                  Esta categoría (<em>{{ current.category?.name }}</em>) es administrativa y no exige evidencia final mandatoria para el cierre.
-                </div>
-              </div>
-            }
-
-            @if (!current.attachments || current.attachments.length === 0) {
-              <div class="empty-state-box">
-                <p class="empty-text">No hay evidencias ni documentos adjuntos en esta novedad.</p>
-                <button class="btn btn-outline btn-sm" (click)="openUploadEvidenceModal()">
-                  Adjuntar la primera evidencia
-                </button>
-              </div>
-            } @else {
-              <div class="attachments-grid">
-                @for (att of current.attachments; track att.id) {
-                  <div class="attachment-card stage-border-{{ att.stage.toLowerCase() }}">
-                    <div class="attachment-header">
-                      <span class="stage-badge stage-{{ att.stage.toLowerCase() }}">
-                        {{ att.stage }}
                       </span>
-                      <span class="file-size-badge">{{ formatFileSize(att.fileSize) }}</span>
+                      <span class="activity-actions">
+                        @if (canModifyActivity(act)) {
+                          <button type="button" class="chip-btn" (click)="openStatusModal(act)">Cambiar estado</button>
+                        }
+                        @if (canCreateActivity()) {
+                          <button type="button" class="chip-btn" (click)="openReassignActivityModal(act)">Reasignar</button>
+                        }
+                      </span>
                     </div>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
 
-                    <div class="attachment-body">
-                      <div class="file-title-group">
-                        <span class="file-icon">📄</span>
-                        <div class="file-info-col">
-                          <span class="file-name" [title]="att.fileName">{{ att.fileName }}</span>
-                          <span class="file-mime">{{ att.mimeType }}</span>
-                        </div>
+        <!-- Comentarios -->
+        @if (activeTab() === 'comentarios') {
+          <section class="tab-panel">
+            <div class="composer">
+              <textarea
+                [(ngModel)]="newCommentContent"
+                rows="3"
+                aria-label="Nuevo comentario"
+                placeholder="Escribe un comentario o una actualización…"
+              ></textarea>
+              <div class="composer-options">
+                <label class="field">
+                  <span>Actividad</span>
+                  <select [(ngModel)]="newCommentActivityId">
+                    <option value="">General</option>
+                    @for (act of current.activities || []; track act.id) {
+                      <option [value]="act.id">{{ act.title }}</option>
+                    }
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Mencionar a</span>
+                  <select [(ngModel)]="newCommentMentionId" [disabled]="candidatesLoading()">
+                    <option value="">{{ candidatesLoading() ? 'Cargando…' : 'Nadie' }}</option>
+                    @for (c of candidates(); track c.id) {
+                      <option [value]="c.id">@{{ c.firstName }} {{ c.lastName }} ({{ roleLabel(c.role) }})</option>
+                    }
+                  </select>
+                </label>
+                <button type="button" class="btn-primary" [disabled]="actionLoading()" (click)="submitComment()">
+                  {{ actionLoading() ? 'Publicando…' : 'Publicar' }}
+                </button>
+              </div>
+            </div>
+
+            @if (!current.comments || current.comments.length === 0) {
+              <p class="panel-empty">Aún no hay comentarios.</p>
+            } @else {
+              <ul class="comment-list">
+                @for (c of current.comments; track c.id) {
+                  <li class="comment">
+                    <span class="avatar">{{ initials(c.user?.firstName, c.user?.lastName) }}</span>
+                    <div class="comment-content">
+                      <div class="comment-head">
+                        <strong>{{ c.user?.firstName }} {{ c.user?.lastName }}</strong>
+                        <span class="muted">{{ roleLabel(c.user?.role) }} · {{ timeAgo(c.createdAt) }}</span>
                       </div>
-
-                      @if (att.activity) {
-                        <div class="attachment-activity-tag">
-                          📋 Actividad: {{ att.activity.title }}
+                      <p class="comment-body">{{ c.content }}</p>
+                      @if (c.activity || (c.mentions && c.mentions.length > 0)) {
+                        <div class="comment-tags">
+                          @if (c.activity) {
+                            <span class="tag"><app-icon name="clipboard" /> {{ c.activity.title }}</span>
+                          }
+                          @if (c.mentions && c.mentions.length > 0) {
+                            <span class="tag"><app-icon name="users" /> Mención notificada</span>
+                          }
                         </div>
                       }
                     </div>
-
-                    <div class="attachment-footer">
-                      <div class="uploader-details">
-                        <span class="uploader-name">
-                          👤 {{ att.uploadedBy?.firstName }} {{ att.uploadedBy?.lastName }}
-                        </span>
-                        <span class="upload-date">{{ att.createdAt | date:'short' }}</span>
-                      </div>
-
-                      <button class="btn-download" (click)="downloadEvidence(att)" title="Descargar archivo original">
-                        📥 Descargar
-                      </button>
-                    </div>
-                  </div>
+                  </li>
                 }
-              </div>
+              </ul>
             }
-          </div>
+          </section>
         }
 
-        <!-- CONTENIDO PESTAÑA 4: HISTORIAL DE AUDITORÍA -->
-        @if (activeTab() === 'historial') {
-          <div class="content-card">
-            <h2 class="card-title">Historial Cronológico de Auditoría (RF-026)</h2>
-            <div class="timeline">
-              @for (event of current.events || []; track event.id) {
-                <div class="timeline-item">
-                  <div class="timeline-dot"></div>
-                  <div class="timeline-content">
-                    <div class="timeline-header">
-                      <span class="event-type-tag">{{ event.eventType }}</span>
-                      <span class="timeline-time">{{ event.createdAt | date:'short' }}</span>
-                    </div>
-                    <div class="timeline-summary">{{ event.summary }}</div>
-                    @if (event.user) {
-                      <div class="timeline-user">Registrado por: {{ event.user.firstName }} {{ event.user.lastName }} ({{ event.user.email }})</div>
-                    }
-                    @if (event.details?.reason) {
-                      <div class="timeline-reason">
-                        <strong>Motivo justificado:</strong> "{{ event.details.reason }}"
-                      </div>
-                    }
-                  </div>
+        <!-- Evidencias -->
+        @if (activeTab() === 'evidencias') {
+          <section class="tab-panel">
+            @if (current.category?.requiresEvidence) {
+              @if (hasMissingFinalEvidence()) {
+                <div class="notice notice-warning">
+                  <app-icon name="alert" />
+                  <span>Para cerrar esta novedad se necesita al menos una evidencia de etapa <strong>final</strong>.</span>
+                </div>
+              } @else {
+                <div class="notice notice-success">
+                  <app-icon name="check-circle" />
+                  <span>Ya hay evidencia de etapa final para el cierre.</span>
                 </div>
               }
-            </div>
-          </div>
+            }
+
+            <button type="button" class="add-row" (click)="openUploadEvidenceModal()">
+              <app-icon name="camera" /> Adjuntar evidencia
+            </button>
+
+            @if (!current.attachments || current.attachments.length === 0) {
+              <p class="panel-empty">Aún no hay evidencias adjuntas.</p>
+            } @else {
+              <ul class="file-list">
+                @for (att of current.attachments; track att.id) {
+                  <li class="file">
+                    <span class="file-icon"><app-icon [name]="att.mimeType.startsWith('image/') ? 'camera' : 'file-text'" /></span>
+                    <div class="file-info">
+                      <span class="file-name" [title]="att.fileName">{{ att.fileName }}</span>
+                      <span class="file-meta">
+                        <span class="pill pill-soft" [attr.data-tone]="stageTone(att.stage)">{{ stageLabel(att.stage) }}</span>
+                        {{ formatFileSize(att.fileSize) }} · {{ att.uploadedBy?.firstName }} {{ att.uploadedBy?.lastName }} · {{ timeAgo(att.createdAt) }}
+                      </span>
+                      @if (att.activity) {
+                        <span class="file-activity"><app-icon name="clipboard" /> {{ att.activity.title }}</span>
+                      }
+                    </div>
+                    <button type="button" class="icon-action" (click)="downloadEvidence(att)" [attr.aria-label]="'Descargar ' + att.fileName" title="Descargar">
+                      <app-icon name="download" size="20px" />
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
+
+        <!-- Historial -->
+        @if (activeTab() === 'historial') {
+          <section class="tab-panel">
+            <ol class="timeline">
+              @for (event of current.events || []; track event.id) {
+                <li class="timeline-item">
+                  <span class="timeline-dot"></span>
+                  <div class="timeline-content">
+                    <div class="timeline-head">
+                      <strong>{{ eventLabel(event.eventType) }}</strong>
+                      <span class="muted">{{ event.createdAt | date: "d MMM, h:mm a" }}</span>
+                    </div>
+                    <p class="timeline-summary">{{ event.summary }}</p>
+                    @if (event.user) {
+                      <span class="muted">{{ event.user.firstName }} {{ event.user.lastName }}</span>
+                    }
+                    @if (event.details?.reason) {
+                      <p class="timeline-reason">«{{ event.details.reason }}»</p>
+                    }
+                  </div>
+                </li>
+              }
+            </ol>
+          </section>
         }
       </div>
     </div>
 
+    <!-- Visor de fotos -->
+    @if (lightbox(); as photo) {
+      <div class="lightbox" role="dialog" aria-modal="true" [attr.aria-label]="photo.fileName" (click)="lightbox.set(null)">
+        <div class="lightbox-bar" (click)="$event.stopPropagation()">
+          <span class="lightbox-name">{{ photo.fileName }}</span>
+          <button type="button" class="lightbox-btn" (click)="downloadEvidence(photo)" aria-label="Descargar"><app-icon name="download" size="20px" /></button>
+          <button type="button" class="lightbox-btn" (click)="lightbox.set(null)" aria-label="Cerrar"><app-icon name="x" size="20px" /></button>
+        </div>
+        @if (photoUrls()[photo.id]; as url) {
+          <img [src]="url" [alt]="photo.fileName" (click)="$event.stopPropagation()" />
+        }
+      </div>
+    }
+
     <!-- MODAL 1: Confirmar o Reasignar Responsable Principal -->
     @if (showAssignModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>{{ current.assignedUserId ? 'Reasignar Responsable Principal' : 'Confirmar Responsable Principal' }}</h3>
-            <button class="modal-close" (click)="showAssignModal.set(false)">✕</button>
+            <h3>{{ current.assignedUserId ? 'Reasignar responsable' : 'Confirmar responsable' }}</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showAssignModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Seleccione el responsable operativo autorizado para este ámbito conforme a RF-011.
+              Selecciona una persona autorizada para este ámbito.
             </p>
 
-            <div class="form-group">
-              <label>Seleccionar Usuario Responsable Autorizado (RF-011) *</label>
-              <select [(ngModel)]="newAssignedUserId" class="form-control" [disabled]="candidatesLoading()">
+            <label class="field">
+              <span>Responsable *</span>
+              <select [(ngModel)]="newAssignedUserId" [disabled]="candidatesLoading()">
                 <option value="" disabled>
                   {{ candidatesLoading() ? 'Cargando candidatos autorizados...' : 'Seleccione un responsable autorizado...' }}
                 </option>
                 @for (c of candidates(); track c.id) {
                   <option [value]="c.id">
-                    {{ c.firstName }} {{ c.lastName }} ({{ c.role }}{{ c.isLead ? ' - Líder Asignado' : '' }})
+                    {{ c.firstName }} {{ c.lastName }} ({{ roleLabel(c.role) }}{{ c.isLead ? ' · líder' : '' }})
                   </option>
                 }
               </select>
-            </div>
+            </label>
 
             <!-- Motivo OBLIGATORIO si es reasignación -->
             @if (current.assignedUserId && current.assignedUserId !== newAssignedUserId) {
-              <div class="form-group">
-                <label>Motivo Obligatorio de la Reasignación (RN-039) *</label>
+              <label class="field">
+                <span>Motivo de la reasignación *</span>
                 <textarea
                   [(ngModel)]="reassignmentReason"
                   rows="3"
-                  class="form-control"
+                 
                   placeholder="Justifique el motivo por el cual se reasigna el caso (ej: vacaciones, permiso médico, reasignación zonal)..."
                   required
                 ></textarea>
-              </div>
+              </label>
             }
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showAssignModal.set(false)">Cancelar</button>
-            <button class="btn btn-primary" [disabled]="actionLoading()" (click)="confirmOrReassign()">
-              {{ actionLoading() ? 'Procesando...' : 'Confirmar Asignación' }}
+            <button type="button" class="btn-secondary" (click)="showAssignModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-primary" [disabled]="actionLoading()" (click)="confirmOrReassign()">
+              {{ actionLoading() ? 'Procesando...' : 'Confirmar' }}
             </button>
           </div>
         </div>
@@ -562,42 +487,42 @@
 
     <!-- MODAL 2: Modificar Prioridad -->
     @if (showPriorityModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Modificar Prioridad de la Novedad (DEC-07)</h3>
-            <button class="modal-close" (click)="showPriorityModal.set(false)">✕</button>
+            <h3>Cambiar prioridad</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showPriorityModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Facultad exclusiva del Director Operativo. Se conservará la prioridad inicial en el historial.
+              La prioridad inicial queda guardada en el historial.
             </p>
 
-            <div class="form-group">
-              <label>Nueva Prioridad *</label>
-              <select [(ngModel)]="newPriority" class="form-control">
+            <label class="field">
+              <span>Nueva prioridad *</span>
+              <select [(ngModel)]="newPriority">
                 <option value="BAJA">Baja</option>
                 <option value="MEDIA">Media</option>
                 <option value="ALTA">Alta</option>
-                <option value="CRITICA">🚨 Crítica (dispara alerta RF-014)</option>
+                <option value="CRITICA">Crítica (alerta a la Dirección)</option>
               </select>
-            </div>
+            </label>
 
-            <div class="form-group">
-              <label>Motivo Obligatorio del Cambio (RF-015) *</label>
+            <label class="field">
+              <span>Motivo del cambio *</span>
               <textarea
                 [(ngModel)]="priorityChangeReason"
                 rows="3"
-                class="form-control"
+               
                 placeholder="Explique el motivo técnico u operativo del ajuste de prioridad..."
                 required
               ></textarea>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showPriorityModal.set(false)">Cancelar</button>
-            <button class="btn btn-primary" [disabled]="actionLoading()" (click)="changePriority()">
-              {{ actionLoading() ? 'Guardando...' : 'Actualizar Prioridad' }}
+            <button type="button" class="btn-secondary" (click)="showPriorityModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-primary" [disabled]="actionLoading()" (click)="changePriority()">
+              {{ actionLoading() ? 'Guardando...' : 'Guardar prioridad' }}
             </button>
           </div>
         </div>
@@ -606,459 +531,451 @@
 
     <!-- MODAL 3: Registrar Medida Urgente -->
     @if (showUrgentMeasureModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Registrar Medida Urgente Inmediata (DEC-06)</h3>
-            <button class="modal-close" (click)="showUrgentMeasureModal.set(false)">✕</button>
+            <h3>Registrar medida urgente</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showUrgentMeasureModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Documente las acciones realizadas en campo para mitigar o atender la situación crítica.
+              Describe lo que se hizo en sitio para contener la situación.
             </p>
 
-            <div class="form-group">
-              <label>Detalle de la Medida Realizada *</label>
+            <label class="field">
+              <span>Medida realizada *</span>
               <textarea
                 [(ngModel)]="newUrgentMeasure"
                 rows="4"
-                class="form-control"
+               
                 placeholder="Describa la acción ejecutada, personal interviniente o materiales utilizados..."
                 required
               ></textarea>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showUrgentMeasureModal.set(false)">Cancelar</button>
-            <button class="btn btn-warning" [disabled]="actionLoading()" (click)="submitUrgentMeasure()">
-              {{ actionLoading() ? 'Guardando...' : 'Guardar Medida Urgente' }}
+            <button type="button" class="btn-secondary" (click)="showUrgentMeasureModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-primary btn-warning" [disabled]="actionLoading()" (click)="submitUrgentMeasure()">
+              {{ actionLoading() ? 'Guardando...' : 'Guardar medida' }}
             </button>
           </div>
         </div>
       </div>
     }
-    <!-- MODAL 4: Crear Actividad (F4 / RF-019 / CP-09) -->
+    <!-- MODAL 4: Crear Actividad -->
     @if (showCreateActivityModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>+ Nueva Actividad Operativa</h3>
-            <button class="modal-close" (click)="showCreateActivityModal.set(false)">✕</button>
+            <h3>Nueva actividad</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showCreateActivityModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
-            <div class="form-group">
-              <label>Título de la Actividad *</label>
+            <label class="field">
+              <span>Título *</span>
               <input
                 type="text"
                 [(ngModel)]="newActivityTitle"
-                class="form-control"
+               
                 placeholder="Ej: Inspección visual de contactores y breakers"
                 required
               />
-            </div>
+            </label>
 
-            <div class="form-group">
-              <label>Descripción Detallada *</label>
+            <label class="field">
+              <span>Descripción *</span>
               <textarea
                 [(ngModel)]="newActivityDescription"
                 rows="3"
-                class="form-control"
+               
                 placeholder="Describa las instrucciones operativas..."
                 required
               ></textarea>
-            </div>
+            </label>
 
-            <div class="form-group">
-              <label>Responsable Asignado (Autorizado en el ámbito):</label>
-              <select [(ngModel)]="newActivityAssignedUserId" class="form-control">
-                <option value="">Sin asignar inicialmente</option>
+            <label class="field">
+              <span>Responsable</span>
+              <select [(ngModel)]="newActivityAssignedUserId">
+                <option value="">Sin asignar</option>
                 @for (c of candidates(); track c.id) {
                   <option [value]="c.id">
-                    {{ c.firstName }} {{ c.lastName }} ({{ c.role }}{{ c.isLead ? ' - Líder' : '' }})
+                    {{ c.firstName }} {{ c.lastName }} ({{ roleLabel(c.role) }}{{ c.isLead ? ' · líder' : '' }})
                   </option>
                 }
               </select>
-            </div>
+            </label>
 
-            <div class="form-group">
-              <label>Fecha Límite Estimada (opcional):</label>
+            <label class="field">
+              <span>Fecha límite (opcional)</span>
               <input
                 type="datetime-local"
                 [(ngModel)]="newActivityDueDate"
-                class="form-control"
+               
               />
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showCreateActivityModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-secondary" (click)="showCreateActivityModal.set(false)">Cancelar</button>
             <button
-              class="btn btn-primary"
+              type="button" class="btn-primary"
               [disabled]="actionLoading() || !newActivityTitle.trim() || !newActivityDescription.trim()"
               (click)="submitCreateActivity()"
             >
-              {{ actionLoading() ? 'Creando...' : 'Crear Actividad' }}
+              {{ actionLoading() ? 'Creando...' : 'Crear actividad' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- MODAL 5: Actualizar Estado de Actividad (F4 / CP-11 / 409 Concurrencia) -->
+    <!-- MODAL 5: Actualizar Estado de Actividad -->
     @if (showStatusModal() && selectedActivity(); as act) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Actualizar Estado: {{ act.title }}</h3>
-            <button class="modal-close" (click)="showStatusModal.set(false)">✕</button>
+            <h3>Estado de «{{ act.title }}»</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showStatusModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Versión actual: <strong>v{{ act.version }}</strong>.
-              El cambio registrará un evento de auditoría en la novedad.
+              El cambio quedará registrado en el historial de la novedad.
             </p>
 
-            <div class="form-group">
-              <label>Nuevo Estado *</label>
-              <select [(ngModel)]="targetActivityStatus" class="form-control">
-                <option value="PENDIENTE">PENDIENTE</option>
-                <option value="EN_CURSO">EN_CURSO</option>
-                <option value="BLOQUEADA">⚠️ BLOQUEADA (Requiere motivo)</option>
-                <option value="COMPLETADA">✅ COMPLETADA</option>
+            <label class="field">
+              <span>Nuevo estado *</span>
+              <select [(ngModel)]="targetActivityStatus">
+                <option value="PENDIENTE">Pendiente</option>
+                <option value="EN_CURSO">En curso</option>
+                <option value="BLOQUEADA">Bloqueada (requiere motivo)</option>
+                <option value="COMPLETADA">Completada</option>
                 @if (canCancelOrEditDetails()) {
-                  <option value="CANCELADA">🚫 CANCELADA (Requiere motivo)</option>
+                  <option value="CANCELADA">Cancelada (requiere motivo)</option>
                 }
               </select>
-            </div>
+            </label>
 
             @if (targetActivityStatus === 'BLOQUEADA' || targetActivityStatus === 'CANCELADA') {
-              <div class="form-group">
-                <label>Motivo Obligatorio (CP-11 / RN-069 / RN-070) *</label>
+              <label class="field">
+                <span>Motivo *</span>
                 <textarea
                   [(ngModel)]="activityStatusReason"
                   rows="3"
-                  class="form-control"
+                 
                   placeholder="Justifique el motivo de bloqueo o cancelación..."
                   required
                 ></textarea>
-              </div>
+              </label>
             }
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showStatusModal.set(false)">Cancelar</button>
-            <button class="btn btn-primary" [disabled]="actionLoading()" (click)="submitUpdateStatus()">
-              {{ actionLoading() ? 'Guardando...' : 'Actualizar Estado' }}
+            <button type="button" class="btn-secondary" (click)="showStatusModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-primary" [disabled]="actionLoading()" (click)="submitUpdateStatus()">
+              {{ actionLoading() ? 'Guardando...' : 'Guardar estado' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- MODAL 6: Reasignar Actividad (F4 / CP-10) -->
+    <!-- MODAL 6: Reasignar Actividad -->
     @if (showReassignActivityModal() && selectedActivity(); as act) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Reasignar Actividad: {{ act.title }}</h3>
-            <button class="modal-close" (click)="showReassignActivityModal.set(false)">✕</button>
+            <h3>Reasignar «{{ act.title }}»</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showReassignActivityModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Seleccione un usuario activo y autorizado en el ámbito de la novedad (RF-011 / CP-10).
+              Selecciona una persona autorizada para este ámbito.
             </p>
 
-            <div class="form-group">
-              <label>Nuevo Responsable Autorizado *</label>
-              <select [(ngModel)]="reassignActivityUserId" class="form-control">
+            <label class="field">
+              <span>Nuevo responsable *</span>
+              <select [(ngModel)]="reassignActivityUserId">
                 <option value="" disabled>Seleccione un usuario...</option>
                 @for (c of candidates(); track c.id) {
                   <option [value]="c.id">
-                    {{ c.firstName }} {{ c.lastName }} ({{ c.role }})
+                    {{ c.firstName }} {{ c.lastName }} ({{ roleLabel(c.role) }})
                   </option>
                 }
               </select>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showReassignActivityModal.set(false)">Cancelar</button>
-            <button class="btn btn-primary" [disabled]="actionLoading() || !reassignActivityUserId" (click)="submitReassignActivity()">
-              {{ actionLoading() ? 'Reasignando...' : 'Reasignar Actividad' }}
+            <button type="button" class="btn-secondary" (click)="showReassignActivityModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-primary" [disabled]="actionLoading() || !reassignActivityUserId" (click)="submitReassignActivity()">
+              {{ actionLoading() ? 'Reasignando...' : 'Reasignar' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- MODAL 7: Adjuntar Evidencia (F4 / RF-021 / PROVISIONAL_FILE_POLICY) -->
+    <!-- MODAL 7: Adjuntar Evidencia -->
     @if (showUploadEvidenceModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>📷 Adjuntar Evidencia Documental</h3>
-            <button class="modal-close" (click)="showUploadEvidenceModal.set(false)">✕</button>
+            <h3>Adjuntar evidencia</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showUploadEvidenceModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Almacenamiento seguro y privado con validación de integridad SHA-256 e inspección MIME real (JPG, PNG, WEBP, PDF, TXT, DOCX).
+              Formatos admitidos: {{ formatsLabel }}, hasta {{ maxSizeLabel }}. El archivo se guarda de forma privada.
             </p>
 
-            <div class="form-group">
-              <label>Seleccionar Archivo (Máx 15MB) *</label>
+            <label class="field">
+              <span>Archivo *</span>
               <input
                 type="file"
-                class="form-control"
+               
                 (change)="onFileSelected($event)"
-                accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                [accept]="acceptFiles"
               />
               @if (selectedFile) {
                 <span class="file-chosen-info">
-                  📄 {{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})
+                  <app-icon name="file-text" /> {{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})
                 </span>
               }
-            </div>
+            </label>
 
-            <div class="form-group">
-              <label>Etapa de la Evidencia (RF-022) *</label>
-              <select [(ngModel)]="selectedEvidenceStage" class="form-control">
-                <option value="INICIAL">Etapa INICIAL (Diagnóstico / Estado previo)</option>
-                <option value="EJECUCION">Etapa EJECUCIÓN (Trabajo en proceso / Avance)</option>
-                <option value="FINAL">Etapa FINAL (Resultado terminado / Requisito de cierre)</option>
-                <option value="SOPORTE">Etapa SOPORTE (Facturas, cotizaciones, actas)</option>
+            <label class="field">
+              <span>Etapa *</span>
+              <select [(ngModel)]="selectedEvidenceStage">
+                <option value="INICIAL">Inicial · estado previo</option>
+                <option value="EJECUCION">Ejecución · trabajo en curso</option>
+                <option value="FINAL">Final · resultado terminado</option>
+                <option value="SOPORTE">Soporte · facturas, actas, cotizaciones</option>
               </select>
-            </div>
+            </label>
 
-            <div class="form-group">
-              <label>Vincular a Actividad (opcional):</label>
-              <select [(ngModel)]="selectedEvidenceActivityId" class="form-control">
-                <option value="">General (Sin actividad específica)</option>
+            <label class="field">
+              <span>Actividad (opcional)</span>
+              <select [(ngModel)]="selectedEvidenceActivityId">
+                <option value="">General</option>
                 @for (act of current.activities || []; track act.id) {
-                  <option [value]="act.id">📋 {{ act.title }}</option>
+                  <option [value]="act.id">{{ act.title }}</option>
                 }
               </select>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showUploadEvidenceModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-secondary" (click)="showUploadEvidenceModal.set(false)">Cancelar</button>
             <button
-              class="btn btn-primary"
+              type="button" class="btn-primary"
               [disabled]="actionLoading() || !selectedFile"
               (click)="submitUploadEvidence()"
             >
-              {{ actionLoading() ? 'Subiendo y verificando...' : 'Subir Evidencia' }}
+              {{ actionLoading() ? 'Subiendo y verificando...' : 'Subir evidencia' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- MODAL 8: Solicitar Cierre Operativo (F5 / RF-023 / CP-12 / CP-13) -->
+    <!-- MODAL 8: Solicitar Cierre Operativo -->
     @if (showRequestClosureModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Solicitar Cierre Operativo</h3>
-            <button class="modal-close" (click)="showRequestClosureModal.set(false)">✕</button>
+            <h3>Solicitar cierre</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showRequestClosureModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             @if (hasMissingFinalEvidence()) {
               <div class="alert-box error">
-                <span class="alert-icon">⚠️</span>
+                <span class="alert-icon"><app-icon name="alert" /></span>
                 <div>
-                  <strong>Requisito Bloqueante (CP-12 / RF-023):</strong> La categoría <em>{{ current.category?.name }}</em> exige al menos una evidencia en etapa <strong>FINAL</strong> antes de permitir el cierre.
+                  Esta categoría exige al menos una evidencia de etapa <strong>final</strong> antes de solicitar el cierre.
                 </div>
               </div>
             } @else {
               <p class="modal-desc">
-                La solicitud enviará la novedad a estado <strong>PENDIENTE_CIERRE</strong> y notificará a la Dirección Operativa para verificación y visto bueno definitivo (RF-024).
+                La novedad quedará <strong>pendiente de cierre</strong> y la Dirección Operativa recibirá el aviso para dar el visto bueno.
               </p>
             }
 
-            <div class="form-group">
-              <label>Notas o Conclusiones de Cierre (opcional):</label>
+            <label class="field">
+              <span>Notas de cierre (opcional)</span>
               <textarea
                 [(ngModel)]="closureNotes"
                 rows="4"
-                class="form-control"
+               
                 placeholder="Detalle el trabajo final realizado, recomendaciones de mantenimiento o resultados..."
               ></textarea>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showRequestClosureModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-secondary" (click)="showRequestClosureModal.set(false)">Cancelar</button>
             <button
-              class="btn btn-primary"
+              type="button" class="btn-primary"
               [disabled]="actionLoading() || hasMissingFinalEvidence()"
               (click)="submitRequestClosure()"
             >
-              {{ actionLoading() ? 'Enviando...' : 'Enviar Solicitud de Cierre' }}
+              {{ actionLoading() ? 'Enviando...' : 'Enviar solicitud' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- MODAL 9: Cierre Definitivo / Verificación (F5 / RF-024 / CP-14) -->
+    <!-- MODAL 9: Cierre Definitivo / Verificación -->
     @if (showCloseModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Aprobar Cierre Definitivo</h3>
-            <button class="modal-close" (click)="showCloseModal.set(false)">✕</button>
+            <h3>Aprobar cierre</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showCloseModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Como Director Operativo, confirme que los trabajos ejecutados y las evidencias aportadas cumplen a cabalidad con los estándares técnicos y de calidad exigidos (RF-024).
+              Confirma que el trabajo y las evidencias cumplen lo exigido. La novedad quedará cerrada.
             </p>
 
-            <div class="form-group">
-              <label>Observaciones de Verificación y Cierre (opcional):</label>
+            <label class="field">
+              <span>Observaciones (opcional)</span>
               <textarea
                 [(ngModel)]="closureObservations"
                 rows="4"
-                class="form-control"
+               
                 placeholder="Ingrese sus observaciones de verificación, visto bueno técnico o felicitaciones..."
               ></textarea>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showCloseModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-secondary" (click)="showCloseModal.set(false)">Cancelar</button>
             <button
-              class="btn btn-success"
+              type="button" class="btn-primary btn-success"
               [disabled]="actionLoading()"
               (click)="submitClose()"
             >
-              {{ actionLoading() ? 'Verificando y cerrando...' : '✅ Confirmar Cierre Definitivo' }}
+              @if (!(actionLoading())) { <app-icon name="check-circle" /> } {{ actionLoading() ? 'Verificando y cerrando...' : 'Aprobar cierre' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- MODAL 10: Devolver con Observaciones (F5 / RF-025 / CP-15) -->
+    <!-- MODAL 10: Devolver con Observaciones -->
     @if (showReturnModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Devolver Solicitud con Observaciones</h3>
-            <button class="modal-close" (click)="showReturnModal.set(false)">✕</button>
+            <h3>Devolver solicitud</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showReturnModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Devuelve la novedad a estado <strong>EN_ATENCION</strong> indicando al responsable las correcciones requeridas antes de poder cerrarla (RF-025 / CP-15).
+              La novedad vuelve a <strong>en atención</strong> y el responsable verá lo que debe corregir.
             </p>
 
-            <div class="form-group">
-              <label>Motivo Obligatorio de Devolución *</label>
+            <label class="field">
+              <span>Qué debe corregirse *</span>
               <textarea
                 [(ngModel)]="returnReason"
                 rows="4"
-                class="form-control"
+               
                 placeholder="Detalle de forma precisa qué falta por subsanar, qué evidencia corregir o qué trabajo requiere revisión..."
                 required
               ></textarea>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showReturnModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-secondary" (click)="showReturnModal.set(false)">Cancelar</button>
             <button
-              class="btn btn-warning"
+              type="button" class="btn-primary btn-warning"
               [disabled]="actionLoading() || !returnReason.trim()"
               (click)="submitReturn()"
             >
-              {{ actionLoading() ? 'Devolviendo...' : '↩️ Devolver Solicitud' }}
+              {{ actionLoading() ? 'Devolviendo...' : 'Devolver' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- MODAL 11: Reabrir Caso Cerrado (F5 / RF-027 / CP-16) -->
+    <!-- MODAL 11: Reabrir Caso Cerrado -->
     @if (showReopenModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Reapertura Formal de Novedad Cerrada</h3>
-            <button class="modal-close" (click)="showReopenModal.set(false)">✕</button>
+            <h3>Reabrir novedad</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showReopenModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Facultad exclusiva de la Dirección Operativa. Devuelve la novedad cerrada a estado <strong>EN_ATENCION</strong> con registro formal de auditoría y notificación al responsable (RF-027 / CP-16).
+              La novedad vuelve a <strong>en atención</strong> y se notifica al responsable.
             </p>
 
-            <div class="form-group">
-              <label>Motivo Obligatorio de Reapertura *</label>
+            <label class="field">
+              <span>Motivo de la reapertura *</span>
               <textarea
                 [(ngModel)]="reopenReason"
                 rows="4"
-                class="form-control"
+               
                 placeholder="Explique las circunstancias sobrevinientes o reincidencias que justifican la reapertura formal..."
                 required
               ></textarea>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showReopenModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-secondary" (click)="showReopenModal.set(false)">Cancelar</button>
             <button
-              class="btn btn-primary"
+              type="button" class="btn-primary"
               [disabled]="actionLoading() || !reopenReason.trim()"
               (click)="submitReopen()"
             >
-              {{ actionLoading() ? 'Reabriendo...' : '🔄 Confirmar Reapertura' }}
+              @if (!(actionLoading())) { <app-icon name="refresh" /> } {{ actionLoading() ? 'Reabriendo...' : 'Reabrir' }}
             </button>
           </div>
         </div>
       </div>
     }
 
-    <!-- MODAL 12: Descartar Novedad (F5 / RF-028) -->
+    <!-- MODAL 12: Descartar Novedad -->
     @if (showDiscardModal()) {
-      <div class="modal-backdrop">
-        <div class="modal-card">
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Descartar Novedad</h3>
-            <button class="modal-close" (click)="showDiscardModal.set(false)">✕</button>
+            <h3>Descartar novedad</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showDiscardModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Facultad exclusiva del Director Operativo para registros iniciales improcedentes o duplicados (RF-028). La novedad pasará a estado <strong>DESCARTADA</strong>.
+              Úsalo para reportes duplicados o que no proceden. La novedad quedará <strong>descartada</strong>.
             </p>
 
-            <div class="form-group">
-              <label>Motivo Obligatorio de Descarte *</label>
+            <label class="field">
+              <span>Motivo del descarte *</span>
               <textarea
                 [(ngModel)]="discardReason"
                 rows="4"
-                class="form-control"
+               
                 placeholder="Explique por qué se descarta la novedad (ej: reporte duplicado, fuera de alcance contractual, falsa alarma)..."
                 required
               ></textarea>
-            </div>
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="btn btn-secondary" (click)="showDiscardModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-secondary" (click)="showDiscardModal.set(false)">Cancelar</button>
             <button
-              class="btn btn-danger"
+              type="button" class="btn-primary btn-danger"
               [disabled]="actionLoading() || !discardReason.trim()"
               (click)="submitDiscard()"
             >
-              {{ actionLoading() ? 'Descartando...' : '🚫 Descartar Novedad' }}
+              @if (!(actionLoading())) { <app-icon name="ban" /> } {{ actionLoading() ? 'Descartando...' : 'Descartar' }}
             </button>
           </div>
         </div>
       </div>
     }
   } @else {
-    <!-- Estado de Error Auténtico (403, 404, etc.) -->
-    <div class="empty-state-error-wrapper">
-      <div class="error-panel">
-        <div class="error-badge-icon">🚫</div>
-        <h2>Acceso Restringido o Registro No Encontrado</h2>
-        <p class="error-message-text">
-          {{ errorMessage() || 'No fue posible cargar los detalles de la novedad solicitada.' }}
-        </p>
-        <div class="error-actions-row">
-          <a routerLink="/issues" class="btn btn-primary">Volver a la Bandeja de Novedades</a>
-        </div>
-      </div>
+    <div class="empty-state error-panel">
+      <span class="empty-icon tone-danger"><app-icon name="ban" size="28px" /></span>
+      <h2>No pudimos abrir esta novedad</h2>
+      <p>{{ errorMessage() || 'Puede que no exista o que no tengas acceso a ella.' }}</p>
+      <a routerLink="/issues" class="btn-primary">Volver a novedades</a>
     </div>
   }
 </div>

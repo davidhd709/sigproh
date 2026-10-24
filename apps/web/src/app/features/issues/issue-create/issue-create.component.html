@@ -1,248 +1,242 @@
-<div class="form-container">
-  <div class="form-header">
-    <a routerLink="/issues" class="back-link">← Volver a Bandeja</a>
-    <h1 class="form-title">Registro de Nueva Novedad</h1>
-    <p class="form-subtitle">
-      Capture el reporte asegurando exclusividad de ámbito (F2/F3) y atención prioritaria según criticidad
-    </p>
-  </div>
+<div class="page form-page">
+  <a routerLink="/issues" class="back-link"><app-icon name="chevron-left" /> Novedades</a>
+  <header class="page-head">
+    <div>
+      <h1 class="page-title">Nueva novedad</h1>
+      <p class="page-subtitle">Cuéntanos qué pasó y dónde. Los campos con * son obligatorios.</p>
+    </div>
+  </header>
 
   @if (errorMessage()) {
-    <div class="alert-box error">
-      <span class="alert-icon">⚠️</span>
-      <div>{{ errorMessage() }}</div>
+    <div class="notice notice-danger" role="alert">
+      <app-icon name="alert" />
+      <span>{{ errorMessage() }}</span>
     </div>
   }
 
   @if (successMessage()) {
-    <div class="alert-box success">
-      <span class="alert-icon">✅</span>
-      <div>{{ successMessage() }}</div>
+    <div class="notice notice-success" role="status">
+      <app-icon name="check-circle" />
+      <span>{{ successMessage() }}</span>
     </div>
   }
 
   <form (ngSubmit)="onSubmit()" class="issue-form">
-    <!-- 1. Selección de Ámbito Exclusivo (RN-003, RN-021, RN-022) -->
-    <div class="form-section">
-      <label class="section-label">1. Ámbito de la Novedad *</label>
-      <div class="scope-selector-grid">
-        <div
-          class="scope-card"
-          [class.selected]="scope === 'PROPIEDAD'"
-          (click)="onScopeChange('PROPIEDAD')"
-        >
-          <div class="scope-icon">🏢</div>
-          <div class="scope-details">
-            <span class="scope-name">Propiedad Horizontal</span>
-            <span class="scope-desc">Para conjuntos residenciales o edificios administrados</span>
-          </div>
-          <div class="radio-indicator"></div>
-        </div>
-
-        <div
-          class="scope-card"
-          [class.selected]="scope === 'INTERNA'"
-          (click)="onScopeChange('INTERNA')"
-        >
-          <div class="scope-icon">🏛️</div>
-          <div class="scope-details">
-            <span class="scope-name">Área Interna EG S.A.S.</span>
-            <span class="scope-desc">Para soporte interno de Operaciones, Sistemas, etc.</span>
-          </div>
-          <div class="radio-indicator"></div>
-        </div>
+    <!-- Ámbito -->
+    <section class="section">
+      <h2 class="step"><span>1</span> ¿Dónde ocurre?</h2>
+      <div class="scope-options" role="radiogroup" aria-label="Ámbito de la novedad">
+        <label class="scope-option" [class.selected]="scope === 'PROPIEDAD'">
+          <input type="radio" name="scope" value="PROPIEDAD" [checked]="scope === 'PROPIEDAD'" (change)="onScopeChange('PROPIEDAD')" />
+          <span class="scope-icon"><app-icon name="building" size="22px" /></span>
+          <span class="scope-text">
+            <strong>Propiedad horizontal</strong>
+            <small>Conjunto o edificio administrado</small>
+          </span>
+        </label>
+        <label class="scope-option" [class.selected]="scope === 'INTERNA'">
+          <input type="radio" name="scope" value="INTERNA" [checked]="scope === 'INTERNA'" (change)="onScopeChange('INTERNA')" />
+          <span class="scope-icon"><app-icon name="landmark" size="22px" /></span>
+          <span class="scope-text">
+            <strong>Área interna</strong>
+            <small>Operaciones, sistemas u otra área de EG S.A.S.</small>
+          </span>
+        </label>
       </div>
-    </div>
-
-    <!-- 2. Ubicación y Categoría -->
-    <div class="form-section">
-      <label class="section-label">2. Ubicación y Clasificación *</label>
 
       <div class="form-grid">
-        <!-- Campos si es PROPIEDAD -->
         @if (scope === 'PROPIEDAD') {
-          <div class="form-group">
-            <label for="propertyId">Propiedad Horizontal *</label>
-            <select
-              id="propertyId"
-              [(ngModel)]="propertyId"
-              name="propertyId"
-              class="form-control"
-              required
-            >
-              <option value="" disabled>Seleccione una propiedad...</option>
+          <label class="field">
+            <span>Propiedad *</span>
+            <select id="propertyId" [(ngModel)]="propertyId" name="propertyId" required>
+              <option value="" disabled>Selecciona una propiedad</option>
               @for (prop of properties(); track prop.id) {
-                <option [value]="prop.id">{{ prop.name }} ({{ prop.code }})</option>
+                <option [value]="prop.id">{{ prop.name }}</option>
               }
             </select>
-          </div>
-
-          <div class="form-group">
-            <label for="propertyZoneId">Zona / Ubicación Específica (Opcional)</label>
-            <select
-              id="propertyZoneId"
-              [(ngModel)]="propertyZoneId"
-              name="propertyZoneId"
-              class="form-control"
-              [disabled]="!propertyId"
-            >
-              <option value="">Todas las zonas / General</option>
+          </label>
+          <label class="field">
+            <span>Zona (opcional)</span>
+            <select id="propertyZoneId" [(ngModel)]="propertyZoneId" name="propertyZoneId" [disabled]="!propertyId">
+              <option value="">General</option>
               @for (zone of getSelectedPropertyZones(); track zone.id) {
                 <option [value]="zone.id">{{ zone.name }}</option>
               }
             </select>
-          </div>
+          </label>
         }
 
-        <!-- Campos si es INTERNA -->
         @if (scope === 'INTERNA') {
-          <div class="form-group full-width">
-            <label for="internalAreaId">Área Interna *</label>
-            <select
-              id="internalAreaId"
-              [(ngModel)]="internalAreaId"
-              name="internalAreaId"
-              class="form-control"
-              required
-            >
-              <option value="" disabled>Seleccione un área interna...</option>
+          <label class="field full">
+            <span>Área interna *</span>
+            <select id="internalAreaId" [(ngModel)]="internalAreaId" name="internalAreaId" required>
+              <option value="" disabled>Selecciona un área</option>
               @for (area of internalAreas(); track area.id) {
-                <option [value]="area.id">{{ area.name }} ({{ area.code }})</option>
+                <option [value]="area.id">{{ area.name }}</option>
               }
             </select>
-          </div>
+          </label>
         }
 
-        <!-- Categoría dependiente del ámbito -->
-        <div class="form-group full-width">
-          <label for="categoryId">Categoría Operativa *</label>
-          <select
-            id="categoryId"
-            [(ngModel)]="categoryId"
-            name="categoryId"
-            class="form-control"
-            required
-          >
-            <option value="" disabled>Seleccione una categoría para {{ scope === 'PROPIEDAD' ? 'propiedades' : 'áreas internas' }}...</option>
+        <label class="field full">
+          <span>Categoría *</span>
+          <select id="categoryId" [(ngModel)]="categoryId" name="categoryId" required>
+            <option value="" disabled>Selecciona una categoría</option>
             @for (cat of categories(); track cat.id) {
               <option [value]="cat.id">{{ cat.name }}</option>
             }
           </select>
-        </div>
+        </label>
       </div>
-    </div>
+    </section>
 
-    <!-- 3. Detalle de la Novedad -->
-    <div class="form-section">
-      <label class="section-label">3. Descripción del Evento *</label>
-
-      <div class="form-group">
-        <label for="title">Título Conciso *</label>
-        <input
-          type="text"
-          id="title"
-          [(ngModel)]="title"
-          name="title"
-          class="form-control"
-          placeholder="Ej: Fuga de agua en motobombas principales"
-          required
-        />
+    <!-- Detalle -->
+    <section class="section">
+      <h2 class="step"><span>2</span> ¿Qué pasó?</h2>
+      <div class="form-grid">
+        <label class="field full">
+          <span>Título *</span>
+          <input type="text" id="title" [(ngModel)]="title" name="title" placeholder="Ej.: Fuga de agua en motobombas" maxlength="160" required />
+        </label>
+        <label class="field full">
+          <span>Descripción *</span>
+          <textarea
+            id="description"
+            [(ngModel)]="description"
+            name="description"
+            rows="4"
+            placeholder="Qué se detectó, qué personas o bienes se ven afectados y cualquier contexto útil"
+            required
+          ></textarea>
+        </label>
       </div>
+    </section>
 
-      <div class="form-group">
-        <label for="description">Descripción Detallada *</label>
-        <textarea
-          id="description"
-          [(ngModel)]="description"
-          name="description"
-          rows="4"
-          class="form-control"
-          placeholder="Describa claramente la anomalía detectada, personas o bienes afectados y contexto inicial..."
-          required
-        ></textarea>
-      </div>
-    </div>
-
-    <!-- 4. Prioridad y Medidas Urgentes (F3) -->
-    <div class="form-section">
-      <label class="section-label">4. Prioridad y Gestión Inmediata *</label>
-
-      <div class="priority-cards-grid">
-        <label class="priority-card low" [class.selected]="priority === 'BAJA'">
+    <!-- Prioridad -->
+    <section class="section">
+      <h2 class="step"><span>3</span> ¿Qué tan urgente es?</h2>
+      <div class="priority-grid" role="radiogroup" aria-label="Prioridad">
+        <label class="priority-option" data-tone="neutral" [class.selected]="priority === 'BAJA'">
           <input type="radio" [(ngModel)]="priority" name="priority" value="BAJA" />
-          <span class="p-title">Baja</span>
-          <span class="p-desc">Atención programable</span>
+          <strong>Baja</strong>
+          <small>Se puede programar</small>
         </label>
-
-        <label class="priority-card medium" [class.selected]="priority === 'MEDIA'">
+        <label class="priority-option" data-tone="info" [class.selected]="priority === 'MEDIA'">
           <input type="radio" [(ngModel)]="priority" name="priority" value="MEDIA" />
-          <span class="p-title">Media</span>
-          <span class="p-desc">Atención estándar</span>
+          <strong>Media</strong>
+          <small>Atención estándar</small>
         </label>
-
-        <label class="priority-card high" [class.selected]="priority === 'ALTA'">
+        <label class="priority-option" data-tone="warning" [class.selected]="priority === 'ALTA'">
           <input type="radio" [(ngModel)]="priority" name="priority" value="ALTA" />
-          <span class="p-title">Alta</span>
-          <span class="p-desc">Afectación operativa</span>
+          <strong>Alta</strong>
+          <small>Afecta la operación</small>
         </label>
-
         <label
-          class="priority-card critical"
+          class="priority-option"
+          data-tone="danger"
           [class.selected]="priority === 'CRITICA'"
           [class.disabled]="authService.isAuxiliar()"
-          title="{{ authService.isAuxiliar() ? 'Restringido para Auxiliar según PEN-03' : '' }}"
+          [attr.title]="authService.isAuxiliar() ? 'No disponible para Auxiliar de Gerencia' : null"
         >
-          <input
-            type="radio"
-            [(ngModel)]="priority"
-            name="priority"
-            value="CRITICA"
-            [disabled]="authService.isAuxiliar()"
-          />
-          <span class="p-title">🚨 Crítica</span>
-          <span class="p-desc">Riesgo inminente</span>
+          <input type="radio" [(ngModel)]="priority" name="priority" value="CRITICA" [disabled]="authService.isAuxiliar()" />
+          <strong><app-icon name="alert-octagon" /> Crítica</strong>
+          <small>Riesgo inminente</small>
         </label>
       </div>
 
       @if (authService.isAuxiliar()) {
-        <div class="pen03-notice">
-          ℹ️ <strong>Nota PEN-03:</strong> El rol Auxiliar de Gerencia tiene restringida la prioridad crítica hasta definición formal de la Dirección.
-        </div>
+        <p class="field-hint">Tu rol no puede registrar novedades críticas mientras la Dirección no lo autorice.</p>
       }
 
-      <!-- Panel especial si es CRÍTICA (DEC-06 / RF-013 / RF-014) -->
       @if (priority === 'CRITICA') {
-        <div class="critical-alert-box">
-          <div class="critical-header">
-            <span class="icon">🚨</span>
+        <div class="critical-box">
+          <div class="critical-head">
+            <app-icon name="alert-octagon" size="20px" />
             <div>
-              <strong>Novedad de Carácter Crítico</strong>
-              <p>Al guardar, el Director Operativo recibirá una alerta inmediata (RF-014). Si ya se realizaron actuaciones de contención previas, documéntelas aquí (opcional al registrar el riesgo recién detectado):</p>
+              <strong>El Director Operativo recibirá una alerta inmediata</strong>
+              <p>Si ya se tomaron medidas de contención, regístralas aquí. Puedes dejarlo vacío y reportar de inmediato.</p>
             </div>
           </div>
-          <div class="form-group">
-            <label for="urgentMeasures">Medidas Urgentes Inmediatas Realizadas (DEC-06):</label>
+          <label class="field">
+            <span>Medidas urgentes realizadas (opcional)</span>
             <textarea
               id="urgentMeasures"
               [(ngModel)]="urgentMeasures"
               name="urgentMeasures"
               rows="3"
-              class="form-control"
-              placeholder="Ej: Se cerró la válvula de paso principal, se activó brigada y se notificó al técnico electricista..."
+              placeholder="Ej.: Se cerró la válvula principal y se avisó al técnico"
             ></textarea>
-          </div>
+          </label>
         </div>
       }
-    </div>
+    </section>
 
-    <!-- Acciones del Formulario -->
+    <!-- Fotos y cotización -->
+    <section class="section">
+      <h2 class="step"><span>4</span> Fotos y cotización <small class="optional">opcional</small></h2>
+
+      <div class="attach-block">
+        <div class="attach-head">
+          <strong>Fotos</strong>
+          <span class="field-hint">Muestran el estado al momento de reportar.</span>
+        </div>
+        <div class="photo-grid">
+          @for (p of photos(); track p.id) {
+            <figure class="photo">
+              <img [src]="p.previewUrl" [alt]="p.file.name" />
+              <button type="button" class="remove-btn" (click)="removeFile(p.id)" [attr.aria-label]="'Quitar ' + p.file.name">
+                <app-icon name="x" size="14px" />
+              </button>
+            </figure>
+          }
+          <label class="photo-add">
+            <input type="file" [accept]="acceptImages" multiple (change)="onFilesSelected($event, 'PHOTO')" />
+            <app-icon name="camera" size="24px" />
+            <span>{{ photos().length ? 'Agregar' : 'Tomar o elegir' }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="attach-block">
+        <div class="attach-head">
+          <strong>Cotización</strong>
+          <span class="field-hint">Si ya tienes un presupuesto del arreglo.</span>
+        </div>
+        @if (quotes().length > 0) {
+          <ul class="quote-list">
+            @for (q of quotes(); track q.id) {
+              <li>
+                <app-icon [name]="q.previewUrl ? 'camera' : 'file-text'" />
+                <span class="quote-name">{{ q.file.name }}</span>
+                <span class="quote-size">{{ formatBytes(q.file.size) }}</span>
+                <button type="button" class="remove-inline" (click)="removeFile(q.id)" [attr.aria-label]="'Quitar ' + q.file.name">
+                  <app-icon name="x" size="16px" />
+                </button>
+              </li>
+            }
+          </ul>
+        }
+        <label class="file-add">
+          <input type="file" [accept]="acceptQuotes" multiple (change)="onFilesSelected($event, 'QUOTE')" />
+          <app-icon name="plus" /> {{ quotes().length ? 'Agregar otro archivo' : 'Adjuntar cotización' }}
+        </label>
+      </div>
+
+      @if (fileWarning()) {
+        <div class="notice notice-warning"><app-icon name="alert" /><span>{{ fileWarning() }}</span></div>
+      }
+      <p class="field-hint">{{ formatsLabel }} · hasta {{ maxSizeLabel }} por archivo.</p>
+    </section>
+
     <div class="form-actions">
-      <a routerLink="/issues" class="btn btn-secondary">Cancelar</a>
-      <button type="submit" class="btn btn-primary" [disabled]="loading()">
-        @if (loading()) {
-          <span class="mini-spinner"></span> Guardando...
+      <a routerLink="/issues" class="btn-secondary">Cancelar</a>
+      <button type="submit" class="btn-primary" [disabled]="loading()">
+        @if (uploadProgress(); as up) {
+          <span class="btn-spinner"></span> Subiendo {{ up.done + 1 > up.total ? up.total : up.done + 1 }} de {{ up.total }}…
+        } @else if (loading()) {
+          <span class="btn-spinner"></span> Guardando…
         } @else {
-          Registrar Novedad
+          Registrar novedad
         }
       </button>
     </div>

@@ -82,7 +82,7 @@ describe('IssueDetailComponent', () => {
     // Comprobar que en el DOM aparece el panel de error auténtico
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('.error-panel')).toBeTruthy();
-    expect(compiled.textContent).toContain('Acceso Restringido o Registro No Encontrado');
+    expect(compiled.textContent).toContain('No pudimos abrir esta novedad');
     expect(compiled.textContent).not.toContain('NOV-2026-0001'); // No debe haber datos de muestra
   });
 
@@ -238,7 +238,7 @@ describe('IssueDetailComponent', () => {
 
     expect(component.activeTab()).toBe('comentarios');
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.textContent).toContain('@Juan Coordinador (COORDINADOR_OPERATIVO)');
+    expect(compiled.textContent).toContain('@Juan Coordinador (Coordinador operativo)');
   });
 
   it('RF-020: selectTab("comentarios") carga candidatos si aún no estaban disponibles', () => {
@@ -465,6 +465,61 @@ describe('IssueDetailComponent', () => {
         reason: 'Reporte duplicado de la novedad NOV-2026-0001',
       });
       expect(component.successMessage()).toContain('Novedad descartada formalmente');
+    });
+  });
+  describe('Ficha: siguiente paso, progreso y fotos', () => {
+    const baseIssue: any = {
+      id: 'issue-900',
+      priority: 'MEDIA',
+      initialPriority: 'MEDIA',
+      assignedUserId: 'coord-1',
+      category: { name: 'Equipos', requiresEvidence: false },
+      attachments: [],
+    };
+
+    it('para el Director con la novedad pendiente de cierre, la acción principal es aprobar el cierre', () => {
+      component.issue.set({ ...baseIssue, status: 'PENDIENTE_CIERRE' });
+
+      expect(component.primaryAction()?.key).toBe('approve-closure');
+      expect(component.moreActions().map((a) => a.key)).toContain('return');
+    });
+
+    it('para el Director sin responsable confirmado, la acción principal es confirmar responsable', () => {
+      component.issue.set({ ...baseIssue, status: 'EN_REVISION', assignedUserId: null });
+
+      expect(component.primaryAction()?.key).toBe('confirm-responsible');
+    });
+
+    it('un rol de consulta (Gerencia) no tiene acciones disponibles', () => {
+      mockAuthService.isDirector.mockReturnValue(false);
+      mockAuthService.currentUser.mockReturnValue({ id: 'ger-1', role: 'GERENTE' });
+      component.issue.set({ ...baseIssue, status: 'CERRADA' });
+
+      expect(component.primaryAction()).toBeNull();
+    });
+
+    it('ubica cada estado en su etapa del flujo', () => {
+      component.issue.set({ ...baseIssue, status: 'EN_REVISION' });
+      expect(component.currentStep()).toBe(0);
+      component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
+      expect(component.currentStep()).toBe(2);
+      component.issue.set({ ...baseIssue, status: 'CERRADA' });
+      expect(component.currentStep()).toBe(4);
+    });
+
+    it('separa las fotos de los demás documentos', () => {
+      mockIssuesService.downloadAttachment.mockReturnValue(of(new Blob()));
+      component.issue.set({
+        ...baseIssue,
+        status: 'ASIGNADA',
+        attachments: [
+          { id: 'a1', mimeType: 'image/jpeg', stage: 'INICIAL', fileName: 'foto.jpg' },
+          { id: 'a2', mimeType: 'application/pdf', stage: 'SOPORTE', fileName: 'cotizacion.pdf' },
+        ],
+      });
+
+      expect(component.photoAttachments().map((a) => a.id)).toEqual(['a1']);
+      expect(component.documentAttachments().map((a) => a.id)).toEqual(['a2']);
     });
   });
 });

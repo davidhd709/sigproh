@@ -114,4 +114,57 @@ describe('IssueCreateComponent', () => {
     expect(component.categories()).toEqual([]);
     expect(component.errorMessage()).toContain('Error al cargar las categorías');
   });
+  describe('fotos y cotización opcionales', () => {
+    const fileEvent = (...files: File[]) => ({ target: { files, value: 'x' } }) as unknown as Event;
+    const photo = new File(['img'], 'fuga.jpg', { type: 'image/jpeg' });
+    const quote = new File(['pdf'], 'cotizacion.pdf', { type: 'application/pdf' });
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      URL.createObjectURL = vi.fn().mockReturnValue('blob:preview');
+      URL.revokeObjectURL = vi.fn();
+      mockAuthService.isAuxiliar.mockReturnValue(false);
+      component.title = 'Fuga en bombas';
+      component.description = 'Filtración en sótano';
+      component.propertyId = 'prop-1';
+      component.categoryId = 'cat-1';
+    });
+
+    afterEach(() => vi.useRealTimers());
+
+    it('sube las fotos como INICIAL y la cotización como SOPORTE después de crear la novedad', () => {
+      mockIssuesService.createIssue.mockReturnValue(of({ id: 'new-1', code: 'NOV-2026-0001' }));
+      mockIssuesService.uploadAttachment = vi.fn().mockReturnValue(of({}));
+
+      component.onFilesSelected(fileEvent(photo), 'PHOTO');
+      component.onFilesSelected(fileEvent(quote), 'QUOTE');
+      component.onSubmit();
+
+      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith('new-1', photo, 'INICIAL');
+      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith('new-1', quote, 'SOPORTE');
+      expect(component.successMessage()).toContain('NOV-2026-0001');
+    });
+
+    it('rechaza en el campo de fotos los archivos que no son imagen', () => {
+      component.onFilesSelected(fileEvent(quote), 'PHOTO');
+
+      expect(component.photos().length).toBe(0);
+      expect(component.fileWarning()).toContain('cotizacion.pdf');
+    });
+
+    it('si una subida falla, conserva la novedad creada e informa qué archivo faltó', () => {
+      mockIssuesService.createIssue.mockReturnValue(of({ id: 'new-2', code: 'NOV-2026-0002' }));
+      mockIssuesService.uploadAttachment = vi
+        .fn()
+        .mockReturnValueOnce(of({}))
+        .mockReturnValueOnce(throwError(() => ({ status: 400 })));
+
+      component.onFilesSelected(fileEvent(photo, new File(['img'], 'otra.png', { type: 'image/png' })), 'PHOTO');
+      component.onSubmit();
+
+      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledTimes(2);
+      expect(component.errorMessage()).toContain('NOV-2026-0002');
+      expect(component.errorMessage()).toContain('otra.png');
+    });
+  });
 });
