@@ -34,6 +34,8 @@ export interface AvailableAccount {
 }
 
 export function getApiBaseUrl(): string {
+  if (environment.production) return '/api';
+
   if (typeof window !== 'undefined' && window.location && window.location.port === '4200') {
     return '/api';
   }
