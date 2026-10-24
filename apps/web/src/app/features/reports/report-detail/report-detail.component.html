@@ -1,813 +1,574 @@
-<div class="detail-container" *ngIf="report() as rep">
-  <!-- Barra superior con navegación y acciones rápidas -->
-  <div class="top-nav">
-    <a routerLink="/reports" class="back-link">← Volver a la Lista de Informes</a>
-    <div class="top-actions">
-      <!-- Acciones de edición en borrador -->
-      <button
-        *ngIf="canEdit()"
-        class="btn btn-primary btn-save"
-        (click)="saveDraft()"
-        [disabled]="isSaving() || isSubmittingAction()"
-      >
-        <span *ngIf="isSaving()" class="spinner-sm"></span>
-        <span>{{ isSaving() ? 'Guardando...' : '💾 Guardar Borrador' }}</span>
-      </button>
+@if (report(); as rep) {
+  <div class="page report-page">
+    <a routerLink="/reports" class="back-link"><app-icon name="chevron-left" /> Informes</a>
 
-      <button
-        *ngIf="canEdit()"
-        class="btn btn-secondary"
-        (click)="refreshData()"
-        [disabled]="isRefreshing() || isSubmittingAction()"
-        title="Recalcula novedades e indicadores sin alterar los textos redactados"
-      >
-        <span *ngIf="isRefreshing()" class="spinner-sm"></span>
-        <span>{{ isRefreshing() ? 'Actualizando...' : '🔄 Actualizar Datos' }}</span>
-      </button>
-
-      <!-- Acción Enviar a Revisión (RF-037, CP-21) -->
-      <button
-        *ngIf="canSendToReview()"
-        class="btn btn-review"
-        (click)="sendToReview()"
-        [disabled]="isSubmittingAction()"
-        title="Congela el documento y lo remite formalmente a la Dirección Operativa"
-      >
-        🚀 Enviar a Revisión
-      </button>
-
-      <!-- Acciones del Director Operativo en Revisión (RF-038, CP-22 a CP-24) -->
-      <button
-        *ngIf="canReview()"
-        class="btn btn-approve"
-        (click)="openApproveModal()"
-        [disabled]="isSubmittingAction()"
-        title="Aprobar formalmente el informe con firma digital y hash SHA-256"
-      >
-        ✅ Aprobar Informe
-      </button>
-
-      <button
-        *ngIf="canReview()"
-        class="btn btn-return"
-        (click)="openReturnModal()"
-        [disabled]="isSubmittingAction()"
-        title="Devolver el informe con observaciones obligatorias para ajuste del autor"
-      >
-        ↩️ Devolver con Observaciones
-      </button>
-
-      <!-- Acción Nueva Versión tras aprobación (RF-040, CP-25, CP-26) -->
-      <button
-        *ngIf="canCreateNewVersion()"
-        class="btn btn-secondary"
-        (click)="openNewVersionModal()"
-        [disabled]="isSubmittingAction()"
-        title="Generar nueva versión editable v(n+1) manteniendo el informe aprobado intacto"
-      >
-        ➕ Crear Nueva Versión
-      </button>
-
-      <!-- Acción Distribución Oficial (RF-042, CP-27, CP-28) -->
-      <button
-        *ngIf="canDistribute()"
-        class="btn btn-distribute"
-        (click)="openDistributionModal()"
-        [disabled]="isSubmittingAction()"
-        title="Registrar entrega formal a la copropiedad o administración"
-      >
-        📦 Registrar Distribución
-      </button>
-
-      <!-- Descargas oficiales -->
-      <button
-        class="btn btn-pdf"
-        (click)="downloadPdf()"
-        [disabled]="isDownloading()"
-      >
-        📄 Descargar PDF
-      </button>
-
-      <button
-        class="btn btn-excel"
-        (click)="downloadExcel()"
-        [disabled]="isDownloading()"
-      >
-        📊 Exportar Excel
-      </button>
-    </div>
-  </div>
-
-  <!-- Alertas -->
-  <div *ngIf="errorMessage()" class="alert alert-error mt-2">
-    <span>⚠️</span>
-    <span>{{ errorMessage() }}</span>
-  </div>
-
-  <div *ngIf="successMessage()" class="alert alert-success mt-2">
-    <span>✅</span>
-    <span>{{ successMessage() }}</span>
-  </div>
-
-  <!-- Banner del Informe -->
-  <div class="report-banner">
-    <div class="banner-left">
-      <div class="badge-row">
-        <span class="badge badge-code">{{ rep.code }}</span>
-        <span class="badge badge-version">v{{ rep.version }}</span>
-        <span [ngClass]="['badge', getStatusBadgeClass(rep.status)]">{{ rep.status }}</span>
-        <span class="badge badge-scope">{{ rep.scope }}</span>
-      </div>
-      <h1 class="banner-title">{{ rep.title }}</h1>
-      <p class="banner-subtitle">
-        <span *ngIf="rep.propertyName">🏢 Propiedad: <strong>{{ rep.propertyName }}</strong> | </span>
-        <span *ngIf="rep.internalAreaName">💼 Área: <strong>{{ rep.internalAreaName }}</strong> | </span>
-        Periodo: <strong>{{ rep.periodStart }}</strong> al <strong>{{ rep.periodEnd }}</strong> | 
-        Fecha de Corte (CP-34): <strong>{{ rep.cutoffDate }} (UTC-5)</strong>
-      </p>
-
-      <!-- Avisos contextuales según estado de gobernanza -->
-      <div *ngIf="rep.status === 'EN_REVISION'" class="banner-notice notice-review mt-3">
-        🕒 <strong>Documento en Revisión Formal:</strong> El borrador está congelado a la espera de la decisión formal de la Dirección Operativa (Aprobación o Devolución).
-      </div>
-
-      <div *ngIf="rep.status === 'DEVUELTO'" class="banner-notice notice-returned mt-3">
-        ↩️ <strong>Informe Devuelto para Ajustes:</strong> {{ rep.approvalNotes || 'Favor atender las observaciones antes de enviar a nueva revisión.' }}
-      </div>
-
-      <div *ngIf="rep.status === 'APROBADO'" class="banner-notice notice-approved mt-3">
-        <div class="approved-info">
-          ✅ <strong>Documento Oficial Aprobado:</strong> Aprobado por <strong>{{ rep.approvedByName || 'Dirección Operativa' }}</strong>
-          <span *ngIf="rep.approvedAt"> el {{ rep.approvedAt | date:'mediumDate' }}</span>.
-          <div *ngIf="rep.pdfSha256" class="hash-display mt-1">
-            <span class="badge-hash">SHA-256:</span>
-            <code>{{ rep.pdfSha256 }}</code>
-          </div>
+    <header class="report-head">
+      <div class="report-head-main">
+        <span class="report-meta">
+          {{ rep.code }} · Versión {{ rep.version }} ·
+          {{ rep.propertyName || rep.internalAreaName || 'Consolidado general' }}
+        </span>
+        <h1 class="report-title">{{ rep.title }}</h1>
+        <div class="report-pills">
+          <span class="pill" [attr.data-tone]="statusTone(rep.status)">{{ statusLabel(rep.status) }}</span>
+          <span class="report-period">
+            <app-icon name="calendar" />
+            {{ rep.periodStart | date: 'd MMM' }} – {{ rep.periodEnd | date: 'd MMM y' }}
+            <span class="sep">·</span> corte {{ rep.cutoffDate | date: 'd MMM y' }}
+          </span>
         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- Navegación por Pestañas -->
-  <div class="tabs-bar">
-    <button
-      class="tab-btn"
-      [class.active]="activeTab === 'PREVIEW'"
-      (click)="setTab('PREVIEW')"
-    >
-      👁️ Vista Previa del Documento
-    </button>
-    <button
-      *ngIf="canEdit()"
-      class="tab-btn"
-      [class.active]="activeTab === 'EDIT_TEXTS'"
-      (click)="setTab('EDIT_TEXTS')"
-    >
-      ✏️ Redacción y Secciones Opcionales
-    </button>
-    <button
-      *ngIf="canEdit()"
-      class="tab-btn"
-      [class.active]="activeTab === 'EVIDENCES'"
-      (click)="setTab('EVIDENCES')"
-    >
-      📸 Selección de Evidencias ({{ selectedEvidences().size }})
-    </button>
-    <button
-      class="tab-btn"
-      [class.active]="activeTab === 'VERSIONS'"
-      (click)="setTab('VERSIONS')"
-    >
-      📜 Historial de Versiones ({{ (rep.versions?.length || 0) + (isApproved() ? 1 : 0) }})
-    </button>
-    <button
-      class="tab-btn"
-      [class.active]="activeTab === 'DISTRIBUTIONS'"
-      (click)="setTab('DISTRIBUTIONS')"
-    >
-      📬 Distribución Oficial ({{ rep.distributions?.length || 0 }})
-    </button>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- PESTAÑA 1: VISTA PREVIA DEL DOCUMENTO      -->
-  <!-- ========================================== -->
-  <div *ngIf="activeTab === 'PREVIEW'" class="preview-paper">
-
-    <!-- Encabezado Institucional -->
-    <div class="doc-header">
-      <div class="doc-brand">
-        <h2 class="doc-brand-title">EG S.A.S. — PLATAFORMA SIGPROH</h2>
-        <p class="doc-brand-subtitle">GESTIÓN Y CONTROL DE NOVEDADES OPERATIVAS</p>
-      </div>
-      <div class="doc-code-box">
-        <span class="font-bold">{{ rep.code }}</span>
-        <span class="text-xs">v{{ rep.version }} · {{ rep.status }}</span>
-      </div>
-    </div>
-
-    <!-- Título y Metadatos -->
-    <div class="doc-meta-card">
-      <h3 class="doc-title">{{ rep.title }}</h3>
-      <div class="doc-meta-grid">
-        <div><strong>Ámbito:</strong> {{ rep.scope }}</div>
-        <div>
-          <strong>Ubicación:</strong>
-          {{ rep.propertyName || rep.internalAreaName || 'Consolidado General' }}
-        </div>
-        <div><strong>Periodo:</strong> {{ rep.periodStart }} al {{ rep.periodEnd }}</div>
-        <div><strong>Fecha de Corte:</strong> {{ rep.cutoffDate }} (UTC-5)</div>
-        <div><strong>Elaborado por:</strong> {{ rep.createdByName }}</div>
-        <div><strong>Fecha Emisión:</strong> {{ rep.createdAt.split('T')[0] }}</div>
-      </div>
-    </div>
-
-    <!-- 1. Introducción -->
-    <div *ngIf="rep.showIntroduction && rep.introduction" class="doc-section">
-      <h4 class="doc-section-title">1. INTRODUCCIÓN</h4>
-      <p class="doc-paragraph">{{ rep.introduction }}</p>
-    </div>
-
-    <!-- 2. KPIs e Indicadores -->
-    <div *ngIf="rep.showKpis && rep.operationalData?.kpis as kpis" class="doc-section">
-      <h4 class="doc-section-title">2. RESUMEN EJECUTIVO DE INDICADORES (CP-34)</h4>
-      <div class="kpi-grid">
-        <div class="kpi-box blue">
-          <span class="kpi-value">{{ kpis.totalRegisteredInPeriod }}</span>
-          <span class="kpi-label">Registradas en Periodo</span>
-        </div>
-        <div class="kpi-box green">
-          <span class="kpi-value">{{ kpis.totalClosedInPeriod }}</span>
-          <span class="kpi-label">Cerradas en Periodo</span>
-        </div>
-        <div class="kpi-box amber">
-          <span class="kpi-value">{{ kpis.totalOpenAtCutoff }}</span>
-          <span class="kpi-label">Abiertas al Corte (CP-34)</span>
-        </div>
-        <div class="kpi-box red">
-          <span class="kpi-value">{{ kpis.totalCriticalInPeriod }}</span>
-          <span class="kpi-label">Novedades Críticas</span>
-        </div>
-        <div class="kpi-box purple">
-          <span class="kpi-value">{{ kpis.averageResolutionDays }}d</span>
-          <span class="kpi-label">Tiempo Prom. Resolución</span>
-        </div>
-        <div class="kpi-box indigo">
-          <span class="kpi-value">{{ rep.operationalData?.activities?.completionRatePercent || 0 }}%</span>
-          <span class="kpi-label">Cumplimiento Actividades</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 3. Relación de Novedades -->
-    <div *ngIf="rep.showIssuesList && rep.operationalData?.issuesList as issues" class="doc-section">
-      <h4 class="doc-section-title">3. RELACIÓN DE NOVEDADES OPERATIVAS ({{ issues.length }})</h4>
-      <table class="doc-table">
-        <thead>
-          <tr>
-            <th>Código</th>
-            <th>Título / Ubicación</th>
-            <th>Categoría</th>
-            <th>Prioridad</th>
-            <th>Estado</th>
-            <th>Fechas / Responsable</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let is of issues">
-            <td class="font-mono text-primary font-bold">{{ is.code }}</td>
-            <td>
-              <strong>{{ is.title }}</strong>
-              <div class="text-xs text-muted">{{ is.locationName }}</div>
-            </td>
-            <td>{{ is.categoryName }}</td>
-            <td>
-              <span class="badge" [class.badge-red]="is.priority === 'CRITICA'">
-                {{ is.priority }}
-              </span>
-            </td>
-            <td>{{ is.status }}</td>
-            <td class="text-xs">
-              <div>Reg: {{ is.createdAt.split('T')[0] }}</div>
-              <div class="text-muted">{{ is.assignedUserName || 'Sin Asignar' }}</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- 4. Actividades Operativas -->
-    <div *ngIf="rep.showActivities && rep.operationalData?.activitiesList as activities" class="doc-section">
-      <h4 class="doc-section-title">4. GESTIONES Y ACTIVIDADES OPERATIVAS ({{ activities.length }})</h4>
-      <div class="activities-doc-list">
-        <div *ngFor="let act of activities.slice(0, 15)" class="activity-doc-card">
-          <div class="act-header">
-            <strong>[{{ act.issueCode }}] {{ act.title }}</strong>
-            <span class="badge badge-scope">{{ act.status }}</span>
-          </div>
-          <div class="text-sm text-muted">
-            Asignado a: {{ act.assignedUserName || 'Sin Asignar' }} | 
-            {{ act.completedAt ? 'Completada: ' + act.completedAt.split('T')[0] : 'Límite: ' + (act.dueDate ? act.dueDate.split('T')[0] : 'N/A') }}
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 5. Evidencias Seleccionadas -->
-    <div *ngIf="rep.showEvidences && rep.selectedAttachmentIds.length > 0" class="doc-section">
-      <h4 class="doc-section-title">5. EVIDENCIAS AUTORIZADAS SELECCIONADAS ({{ rep.selectedAttachmentIds.length }})</h4>
-      <div class="evidences-doc-grid">
-        <div
-          *ngFor="let ev of rep.operationalData?.availableEvidences"
-          [hidden]="!isEvidenceSelected(ev.id)"
-          class="evidence-doc-card"
-        >
-          <div class="ev-badge-stage">{{ ev.stage }}</div>
-          <div class="ev-filename">📁 {{ ev.fileName }}</div>
-          <div class="ev-meta">
-            Novedad: {{ ev.issueCode }} | {{ (ev.fileSize / 1024).toFixed(0) }} KB
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 6. Observaciones y Recomendaciones -->
-    <div *ngIf="rep.showObservations && rep.observations" class="doc-section">
-      <h4 class="doc-section-title">6. OBSERVACIONES GENERALES</h4>
-      <p class="doc-paragraph">{{ rep.observations }}</p>
-    </div>
-
-    <div *ngIf="rep.showRecommendations && rep.recommendations" class="doc-section">
-      <h4 class="doc-section-title">7. RECOMENDACIONES TÉCNICAS Y OPERATIVAS</h4>
-      <p class="doc-paragraph">{{ rep.recommendations }}</p>
-    </div>
-
-    <div *ngIf="rep.showFinalComments && rep.finalComments" class="doc-section">
-      <h4 class="doc-section-title">8. COMENTARIOS FINALES</h4>
-      <p class="doc-paragraph">{{ rep.finalComments }}</p>
-    </div>
-
-    <!-- Pie de Control Documental -->
-    <div class="doc-footer">
-      <div class="doc-footer-title">CONTROL DOCUMENTAL Y VALIDEZ INSTITUCIONAL</div>
-      <p class="text-xs text-muted mb-0">
-        Elaborado por: {{ rep.createdByName }} | Fecha de Emisión: {{ rep.createdAt.split('T')[0] }} | Versión Registrada: v{{ rep.version }}
-      </p>
-      <p class="text-xs text-muted mt-1">
-        Documento oficial generado por la Plataforma SIGPROH — EG S.A.S.
-      </p>
-    </div>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- PESTAÑA 2: REDACCIÓN Y OPCIONES            -->
-  <!-- ========================================== -->
-  <div *ngIf="activeTab === 'EDIT_TEXTS'" class="edit-pane">
-    <div class="card p-4">
-      <h3 class="card-title">Campos Redactados Editables (RF-033, CP-19)</h3>
-      <p class="text-muted text-sm mb-4">
-        Los cambios realizados en estas secciones se guardan exclusivamente en el informe y <strong>nunca alteran</strong> las novedades ni las métricas de origen (RN-125, RN-206).
-      </p>
-
-      <div class="form-group mb-3">
-        <label for="editTitle" class="form-label">Título del Informe</label>
-        <input
-          id="editTitle"
-          type="text"
-          [(ngModel)]="editTitle"
-          class="form-control"
-        />
-      </div>
-
-      <div class="form-group mb-3">
-        <label for="editIntro" class="form-label">1. Introducción Redactada</label>
-        <textarea
-          id="editIntro"
-          [(ngModel)]="editIntroduction"
-          rows="4"
-          class="form-control"
-          placeholder="Introducción sobre el alcance del periodo y la propiedad..."
-        ></textarea>
-      </div>
-
-      <div class="form-group mb-3">
-        <label for="editObs" class="form-label">2. Observaciones Generales</label>
-        <textarea
-          id="editObs"
-          [(ngModel)]="editObservations"
-          rows="4"
-          class="form-control"
-          placeholder="Observaciones de relevancia sobre las gestiones efectuadas..."
-        ></textarea>
-      </div>
-
-      <div class="form-group mb-3">
-        <label for="editRec" class="form-label">3. Recomendaciones Técnicas</label>
-        <textarea
-          id="editRec"
-          [(ngModel)]="editRecommendations"
-          rows="4"
-          class="form-control"
-          placeholder="Recomendaciones preventivas, correctivas o de mejoras..."
-        ></textarea>
-      </div>
-
-      <div class="form-group mb-4">
-        <label for="editFin" class="form-label">4. Comentarios Finales</label>
-        <textarea
-          id="editFin"
-          [(ngModel)]="editFinalComments"
-          rows="3"
-          class="form-control"
-          placeholder="Conclusiones o comentarios adicionales..."
-        ></textarea>
-      </div>
-
-      <hr class="divider" />
-
-      <h3 class="card-title mt-4">Visibilidad de Secciones en el Documento</h3>
-      <p class="text-muted text-sm mb-3">
-        Active o desactive las secciones opcionales que aparecerán en la vista previa y en el PDF oficial:
-      </p>
-
-      <div class="toggles-grid">
-        <label class="toggle-item">
-          <input type="checkbox" [(ngModel)]="showIntroduction" />
-          <span>Introducción</span>
-        </label>
-        <label class="toggle-item">
-          <input type="checkbox" [(ngModel)]="showKpis" />
-          <span>Resumen de Indicadores (KPIs)</span>
-        </label>
-        <label class="toggle-item">
-          <input type="checkbox" [(ngModel)]="showIssuesList" />
-          <span>Relación de Novedades</span>
-        </label>
-        <label class="toggle-item">
-          <input type="checkbox" [(ngModel)]="showActivities" />
-          <span>Gestiones y Actividades</span>
-        </label>
-        <label class="toggle-item">
-          <input type="checkbox" [(ngModel)]="showEvidences" />
-          <span>Galería de Evidencias</span>
-        </label>
-        <label class="toggle-item">
-          <input type="checkbox" [(ngModel)]="showObservations" />
-          <span>Observaciones Generales</span>
-        </label>
-        <label class="toggle-item">
-          <input type="checkbox" [(ngModel)]="showRecommendations" />
-          <span>Recomendaciones</span>
-        </label>
-        <label class="toggle-item">
-          <input type="checkbox" [(ngModel)]="showFinalComments" />
-          <span>Comentarios Finales</span>
-        </label>
-      </div>
-
-      <div class="mt-4 text-right">
-        <button class="btn btn-primary" (click)="saveDraft()" [disabled]="isSaving()">
-          💾 Guardar Cambios
+      <div class="report-downloads">
+        <button type="button" class="btn-secondary" (click)="downloadPdf()" [disabled]="isDownloading()">
+          <span class="file-badge pdf">PDF</span> <span class="hide-sm">Descargar</span>
+        </button>
+        <button type="button" class="btn-secondary" (click)="downloadExcel()" [disabled]="isDownloading()">
+          <span class="file-badge xls">XLS</span> <span class="hide-sm">Exportar</span>
         </button>
       </div>
-    </div>
-  </div>
+    </header>
 
-  <!-- ========================================== -->
-  <!-- PESTAÑA 3: SELECCIÓN DE EVIDENCIAS         -->
-  <!-- ========================================== -->
-  <div *ngIf="activeTab === 'EVIDENCES'" class="evidences-pane">
-    <div class="card p-4">
-      <div class="d-flex justify-between items-center mb-3">
-        <div>
-          <h3 class="card-title">Evidencias Disponibles en el Periodo (RF-034)</h3>
-          <p class="text-muted text-sm mb-0">
-            Marque las fotografías o soportes que desea incluir en el informe impreso/PDF. No altera los archivos originales.
-          </p>
-        </div>
-        <button class="btn btn-primary btn-sm" (click)="saveDraft()" [disabled]="isSaving()">
-          💾 Guardar Selección
-        </button>
+    @if (errorMessage()) {
+      <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ errorMessage() }}</span></div>
+    }
+    @if (successMessage()) {
+      <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ successMessage() }}</span></div>
+    }
+
+    <!-- Estado del flujo y siguiente paso -->
+    <section class="status-card" [attr.data-tone]="statusTone(rep.status)">
+      <div class="status-text">
+        @switch (rep.status) {
+          @case ('BORRADOR') {
+            <strong>Borrador en edición</strong>
+            <span>Revisa los textos y las evidencias. Cuando esté listo, envíalo a la Dirección.</span>
+          }
+          @case ('EN_REVISION') {
+            <strong>En revisión</strong>
+            <span>El documento está congelado hasta que la Dirección Operativa lo apruebe o lo devuelva.</span>
+          }
+          @case ('DEVUELTO') {
+            <strong>Devuelto con observaciones</strong>
+            <span>{{ rep.approvalNotes || 'Atiende las observaciones antes de enviarlo de nuevo.' }}</span>
+          }
+          @case ('APROBADO') {
+            <strong>Aprobado</strong>
+            <span>
+              Por {{ rep.approvedByName || 'Dirección Operativa' }}
+              @if (rep.approvedAt) {
+                el {{ rep.approvedAt | date: 'd MMM y' }}
+              }
+            </span>
+            @if (rep.pdfSha256) {
+              <code class="hash" [title]="rep.pdfSha256">SHA-256 {{ rep.pdfSha256.substring(0, 16) }}…</code>
+            }
+          }
+        }
       </div>
 
-      <div
-        *ngIf="rep.operationalData?.availableEvidences as evidences"
-        class="evidences-selection-grid"
-      >
-        <div
-          *ngFor="let ev of evidences"
-          class="evidence-select-card"
-          [class.selected]="isEvidenceSelected(ev.id)"
-          (click)="toggleEvidence(ev.id)"
-        >
-          <input
-            type="checkbox"
-            [checked]="isEvidenceSelected(ev.id)"
-            (change)="toggleEvidence(ev.id)"
-            (click)="$event.stopPropagation()"
-            class="ev-checkbox"
-          />
-          <div class="ev-content">
-            <span class="badge badge-scope">{{ ev.stage }}</span>
-            <strong class="ev-name mt-1">{{ ev.fileName }}</strong>
-            <div class="text-xs text-muted mt-1">
-              Caso: {{ ev.issueCode }} | {{ (ev.fileSize / 1024).toFixed(0) }} KB
+      <div class="status-actions">
+        @if (canSendToReview()) {
+          <button type="button" class="btn-primary" (click)="sendToReview()" [disabled]="isSubmittingAction()">
+            <app-icon name="send" /> Enviar a revisión
+          </button>
+        }
+        @if (canReview()) {
+          <button type="button" class="btn-primary btn-success" (click)="openApproveModal()" [disabled]="isSubmittingAction()">
+            <app-icon name="check-circle" /> Aprobar
+          </button>
+          <button type="button" class="btn-secondary" (click)="openReturnModal()" [disabled]="isSubmittingAction()">
+            <app-icon name="undo" /> Devolver
+          </button>
+        }
+        @if (canDistribute()) {
+          <button type="button" class="btn-primary" (click)="openDistributionModal()" [disabled]="isSubmittingAction()">
+            <app-icon name="send" /> Registrar entrega
+          </button>
+        }
+        @if (canCreateNewVersion()) {
+          <button type="button" class="btn-secondary" (click)="openNewVersionModal()" [disabled]="isSubmittingAction()">
+            <app-icon name="plus" /> Nueva versión
+          </button>
+        }
+        @if (canEdit()) {
+          <button
+            type="button"
+            class="btn-secondary"
+            (click)="refreshData()"
+            [disabled]="isRefreshing() || isSubmittingAction()"
+            title="Recalcula novedades e indicadores sin tocar los textos redactados"
+          >
+            <app-icon name="refresh" /> {{ isRefreshing() ? 'Actualizando…' : 'Actualizar datos' }}
+          </button>
+        }
+      </div>
+    </section>
+
+    <!-- Pestañas -->
+    <nav class="tabs" role="tablist" aria-label="Secciones del informe">
+      <button type="button" role="tab" class="tab-btn" [class.active]="activeTab === 'PREVIEW'" (click)="setTab('PREVIEW')">Documento</button>
+      @if (canEdit()) {
+        <button type="button" role="tab" class="tab-btn" [class.active]="activeTab === 'EDIT_TEXTS'" (click)="setTab('EDIT_TEXTS')">Redacción</button>
+        <button type="button" role="tab" class="tab-btn" [class.active]="activeTab === 'EVIDENCES'" (click)="setTab('EVIDENCES')">
+          Evidencias <span class="tab-count">{{ selectedEvidences().size }}</span>
+        </button>
+      }
+      <button type="button" role="tab" class="tab-btn" [class.active]="activeTab === 'VERSIONS'" (click)="setTab('VERSIONS')">
+        Versiones <span class="tab-count">{{ (rep.versions?.length || 0) + (isApproved() ? 1 : 0) }}</span>
+      </button>
+      <button type="button" role="tab" class="tab-btn" [class.active]="activeTab === 'DISTRIBUTIONS'" (click)="setTab('DISTRIBUTIONS')">
+        Entregas <span class="tab-count">{{ rep.distributions?.length || 0 }}</span>
+      </button>
+    </nav>
+
+    <!-- Documento -->
+    @if (activeTab === 'PREVIEW') {
+      <article class="paper">
+        <header class="doc-header">
+          <img src="brand/isotipo.png" alt="" class="doc-logo" width="34" height="42" />
+          <div class="doc-brand">
+            <strong>EG S.A.S.</strong>
+            <span>Gestión de propiedad horizontal · SIGPROH</span>
+          </div>
+          <div class="doc-code">
+            <strong>{{ rep.code }}</strong>
+            <span>v{{ rep.version }} · {{ statusLabel(rep.status) }}</span>
+          </div>
+        </header>
+
+        <h2 class="doc-title">{{ rep.title }}</h2>
+        <dl class="doc-meta">
+          <div><dt>Ubicación</dt><dd>{{ rep.propertyName || rep.internalAreaName || 'Consolidado general' }}</dd></div>
+          <div><dt>Período</dt><dd>{{ rep.periodStart | date: 'd MMM y' }} – {{ rep.periodEnd | date: 'd MMM y' }}</dd></div>
+          <div><dt>Fecha de corte</dt><dd>{{ rep.cutoffDate | date: 'd MMM y' }} (UTC-5)</dd></div>
+          <div><dt>Elaborado por</dt><dd>{{ rep.createdByName }}</dd></div>
+        </dl>
+
+        @if (rep.showIntroduction && rep.introduction) {
+          <section class="doc-section">
+            <h3>Introducción</h3>
+            <p>{{ rep.introduction }}</p>
+          </section>
+        }
+
+        @if (rep.showKpis && rep.operationalData?.kpis; as kpis) {
+          <section class="doc-section">
+            <h3>Indicadores del período</h3>
+            <div class="doc-kpis">
+              <div><strong>{{ kpis.totalRegisteredInPeriod }}</strong><span>Registradas</span></div>
+              <div><strong>{{ kpis.totalClosedInPeriod }}</strong><span>Cerradas</span></div>
+              <div><strong>{{ kpis.totalOpenAtCutoff }}</strong><span>Abiertas al corte</span></div>
+              <div class="kpi-danger"><strong>{{ kpis.totalCriticalInPeriod }}</strong><span>Críticas</span></div>
+              <div><strong>{{ kpis.averageResolutionDays }} d</strong><span>Tiempo medio de cierre</span></div>
+              <div><strong>{{ rep.operationalData?.activities?.completionRatePercent || 0 }}%</strong><span>Actividades cumplidas</span></div>
             </div>
-            <div class="text-xs text-muted">Subido por: {{ ev.uploadedByName }}</div>
+          </section>
+        }
+
+        @if (rep.showIssuesList && rep.operationalData?.issuesList; as issues) {
+          <section class="doc-section">
+            <h3>Novedades del período <small>({{ issues.length }})</small></h3>
+            <div class="doc-table-wrap">
+              <table class="doc-table">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Novedad</th>
+                    <th>Prioridad</th>
+                    <th>Estado</th>
+                    <th>Responsable</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (is of issues; track is.id) {
+                    <tr>
+                      <td class="mono">{{ is.code }}</td>
+                      <td>
+                        <strong>{{ is.title }}</strong>
+                        <span class="cell-sub">{{ is.locationName }} · {{ is.categoryName }}</span>
+                      </td>
+                      <td><span class="pill" [attr.data-tone]="priorityTone(is.priority)">{{ priorityLabel(is.priority) }}</span></td>
+                      <td>{{ statusLabel(is.status) }}</td>
+                      <td>
+                        {{ is.assignedUserName || 'Sin asignar' }}
+                        <span class="cell-sub">Reg. {{ is.createdAt | date: 'd MMM' }}</span>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </section>
+        }
+
+        @if (rep.showActivities && rep.operationalData?.activitiesList; as activities) {
+          <section class="doc-section">
+            <h3>Gestiones y actividades <small>({{ activities.length }})</small></h3>
+            <ul class="doc-list">
+              @for (act of activities.slice(0, 15); track act.id) {
+                <li>
+                  <div>
+                    <strong>{{ act.title }}</strong>
+                    <span class="cell-sub">
+                      {{ act.issueCode }} · {{ act.assignedUserName || 'Sin asignar' }} ·
+                      @if (act.completedAt) {
+                        completada {{ act.completedAt | date: 'd MMM' }}
+                      } @else if (act.dueDate) {
+                        vence {{ act.dueDate | date: 'd MMM' }}
+                      } @else {
+                        sin fecha límite
+                      }
+                    </span>
+                  </div>
+                  <span class="pill pill-soft" [attr.data-tone]="statusTone(act.status)">{{ statusLabel(act.status) }}</span>
+                </li>
+              }
+            </ul>
+          </section>
+        }
+
+        @if (rep.showEvidences && rep.selectedAttachmentIds.length > 0) {
+          <section class="doc-section">
+            <h3>Evidencias <small>({{ rep.selectedAttachmentIds.length }})</small></h3>
+            <div class="doc-evidences">
+              @for (ev of rep.operationalData?.availableEvidences || []; track ev.id) {
+                @if (isEvidenceSelected(ev.id)) {
+                  <div class="doc-evidence">
+                    <app-icon [name]="ev.mimeType.startsWith('image/') ? 'camera' : 'file-text'" />
+                    <div>
+                      <strong>{{ ev.fileName }}</strong>
+                      <span class="cell-sub">{{ stageLabel(ev.stage) }} · {{ ev.issueCode }} · {{ (ev.fileSize / 1024).toFixed(0) }} KB</span>
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+          </section>
+        }
+
+        @if (rep.showObservations && rep.observations) {
+          <section class="doc-section">
+            <h3>Observaciones generales</h3>
+            <p>{{ rep.observations }}</p>
+          </section>
+        }
+        @if (rep.showRecommendations && rep.recommendations) {
+          <section class="doc-section">
+            <h3>Recomendaciones</h3>
+            <p>{{ rep.recommendations }}</p>
+          </section>
+        }
+        @if (rep.showFinalComments && rep.finalComments) {
+          <section class="doc-section">
+            <h3>Comentarios finales</h3>
+            <p>{{ rep.finalComments }}</p>
+          </section>
+        }
+
+        <footer class="doc-footer">
+          Elaborado por {{ rep.createdByName }} · Emitido {{ rep.createdAt | date: 'd MMM y' }} · Versión {{ rep.version }}
+          <br />
+          Documento generado por SIGPROH — EG S.A.S.
+        </footer>
+      </article>
+    }
+
+    <!-- Redacción -->
+    @if (activeTab === 'EDIT_TEXTS') {
+      <section class="section">
+        <p class="section-hint">Estos textos solo cambian el informe; las novedades y los indicadores de origen no se modifican.</p>
+        <div class="form-stack">
+          <label class="field">
+            <span>Título</span>
+            <input id="editTitle" type="text" [(ngModel)]="editTitle" />
+          </label>
+          <label class="field">
+            <span>Introducción</span>
+            <textarea id="editIntro" [(ngModel)]="editIntroduction" rows="4" placeholder="Alcance del período y de la propiedad"></textarea>
+          </label>
+          <label class="field">
+            <span>Observaciones generales</span>
+            <textarea id="editObs" [(ngModel)]="editObservations" rows="4" placeholder="Aspectos relevantes de la gestión"></textarea>
+          </label>
+          <label class="field">
+            <span>Recomendaciones</span>
+            <textarea id="editRec" [(ngModel)]="editRecommendations" rows="4" placeholder="Acciones preventivas, correctivas o de mejora"></textarea>
+          </label>
+          <label class="field">
+            <span>Comentarios finales</span>
+            <textarea id="editFin" [(ngModel)]="editFinalComments" rows="3" placeholder="Conclusiones"></textarea>
+          </label>
+        </div>
+
+        <h2 class="sub-title">Secciones visibles en el documento</h2>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" [(ngModel)]="showIntroduction" /><span>Introducción</span></label>
+          <label class="toggle"><input type="checkbox" [(ngModel)]="showKpis" /><span>Indicadores</span></label>
+          <label class="toggle"><input type="checkbox" [(ngModel)]="showIssuesList" /><span>Novedades</span></label>
+          <label class="toggle"><input type="checkbox" [(ngModel)]="showActivities" /><span>Actividades</span></label>
+          <label class="toggle"><input type="checkbox" [(ngModel)]="showEvidences" /><span>Evidencias</span></label>
+          <label class="toggle"><input type="checkbox" [(ngModel)]="showObservations" /><span>Observaciones</span></label>
+          <label class="toggle"><input type="checkbox" [(ngModel)]="showRecommendations" /><span>Recomendaciones</span></label>
+          <label class="toggle"><input type="checkbox" [(ngModel)]="showFinalComments" /><span>Comentarios finales</span></label>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn-primary" (click)="saveDraft()" [disabled]="isSaving()">
+            @if (isSaving()) {
+              <span class="btn-spinner"></span> Guardando…
+            } @else {
+              <app-icon name="save" /> Guardar cambios
+            }
+          </button>
+        </div>
+      </section>
+    }
+
+    <!-- Evidencias -->
+    @if (activeTab === 'EVIDENCES') {
+      <section class="section">
+        <p class="section-hint">Marca las evidencias que deben aparecer en el documento. Los archivos originales no se modifican.</p>
+        @if (rep.operationalData?.availableEvidences; as evidences) {
+          @if (evidences.length === 0) {
+            <p class="panel-empty">No hay evidencias en las novedades de este período.</p>
+          } @else {
+            <div class="evidence-grid">
+              @for (ev of evidences; track ev.id) {
+                <label class="evidence-option" [class.selected]="isEvidenceSelected(ev.id)">
+                  <input type="checkbox" [checked]="isEvidenceSelected(ev.id)" (change)="toggleEvidence(ev.id)" />
+                  <span class="evidence-check"><app-icon name="check" /></span>
+                  <span class="evidence-info">
+                    <strong>{{ ev.fileName }}</strong>
+                    <span class="cell-sub">{{ stageLabel(ev.stage) }} · {{ ev.issueCode }} · {{ (ev.fileSize / 1024).toFixed(0) }} KB</span>
+                    <span class="cell-sub">{{ ev.uploadedByName }}</span>
+                  </span>
+                </label>
+              }
+            </div>
+          }
+        }
+        <div class="form-actions">
+          <button type="button" class="btn-primary" (click)="saveDraft()" [disabled]="isSaving()">
+            <app-icon name="save" /> Guardar selección
+          </button>
+        </div>
+      </section>
+    }
+
+    <!-- Versiones -->
+    @if (activeTab === 'VERSIONS') {
+      <section class="section">
+        <p class="section-hint">Cada versión aprobada queda sellada y no se puede modificar.</p>
+        @if (rep.status !== 'APROBADO' && (!rep.versions || rep.versions.length === 0)) {
+          <p class="panel-empty">Aún no hay versiones aprobadas. Este documento está {{ statusLabel(rep.status).toLowerCase() }}.</p>
+        } @else {
+          <ul class="row-list">
+            @if (rep.status === 'APROBADO') {
+              <li>
+                <span class="version-badge current">v{{ rep.version }}</span>
+                <div class="row-main">
+                  <strong>{{ rep.title }} <span class="pill" data-tone="success">Vigente</span></strong>
+                  <span class="cell-sub">
+                    {{ rep.approvedByName || 'Dirección Operativa' }}
+                    @if (rep.approvedAt) {
+                      · {{ rep.approvedAt | date: 'd MMM y, h:mm a' }}
+                    }
+                  </span>
+                  @if (rep.pdfSha256) {
+                    <code class="hash" [title]="rep.pdfSha256">SHA-256 {{ rep.pdfSha256.substring(0, 20) }}…</code>
+                  }
+                </div>
+              </li>
+            }
+            @for (ver of rep.versions || []; track ver.id) {
+              <li>
+                <span class="version-badge">v{{ ver.versionNumber }}</span>
+                <div class="row-main">
+                  <strong>{{ ver.title }}</strong>
+                  <span class="cell-sub">
+                    {{ statusLabel(ver.status) }} · {{ ver.approvedByName || 'Dirección Operativa' }}
+                    @if (ver.approvedAt) {
+                      · {{ ver.approvedAt | date: 'd MMM y' }}
+                    }
+                  </span>
+                  @if (ver.pdfSha256) {
+                    <code class="hash" [title]="ver.pdfSha256">SHA-256 {{ ver.pdfSha256.substring(0, 20) }}…</code>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+
+    <!-- Entregas -->
+    @if (activeTab === 'DISTRIBUTIONS') {
+      <section class="section">
+        <p class="section-hint">Registro de las entregas formales a consejos, administraciones y comités.</p>
+        @if (!rep.distributions || rep.distributions.length === 0) {
+          <p class="panel-empty">Todavía no se ha registrado ninguna entrega.</p>
+        } @else {
+          <ul class="row-list">
+            @for (dist of rep.distributions; track dist.id) {
+              <li>
+                <span class="version-badge">v{{ dist.reportVersion }}</span>
+                <div class="row-main">
+                  <strong>{{ dist.recipient }}</strong>
+                  <span class="cell-sub">
+                    {{ channelLabel(dist.channel) }} · {{ dist.deliveryDate | date: 'd MMM y' }} · {{ dist.distributedByName || 'Director Operativo' }}
+                  </span>
+                  @if (dist.notes) {
+                    <span class="cell-sub">{{ dist.notes }}</span>
+                  }
+                </div>
+              </li>
+            }
+          </ul>
+        }
+        @if (canDistribute()) {
+          <div class="form-actions">
+            <button type="button" class="btn-primary" (click)="openDistributionModal()"><app-icon name="plus" /> Registrar entrega</button>
+          </div>
+        }
+      </section>
+    }
+
+    <!-- Modal: aprobar -->
+    @if (showApprovalModal()) {
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="approveTitle">
+          <div class="modal-header">
+            <h3 id="approveTitle">Aprobar informe</h3>
+            <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="closeApproveModal()"><app-icon name="x" /></button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">El documento quedará sellado como oficial y no podrá editarse. Si luego necesitas cambios, se crea una nueva versión.</p>
+            <label class="field">
+              <span>Observaciones (opcional)</span>
+              <textarea id="approvalNotesInput" [(ngModel)]="approvalNotes" rows="3" placeholder="Ej.: Cumple con los estándares operativos"></textarea>
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" (click)="closeApproveModal()" [disabled]="isSubmittingAction()">Cancelar</button>
+            <button type="button" class="btn-primary btn-success" (click)="submitApproval()" [disabled]="isSubmittingAction()">
+              {{ isSubmittingAction() ? 'Aprobando…' : 'Aprobar' }}
+            </button>
           </div>
         </div>
+      </div>
+    }
 
-        <div *ngIf="evidences.length === 0" class="empty-card">
-          <p class="text-muted">No hay evidencias adjuntas en los casos comprendidos en este periodo.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- PESTAÑA 4: HISTORIAL DE VERSIONES (RF-041)  -->
-  <!-- ========================================== -->
-  <div *ngIf="activeTab === 'VERSIONS'" class="versions-pane">
-    <div class="card p-4">
-      <div class="mb-3">
-        <h3 class="card-title">Historial de Versiones Oficiales Inmutables (RF-040, RF-041)</h3>
-        <p class="text-muted text-sm mb-0">
-          Cada versión aprobada queda sellada de forma inmutable con su resumen de datos y su huella criptográfica SHA-256.
-        </p>
-      </div>
-
-      <div class="table-responsive">
-        <table class="table versions-table">
-          <thead>
-            <tr>
-              <th>Versión</th>
-              <th>Título del Informe</th>
-              <th>Estado</th>
-              <th>Aprobado Por</th>
-              <th>Fecha Aprobación</th>
-              <th>Integridad Criptográfica (SHA-256)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Versión actual si está aprobada -->
-            <tr *ngIf="rep.status === 'APROBADO'" class="current-version-row">
-              <td><span class="badge badge-version">v{{ rep.version }} (Vigente)</span></td>
-              <td><strong>{{ rep.title }}</strong></td>
-              <td><span class="badge badge-approved">APROBADO</span></td>
-              <td>{{ rep.approvedByName || 'Dirección Operativa' }}</td>
-              <td>{{ rep.approvedAt ? (rep.approvedAt | date:'medium') : 'N/A' }}</td>
-              <td>
-                <code *ngIf="rep.pdfSha256" class="hash-text" title="{{ rep.pdfSha256 }}">
-                  {{ rep.pdfSha256.substring(0, 20) }}...
-                </code>
-                <span *ngIf="!rep.pdfSha256" class="text-muted">—</span>
-              </td>
-            </tr>
-
-            <!-- Versiones históricas previas archivadas -->
-            <tr *ngFor="let ver of rep.versions || []">
-              <td><span class="badge badge-version">v{{ ver.versionNumber }}</span></td>
-              <td>{{ ver.title }}</td>
-              <td><span class="badge badge-approved">{{ ver.status }}</span></td>
-              <td>{{ ver.approvedByName || 'Dirección Operativa' }}</td>
-              <td>{{ ver.approvedAt ? (ver.approvedAt | date:'medium') : 'N/A' }}</td>
-              <td>
-                <code *ngIf="ver.pdfSha256" class="hash-text" title="{{ ver.pdfSha256 }}">
-                  {{ ver.pdfSha256.substring(0, 20) }}...
-                </code>
-                <span *ngIf="!ver.pdfSha256" class="text-muted">—</span>
-              </td>
-            </tr>
-
-            <tr *ngIf="rep.status !== 'APROBADO' && (!rep.versions || rep.versions.length === 0)">
-              <td colspan="6" class="text-center text-muted py-4">
-                No existen versiones aprobadas archivadas aún. El documento actual está en estado {{ rep.status }}.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- PESTAÑA 5: DISTRIBUCIÓN OFICIAL (RF-042)   -->
-  <!-- ========================================== -->
-  <div *ngIf="activeTab === 'DISTRIBUTIONS'" class="distributions-pane">
-    <div class="card p-4">
-      <div class="d-flex justify-between items-center mb-3">
-        <div>
-          <h3 class="card-title">Bitácora Oficial de Distribución Externa (RF-042, RN-153, RN-162)</h3>
-          <p class="text-muted text-sm mb-0">
-            Registro auditable de entregas formales a copropiedades, consejos de administración y comités.
-          </p>
-        </div>
-        <button
-          *ngIf="canDistribute()"
-          class="btn btn-distribute btn-sm"
-          (click)="openDistributionModal()"
-        >
-          ➕ Registrar Nueva Entrega
-        </button>
-      </div>
-
-      <div class="table-responsive">
-        <table class="table distributions-table">
-          <thead>
-            <tr>
-              <th>Versión</th>
-              <th>Destinatario</th>
-              <th>Canal de Entrega</th>
-              <th>Fecha de Entrega</th>
-              <th>Registrado Por</th>
-              <th>Observaciones / Soportes</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let dist of rep.distributions || []">
-              <td><span class="badge badge-version">v{{ dist.reportVersion }}</span></td>
-              <td><strong>{{ dist.recipient }}</strong></td>
-              <td><span class="badge badge-scope">{{ dist.channel }}</span></td>
-              <td>{{ dist.deliveryDate | date:'mediumDate' }}</td>
-              <td>{{ dist.distributedByName || 'Director Operativo' }}</td>
-              <td>{{ dist.notes || '—' }}</td>
-            </tr>
-
-            <tr *ngIf="!rep.distributions || rep.distributions.length === 0">
-              <td colspan="6" class="text-center text-muted py-4">
-                No se han registrado entregas externas oficiales para este informe todavía.
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ========================================== -->
-  <!-- MODALES DE FLUJO DE GOBERNANZA             -->
-  <!-- ========================================== -->
-
-  <!-- Modal Aprobación Formal (RF-038) -->
-  <div *ngIf="showApprovalModal()" class="modal-backdrop">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>✅ Aprobar Informe Formalmente (RF-038)</h3>
-        <button class="modal-close-btn" (click)="closeApproveModal()">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="alert alert-info mb-3">
-          ℹ️ Al aprobar este informe, se sellará el documento como oficial e inmutable y se calculará su huella criptográfica SHA-256.
-        </div>
-        <div class="form-group">
-          <label for="approvalNotesInput">Observaciones o Dictamen de Aprobación (Opcional):</label>
-          <textarea
-            id="approvalNotesInput"
-            [(ngModel)]="approvalNotes"
-            rows="3"
-            class="form-control"
-            placeholder="Ej. Cumple con todos los estándares operativos y requerimientos contractuales."
-          ></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="closeApproveModal()" [disabled]="isSubmittingAction()">Cancelar</button>
-        <button class="btn btn-approve" (click)="submitApproval()" [disabled]="isSubmittingAction()">
-          <span *ngIf="isSubmittingAction()" class="spinner-sm"></span>
-          <span>{{ isSubmittingAction() ? 'Procesando...' : 'Confirmar Aprobación' }}</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Devolución con Observaciones (RF-038, RN-130) -->
-  <div *ngIf="showReturnModal()" class="modal-backdrop">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>↩️ Devolver Informe con Observaciones (RN-130)</h3>
-        <button class="modal-close-btn" (click)="closeReturnModal()">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="alert alert-warning mb-3">
-          ⚠️ El informe pasará a estado <strong>DEVUELTO</strong> para que el autor subsane las observaciones requeridas.
-        </div>
-        <div class="form-group">
-          <label for="returnNotesInput">Observaciones Explicativas Obligatorias: <span class="text-danger">*</span></label>
-          <textarea
-            id="returnNotesInput"
-            [(ngModel)]="returnNotes"
-            rows="4"
-            class="form-control"
-            placeholder="Detalle los puntos específicos que el autor debe ajustar antes de una nueva revisión..."
-          ></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="closeReturnModal()" [disabled]="isSubmittingAction()">Cancelar</button>
-        <button class="btn btn-return" (click)="submitReturn()" [disabled]="isSubmittingAction() || !returnNotes.trim()">
-          <span *ngIf="isSubmittingAction()" class="spinner-sm"></span>
-          <span>{{ isSubmittingAction() ? 'Devolviendo...' : 'Devolver Informe' }}</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Nueva Versión (RF-040) -->
-  <div *ngIf="showVersionModal()" class="modal-backdrop">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>➕ Crear Nueva Versión Editable (RF-040)</h3>
-        <button class="modal-close-btn" (click)="closeNewVersionModal()">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="alert alert-info mb-3">
-          ℹ️ Se creará la versión <strong>v{{ rep.version + 1 }}</strong> en estado Borrador. La versión aprobada actual <strong>v{{ rep.version }}</strong> permanecerá protegida e intacta en el historial.
-        </div>
-        <div class="form-group">
-          <label for="versionReasonInput">Motivo o justificación de la nueva versión (Opcional):</label>
-          <textarea
-            id="versionReasonInput"
-            [(ngModel)]="newVersionReason"
-            rows="3"
-            class="form-control"
-            placeholder="Ej. Solicitud de ampliación de novedades por parte del Consejo de Administración..."
-          ></textarea>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="closeNewVersionModal()" [disabled]="isSubmittingAction()">Cancelar</button>
-        <button class="btn btn-primary" (click)="submitNewVersion()" [disabled]="isSubmittingAction()">
-          <span *ngIf="isSubmittingAction()" class="spinner-sm"></span>
-          <span>{{ isSubmittingAction() ? 'Generando...' : 'Crear Versión v' + (rep.version + 1) }}</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Distribución Oficial (RF-042, CP-27) -->
-  <div *ngIf="showDistributionModal()" class="modal-backdrop">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>📦 Registrar Distribución Oficial Externa (RF-042)</h3>
-        <button class="modal-close-btn" (click)="closeDistributionModal()">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group mb-3">
-          <label for="distRecipient">Destinatario / Entidad Receptora: <span class="text-danger">*</span></label>
-          <input
-            id="distRecipient"
-            type="text"
-            [(ngModel)]="distributionRecipient"
-            class="form-control"
-            placeholder="Ej. Consejo de Administración, Administrador General, Comité de Convivencia"
-          />
-        </div>
-
-        <div class="form-row mb-3">
-          <div class="form-group col">
-            <label for="distChannel">Canal de Entrega: <span class="text-danger">*</span></label>
-            <select id="distChannel" [(ngModel)]="distributionChannel" class="form-control">
-              <option value="CORREO_ELECTRONICO">Correo Electrónico Oficial</option>
-              <option value="FISICO">Entrega Física Radicada</option>
-              <option value="PORTAL">Portal Web / Copropietarios</option>
-              <option value="OTRO">Otro Canal Autorizado</option>
-            </select>
+    <!-- Modal: devolver -->
+    @if (showReturnModal()) {
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="returnTitle">
+          <div class="modal-header">
+            <h3 id="returnTitle">Devolver informe</h3>
+            <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="closeReturnModal()"><app-icon name="x" /></button>
           </div>
-
-          <div class="form-group col">
-            <label for="distDate">Fecha de Entrega: <span class="text-danger">*</span></label>
-            <input
-              id="distDate"
-              type="date"
-              [(ngModel)]="distributionDate"
-              class="form-control"
-            />
+          <div class="modal-body">
+            <p class="modal-desc">El informe vuelve al autor como <strong>devuelto</strong> para que atienda tus observaciones.</p>
+            <label class="field">
+              <span>Qué debe ajustarse *</span>
+              <textarea id="returnNotesInput" [(ngModel)]="returnNotes" rows="4" placeholder="Puntos concretos que el autor debe corregir"></textarea>
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" (click)="closeReturnModal()" [disabled]="isSubmittingAction()">Cancelar</button>
+            <button type="button" class="btn-primary btn-warning" (click)="submitReturn()" [disabled]="isSubmittingAction() || !returnNotes.trim()">
+              {{ isSubmittingAction() ? 'Devolviendo…' : 'Devolver' }}
+            </button>
           </div>
         </div>
+      </div>
+    }
 
-        <div class="form-group">
-          <label for="distNotes">Observaciones / Referencia del Envío:</label>
-          <textarea
-            id="distNotes"
-            [(ngModel)]="distributionNotes"
-            rows="2"
-            class="form-control"
-            placeholder="Ej. Radicado N° 4582 / Acta N° 12 del Consejo de Administración"
-          ></textarea>
+    <!-- Modal: nueva versión -->
+    @if (showVersionModal()) {
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="versionTitle">
+          <div class="modal-header">
+            <h3 id="versionTitle">Nueva versión</h3>
+            <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="closeNewVersionModal()"><app-icon name="x" /></button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">
+              Se crea la versión <strong>v{{ rep.version + 1 }}</strong> como borrador. La versión aprobada
+              <strong>v{{ rep.version }}</strong> se conserva intacta en el historial.
+            </p>
+            <label class="field">
+              <span>Motivo (opcional)</span>
+              <textarea id="versionReasonInput" [(ngModel)]="newVersionReason" rows="3" placeholder="Ej.: El Consejo pidió ampliar las novedades"></textarea>
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" (click)="closeNewVersionModal()" [disabled]="isSubmittingAction()">Cancelar</button>
+            <button type="button" class="btn-primary" (click)="submitNewVersion()" [disabled]="isSubmittingAction()">
+              {{ isSubmittingAction() ? 'Creando…' : 'Crear v' + (rep.version + 1) }}
+            </button>
+          </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" (click)="closeDistributionModal()" [disabled]="isSubmittingAction()">Cancelar</button>
-        <button
-          class="btn btn-distribute"
-          (click)="submitDistribution()"
-          [disabled]="isSubmittingAction() || !distributionRecipient.trim()"
-        >
-          <span *ngIf="isSubmittingAction()" class="spinner-sm"></span>
-          <span>{{ isSubmittingAction() ? 'Registrando...' : 'Registrar Distribución' }}</span>
-        </button>
+    }
+
+    <!-- Modal: entrega -->
+    @if (showDistributionModal()) {
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="distTitle">
+          <div class="modal-header">
+            <h3 id="distTitle">Registrar entrega</h3>
+            <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="closeDistributionModal()"><app-icon name="x" /></button>
+          </div>
+          <div class="modal-body">
+            <label class="field">
+              <span>Destinatario *</span>
+              <input id="distRecipient" type="text" [(ngModel)]="distributionRecipient" placeholder="Ej.: Consejo de Administración" />
+            </label>
+            <div class="field-row">
+              <label class="field">
+                <span>Canal *</span>
+                <select id="distChannel" [(ngModel)]="distributionChannel">
+                  <option value="CORREO_ELECTRONICO">Correo electrónico</option>
+                  <option value="FISICO">Entrega física</option>
+                  <option value="PORTAL">Portal web</option>
+                  <option value="OTRO">Otro</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Fecha *</span>
+                <input id="distDate" type="date" [(ngModel)]="distributionDate" />
+              </label>
+            </div>
+            <label class="field">
+              <span>Referencia (opcional)</span>
+              <textarea id="distNotes" [(ngModel)]="distributionNotes" rows="2" placeholder="Ej.: Radicado 4582 / Acta 12"></textarea>
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" (click)="closeDistributionModal()" [disabled]="isSubmittingAction()">Cancelar</button>
+            <button type="button" class="btn-primary" (click)="submitDistribution()" [disabled]="isSubmittingAction() || !distributionRecipient.trim()">
+              {{ isSubmittingAction() ? 'Registrando…' : 'Registrar' }}
+            </button>
+          </div>
+        </div>
       </div>
+    }
+  </div>
+} @else if (isLoading()) {
+  <div class="page report-page" aria-busy="true">
+    <div class="skeleton sk-line"></div>
+    <div class="skeleton sk-title"></div>
+    <div class="skeleton sk-paper"></div>
+  </div>
+} @else {
+  <div class="page">
+    <div class="empty-state">
+      <span class="empty-icon tone-danger"><app-icon name="ban" size="28px" /></span>
+      <h2>No pudimos abrir este informe</h2>
+      <p>{{ errorMessage() || 'Puede que no exista o que no tengas acceso a él.' }}</p>
+      <a routerLink="/reports" class="btn-primary">Volver a informes</a>
     </div>
   </div>
-</div>
-
+}

@@ -1,192 +1,133 @@
-<div class="reports-container">
-  <!-- Header con título y botón de acción -->
-  <header class="page-header">
+<div class="page">
+  <header class="page-head">
     <div>
-      <div class="badge-header">Fase 7 · Documentación Oficial</div>
-      <h1 class="page-title">Informes de Gestión Operativa</h1>
-      <p class="page-subtitle">
-        Elaboración de borradores, indicadores consolidados, vistas previas y exportación en PDF y Excel (CP-18 a CP-20, CP-33, CP-34).
-      </p>
+      <h1 class="page-title">Informes</h1>
+      <p class="page-subtitle">Borradores, revisiones e informes aprobados</p>
     </div>
-    <button class="btn btn-primary" (click)="openCreate()">
-      <span class="icon">➕</span> Nuevo Informe
+    <button type="button" class="btn-primary" (click)="openCreate()">
+      <app-icon name="plus" /> <span class="hide-sm">Nuevo informe</span>
     </button>
   </header>
 
-  <!-- Mensajes de Alerta -->
-  <div *ngIf="errorMessage()" class="alert alert-error">
-    <span>⚠️</span>
-    <span>{{ errorMessage() }}</span>
+  @if (errorMessage()) {
+    <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ errorMessage() }}</span></div>
+  }
+  @if (successMessage()) {
+    <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ successMessage() }}</span></div>
+  }
+
+  <!-- Estado -->
+  <div class="quick-filters" role="group" aria-label="Filtrar por estado">
+    @for (s of statusFilters; track s.value) {
+      <button type="button" class="chip" [class.active]="selectedStatus === s.value" (click)="setStatus(s.value)">
+        {{ s.label }}
+      </button>
+    }
   </div>
 
-  <div *ngIf="successMessage()" class="alert alert-success">
-    <span>✅</span>
-    <span>{{ successMessage() }}</span>
-  </div>
-
-  <!-- Barra de Filtros y Búsqueda -->
-  <section class="filters-card">
-    <div class="search-box">
-      <span class="search-icon">🔍</span>
+  <div class="search-row">
+    <label class="search-box">
+      <app-icon name="search" size="18px" />
       <input
-        type="text"
+        type="search"
         [(ngModel)]="searchTerm"
         (input)="onFilterChange()"
-        placeholder="Buscar por código (INF-...) o título del informe..."
-        class="form-control search-input"
+        placeholder="Buscar por código o título"
+        aria-label="Buscar informes"
       />
-    </div>
-
-    <div class="filters-group">
-      <div class="filter-item">
-        <label for="scopeFilter">Ámbito:</label>
-        <select
-          id="scopeFilter"
-          [(ngModel)]="selectedScope"
-          (change)="onFilterChange()"
-          class="form-control"
-        >
-          <option value="">Todos los ámbitos</option>
-          <option value="PROPIEDAD">Propiedad Horizontal</option>
-          <option value="INTERNA">Gestión Interna</option>
-          <option value="CONSOLIDADO" *ngIf="currentUser()?.role !== 'COORDINADOR_OPERATIVO'">Consolidado General</option>
-        </select>
-      </div>
-
-      <div class="filter-item">
-        <label for="statusFilter">Estado:</label>
-        <select
-          id="statusFilter"
-          [(ngModel)]="selectedStatus"
-          (change)="onFilterChange()"
-          class="form-control"
-        >
-          <option value="">Todos los estados</option>
-          <option value="BORRADOR">Borrador</option>
-          <option value="EN_REVISION">En Revisión</option>
-          <option value="DEVUELTO">Devuelto</option>
-          <option value="APROBADO">Aprobado</option>
-        </select>
-      </div>
-
-      <button class="btn btn-secondary btn-sm" (click)="resetFilters()">
-        Limpiar
-      </button>
-    </div>
-  </section>
-
-  <!-- Estado de Carga -->
-  <div *ngIf="isLoading()" class="loading-state">
-    <div class="spinner"></div>
-    <p>Cargando informes de gestión...</p>
+    </label>
+    <label class="scope-select">
+      <span class="visually-hidden">Ámbito</span>
+      <select id="scopeFilter" [(ngModel)]="selectedScope" (change)="onFilterChange()">
+        <option value="">Todos los ámbitos</option>
+        <option value="PROPIEDAD">Propiedades</option>
+        <option value="INTERNA">Gestión interna</option>
+        @if (currentUser()?.role !== 'COORDINADOR_OPERATIVO') {
+          <option value="CONSOLIDADO">Consolidado</option>
+        }
+      </select>
+    </label>
   </div>
 
-  <!-- Tabla de Informes -->
-  <div *ngIf="!isLoading()" class="table-container">
-    <table *ngIf="reports().length > 0; else emptyState" class="reports-table">
-      <thead>
-        <tr>
-          <th>Código</th>
-          <th>Título</th>
-          <th>Ámbito / Ubicación</th>
-          <th>Periodo & Corte (UTC-5)</th>
-          <th>Estado</th>
-          <th>Versión</th>
-          <th>Elaborado Por</th>
-          <th class="text-right">Acciones</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          *ngFor="let report of reports()"
-          (click)="openDetail(report.id)"
-          class="clickable-row"
-        >
-          <td class="font-mono text-primary font-bold">
-            {{ report.code }}
-          </td>
-          <td>
-            <div class="report-title-cell">
-              <strong>{{ report.title }}</strong>
-            </div>
-          </td>
-          <td>
-            <span class="badge badge-scope">
-              {{ getScopeBadge(report.scope) }}
+  @if (isLoading()) {
+    <div class="report-list" aria-busy="true">
+      @for (i of [1, 2, 3]; track i) {
+        <div class="report-card skeleton"></div>
+      }
+    </div>
+  } @else if (reports().length === 0) {
+    <div class="empty-state">
+      <span class="empty-icon"><app-icon name="folder" size="28px" /></span>
+      @if (searchTerm || selectedScope || selectedStatus) {
+        <h2>Sin resultados</h2>
+        <p>Ningún informe coincide con la búsqueda o los filtros.</p>
+        <button type="button" class="btn-secondary" (click)="resetFilters()">Limpiar filtros</button>
+      } @else {
+        <h2>Aún no hay informes</h2>
+        <p>Genera un borrador con los indicadores del período y complétalo antes de enviarlo a revisión.</p>
+        <button type="button" class="btn-primary" (click)="openCreate()"><app-icon name="plus" /> Crear el primero</button>
+      }
+    </div>
+  } @else {
+    <ul class="report-list">
+      @for (report of reports(); track report.id) {
+        <li class="report-card" (click)="openDetail(report.id)">
+          <span class="report-icon" [attr.data-tone]="statusTone(report.status)"><app-icon name="file-text" size="22px" /></span>
+          <div class="report-main">
+            <span class="report-meta">
+              {{ report.code }} · v{{ report.version }} ·
+              @if (report.propertyName) {
+                {{ report.propertyName }}
+              } @else if (report.internalAreaName) {
+                {{ report.internalAreaName }}
+              } @else {
+                {{ scopeLabel(report.scope) }}
+              }
             </span>
-            <div *ngIf="report.propertyName" class="text-muted text-sm mt-1">
-              🏢 {{ report.propertyName }}
-            </div>
-            <div *ngIf="report.internalAreaName" class="text-muted text-sm mt-1">
-              💼 {{ report.internalAreaName }}
-            </div>
-          </td>
-          <td class="text-sm">
-            <div>{{ report.periodStart }} al {{ report.periodEnd }}</div>
-            <div class="text-muted text-xs">Corte: {{ report.cutoffDate }}</div>
-          </td>
-          <td>
-            <span [ngClass]="['badge', getStatusClass(report.status)]">
-              {{ report.status }}
+            <a class="report-title" [routerLink]="['/reports', report.id]" (click)="$event.stopPropagation()">{{ report.title }}</a>
+            <span class="report-tags">
+              <span class="pill" [attr.data-tone]="statusTone(report.status)">{{ statusLabel(report.status) }}</span>
+              <span class="report-period">
+                <app-icon name="calendar" />
+                {{ report.periodStart | date: 'd MMM' }} – {{ report.periodEnd | date: 'd MMM y' }}
+              </span>
             </span>
-          </td>
-          <td>
-            <span class="badge badge-version">v{{ report.version }}</span>
-          </td>
-          <td class="text-sm text-muted">
-            {{ report.createdByName }}
-          </td>
-          <td class="text-right" (click)="$event.stopPropagation()">
-            <div class="action-buttons">
+          </div>
+          <div class="report-actions" (click)="$event.stopPropagation()">
+            <button
+              type="button"
+              class="icon-action"
+              title="Descargar PDF"
+              aria-label="Descargar PDF"
+              (click)="downloadPdf($event, report)"
+              [disabled]="downloadingId() === report.id"
+            >
+              <span class="file-badge pdf">PDF</span>
+            </button>
+            <button
+              type="button"
+              class="icon-action"
+              title="Exportar a Excel"
+              aria-label="Exportar a Excel"
+              (click)="downloadExcel($event, report)"
+              [disabled]="downloadingId() === report.id"
+            >
+              <span class="file-badge xls">XLS</span>
+            </button>
+            @if (report.status === 'BORRADOR') {
               <button
-                class="btn-icon"
-                title="Editar / Ver Borrador"
-                (click)="openDetail(report.id)"
-              >
-                ✏️
-              </button>
-              <button
-                class="btn-icon btn-pdf"
-                title="Descargar PDF Oficial"
-                (click)="downloadPdf($event, report)"
-                [disabled]="downloadingId() === report.id"
-              >
-                📄
-              </button>
-              <button
-                class="btn-icon btn-excel"
-                title="Exportar Datos a Excel"
-                (click)="downloadExcel($event, report)"
-                [disabled]="downloadingId() === report.id"
-              >
-                📊
-              </button>
-              <button
-                *ngIf="report.status === 'BORRADOR'"
-                class="btn-icon btn-delete"
-                title="Eliminar Borrador"
+                type="button"
+                class="icon-action danger"
+                title="Eliminar borrador"
+                aria-label="Eliminar borrador"
                 (click)="deleteReport($event, report)"
               >
-                🗑️
+                <app-icon name="trash" size="18px" />
               </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <!-- Estado Vacío -->
-    <ng-template #emptyState>
-      <div class="empty-card">
-        <div class="empty-icon">📁</div>
-        <h3>No se encontraron informes</h3>
-        <p class="text-muted">
-          No hay informes registrados que coincidan con los filtros seleccionados. Puede generar un nuevo borrador haciendo clic en "Nuevo Informe".
-        </p>
-        <button class="btn btn-primary mt-3" (click)="openCreate()">
-          ➕ Crear Primer Borrador
-        </button>
-      </div>
-    </ng-template>
-  </div>
+            }
+          </div>
+        </li>
+      }
+    </ul>
+  }
 </div>

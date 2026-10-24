@@ -1,8 +1,10 @@
+import { IconComponent } from '../../../shared/icon/icon.component';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { ReportService } from '../../../core/services/report.service';
+import { statusLabel, statusTone } from '../../../shared/presentation';
 import { AuthService } from '../../../core/services/auth.service';
 import {
   ReportFilter,
@@ -14,7 +16,7 @@ import {
 @Component({
   selector: 'app-reports-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [IconComponent, CommonModule, FormsModule, RouterModule],
   templateUrl: './reports-list.component.html',
   styleUrls: ['./reports-list.component.css'],
 })
@@ -35,6 +37,16 @@ export class ReportsListComponent implements OnInit {
   selectedStatus: '' | ReportStatus = '';
 
   currentUser = this.authService.currentUser;
+
+  readonly statusFilters: { value: '' | ReportStatus; label: string }[] = [
+    { value: '', label: 'Todos' },
+    { value: 'BORRADOR', label: 'Borradores' },
+    { value: 'EN_REVISION', label: 'En revisión' },
+    { value: 'DEVUELTO', label: 'Devueltos' },
+    { value: 'APROBADO', label: 'Aprobados' },
+  ];
+  readonly statusLabel = statusLabel;
+  readonly statusTone = statusTone;
 
   ngOnInit(): void {
     this.loadReports();
@@ -162,29 +174,19 @@ export class ReportsListComponent implements OnInit {
     });
   }
 
-  getStatusClass(status: ReportStatus): string {
-    switch (status) {
-      case 'BORRADOR':
-        return 'badge-draft';
-      case 'EN_REVISION':
-        return 'badge-review';
-      case 'DEVUELTO':
-        return 'badge-returned';
-      case 'APROBADO':
-        return 'badge-approved';
-      default:
-        return '';
-    }
+  setStatus(status: '' | ReportStatus): void {
+    this.selectedStatus = status;
+    this.loadReports();
   }
 
-  getScopeBadge(scope: ReportScope): string {
+  scopeLabel(scope: ReportScope): string {
     switch (scope) {
       case 'PROPIEDAD':
-        return 'Propiedad Horizontal';
+        return 'Propiedad horizontal';
       case 'INTERNA':
-        return 'Gestión Interna';
+        return 'Gestión interna';
       case 'CONSOLIDADO':
-        return 'Consolidado General';
+        return 'Consolidado general';
       default:
         return scope;
     }

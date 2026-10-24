@@ -1,4 +1,6 @@
+import { IconComponent } from '../../../shared/icon/icon.component';
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { priorityLabel, priorityTone, stageLabel, statusLabel, statusTone } from '../../../shared/presentation';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -6,14 +8,13 @@ import { ReportService } from '../../../core/services/report.service';
 import { AuthService } from '../../../core/services/auth.service';
 import {
   ReportDetail,
-  ReportStatus,
   UpdateReportDraftDto,
 } from '../../../core/models/report.model';
 
 @Component({
   selector: 'app-report-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [IconComponent, CommonModule, FormsModule, RouterModule],
   templateUrl: './report-detail.component.html',
   styleUrls: ['./report-detail.component.css'],
 })
@@ -34,6 +35,23 @@ export class ReportDetailComponent implements OnInit {
 
   activeTab: 'PREVIEW' | 'EDIT_TEXTS' | 'EVIDENCES' | 'VERSIONS' | 'DISTRIBUTIONS' = 'PREVIEW';
   currentUser = this.authService.currentUser;
+
+  // Presentación
+  readonly statusLabel = statusLabel;
+  readonly statusTone = statusTone;
+  readonly priorityLabel = priorityLabel;
+  readonly priorityTone = priorityTone;
+  readonly stageLabel = stageLabel;
+
+  channelLabel(channel: string): string {
+    const labels: Record<string, string> = {
+      CORREO_ELECTRONICO: 'Correo electrónico',
+      FISICO: 'Entrega física',
+      PORTAL: 'Portal web',
+      OTRO: 'Otro canal',
+    };
+    return labels[channel] ?? channel;
+  }
 
   // Textos editables
   editTitle = '';
@@ -277,21 +295,6 @@ export class ReportDetailComponent implements OnInit {
         );
       },
     });
-  }
-
-  getStatusBadgeClass(status: ReportStatus): string {
-    switch (status) {
-      case 'BORRADOR':
-        return 'badge-draft';
-      case 'EN_REVISION':
-        return 'badge-review';
-      case 'DEVUELTO':
-        return 'badge-returned';
-      case 'APROBADO':
-        return 'badge-approved';
-      default:
-        return '';
-    }
   }
 
   canEdit(): boolean {
