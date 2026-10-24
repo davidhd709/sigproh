@@ -8,6 +8,7 @@ import { PrismaService } from '../../shared/infrastructure/database/prisma.servi
 import { AuthenticatedUser } from '../../auth/domain/authenticated-user.type';
 import { ScopeAuthorizationService } from './scope-authorization.service';
 import { CreateInternalAreaDto } from '../presentation/dto/create-internal-area.dto';
+import { UpdateInternalAreaDto } from '../presentation/dto/update-internal-area.dto';
 import { AssignAreaUserDto } from '../presentation/dto/assign-area-user.dto';
 
 @Injectable()
@@ -20,17 +21,17 @@ export class InternalAreasService {
   /**
    * Lista áreas internas respetando el alcance del usuario (RF-049).
    */
-  async list(user: AuthenticatedUser) {
+  async list(user: AuthenticatedUser, includeInactive = false) {
     const accessibleIds = await this.scopeAuth.getAccessibleInternalAreaCatalogIds(user);
 
     const whereClause: {
       organizationId: string;
-      isActive: boolean;
+      isActive?: boolean;
       id?: { in: string[] };
     } = {
       organizationId: user.organizationId,
-      isActive: true,
     };
+    if (!includeInactive) whereClause.isActive = true;
 
     if (accessibleIds !== null) {
       whereClause.id = { in: accessibleIds };
@@ -180,5 +181,44 @@ export class InternalAreasService {
         },
       });
     });
+  }
+
+  /**
+   * Actualiza datos del área o la desactiva. Desactivar no borra novedades ni informes.
+   */
+  async update(user: AuthenticatedUser, internalAreaId: string, dto: UpdateInternalAreaDto) {
+    await this.findOwned(user, internalAreaId);
+    return this.prisma.internalArea.update({
+      where: { id: internalAreaId },
+      data: { name: dto.name?.trim(), description: dto.description?.trim(), isActive: dto.isActive },
+    });
+  }
+
+  /**
+   * Retira a un usuario del área (desactiva la asignación, conserva el historial).
+   */
+  async removeAssignment(user: AuthenticatedUser, internalAreaId: string, userId: string) {
+    await this.findOwned(user, internalAreaId);
+    const assignment = await this.prisma.areaAssignment.findUnique({
+      where: { internalAreaId_userId: { internalAreaId, userId } },
+    });
+    if (!assignment || !assignment.isActive) {
+      throw new NotFoundException('El usuario no está asignado a esta área');
+    }
+    return this.prisma.areaAssignment.update({
+      where: { id: assignment.id },
+      data: { isActive: false, isLead: false },
+    });
+  }
+
+  private async findOwned(user: AuthenticatedUser, internalAreaId: string) {
+    const area = await this.prisma.internalArea.findUnique({
+      where: { id: internalAreaId },
+      select: { id: true, organizationId: true },
+    });
+    if (!area || area.organizationId !== user.organizationId) {
+      throw new NotFoundException('Área interna no encontrada');
+    }
+    return area;
   }
 }

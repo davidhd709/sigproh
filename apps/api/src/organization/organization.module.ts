@@ -8,6 +8,10 @@ import { UsersService } from './application/users.service';
 import { PropertiesController } from './presentation/properties.controller';
 import { InternalAreasController } from './presentation/internal-areas.controller';
 import { UsersController } from './presentation/users.controller';
+import { CategoriesController } from './presentation/categories.controller';
+import { CategoriesService } from './application/categories.service';
+import { PasswordHasherPort } from '../auth/application/password-hasher.port';
+import { Argon2PasswordHasherAdapter } from '../auth/infrastructure/argon2-password-hasher.adapter';
 import { JwtAuthGuard } from '../auth/infrastructure/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/infrastructure/guards/roles.guard';
 
@@ -31,12 +35,16 @@ if (!jwtSecret) {
     PropertiesController,
     InternalAreasController,
     UsersController,
+    CategoriesController,
   ],
   providers: [
     ScopeAuthorizationService,
     PropertiesService,
     InternalAreasService,
     UsersService,
+    CategoriesService,
+    // Mismo adaptador que usa el login, para que las contraseñas creadas aquí sean verificables
+    { provide: PasswordHasherPort, useClass: Argon2PasswordHasherAdapter },
     JwtAuthGuard,
     RolesGuard,
   ],

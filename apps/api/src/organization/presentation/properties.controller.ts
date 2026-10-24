@@ -1,9 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Role } from '../../generated/prisma/client';
@@ -16,6 +19,8 @@ import { PropertiesService } from '../application/properties.service';
 import { CreatePropertyDto } from './dto/create-property.dto';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { AssignCoordinatorDto } from './dto/assign-coordinator.dto';
+import { UpdatePropertyDto } from './dto/update-property.dto';
+import { UpdateZoneDto } from './dto/update-zone.dto';
 
 @Controller('properties')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -23,8 +28,13 @@ export class PropertiesController {
   constructor(private readonly propertiesService: PropertiesService) {}
 
   @Get()
-  async list(@CurrentUser() user: AuthenticatedUser) {
-    return this.propertiesService.list(user);
+  async list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    // Solo quien administra el catálogo puede ver también los registros desactivados
+    const canManage = user.role === Role.ADMINISTRADOR || user.role === Role.DIRECTOR_OPERATIVO;
+    return this.propertiesService.list(user, includeInactive === 'true' && canManage);
   }
 
   @Get(':id')
@@ -62,5 +72,36 @@ export class PropertiesController {
     @Body() dto: AssignCoordinatorDto,
   ) {
     return this.propertiesService.assignCoordinator(user, id, dto);
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMINISTRADOR, Role.DIRECTOR_OPERATIVO)
+  async update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdatePropertyDto,
+  ) {
+    return this.propertiesService.update(user, id, dto);
+  }
+
+  @Patch(':id/zones/:zoneId')
+  @Roles(Role.ADMINISTRADOR, Role.DIRECTOR_OPERATIVO)
+  async updateZone(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('zoneId') zoneId: string,
+    @Body() dto: UpdateZoneDto,
+  ) {
+    return this.propertiesService.updateZone(user, id, zoneId, dto);
+  }
+
+  @Delete(':id/assignments/:userId')
+  @Roles(Role.ADMINISTRADOR, Role.DIRECTOR_OPERATIVO)
+  async removeAssignment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+  ) {
+    return this.propertiesService.removeAssignment(user, id, userId);
   }
 }

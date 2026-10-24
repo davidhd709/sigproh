@@ -9,6 +9,8 @@ import { PrismaService } from '../../shared/infrastructure/database/prisma.servi
 import { AuthenticatedUser } from '../../auth/domain/authenticated-user.type';
 import { ScopeAuthorizationService } from './scope-authorization.service';
 import { CreatePropertyDto } from '../presentation/dto/create-property.dto';
+import { UpdatePropertyDto } from '../presentation/dto/update-property.dto';
+import { UpdateZoneDto } from '../presentation/dto/update-zone.dto';
 import { CreateZoneDto } from '../presentation/dto/create-zone.dto';
 import { AssignCoordinatorDto } from '../presentation/dto/assign-coordinator.dto';
 
@@ -24,17 +26,18 @@ export class PropertiesService {
    * - Los coordinadores solo verán las propiedades que tienen asignadas activamente.
    * - Director, Gerente y Admin ven todas las propiedades de la organización.
    */
-  async list(user: AuthenticatedUser) {
+  async list(user: AuthenticatedUser, includeInactive = false) {
     const accessibleIds = await this.scopeAuth.getAccessiblePropertyCatalogIds(user);
 
     const whereClause: {
       organizationId: string;
-      isActive: boolean;
+      isActive?: boolean;
       id?: { in: string[] };
     } = {
       organizationId: user.organizationId,
-      isActive: true,
     };
+    // Las inactivas solo se listan para administrarlas (el controlador restringe quién puede pedirlas)
+    if (!includeInactive) whereClause.isActive = true;
 
     if (accessibleIds !== null) {
       whereClause.id = { in: accessibleIds };
@@ -223,5 +226,64 @@ export class PropertiesService {
         },
       });
     });
+  }
+
+  /**
+   * Actualiza datos de la propiedad o la desactiva. Desactivar no borra novedades ni informes.
+   */
+  async update(user: AuthenticatedUser, propertyId: string, dto: UpdatePropertyDto) {
+    await this.findOwned(user, propertyId);
+    return this.prisma.property.update({
+      where: { id: propertyId },
+      data: {
+        name: dto.name?.trim(),
+        address: dto.address?.trim(),
+        nit: dto.nit?.trim(),
+        isActive: dto.isActive,
+      },
+    });
+  }
+
+  /**
+   * Renombra o desactiva una zona.
+   */
+  async updateZone(user: AuthenticatedUser, propertyId: string, zoneId: string, dto: UpdateZoneDto) {
+    await this.findOwned(user, propertyId);
+    const zone = await this.prisma.propertyZone.findUnique({ where: { id: zoneId }, select: { propertyId: true } });
+    if (!zone || zone.propertyId !== propertyId) {
+      throw new NotFoundException('Zona no encontrada');
+    }
+    return this.prisma.propertyZone.update({
+      where: { id: zoneId },
+      data: { name: dto.name?.trim(), description: dto.description?.trim(), isActive: dto.isActive },
+    });
+  }
+
+  /**
+   * Retira a un coordinador de la propiedad (desactiva la asignación, conserva el historial).
+   */
+  async removeAssignment(user: AuthenticatedUser, propertyId: string, userId: string) {
+    await this.findOwned(user, propertyId);
+    const assignment = await this.prisma.propertyAssignment.findUnique({
+      where: { propertyId_userId: { propertyId, userId } },
+    });
+    if (!assignment || !assignment.isActive) {
+      throw new NotFoundException('El usuario no está asignado a esta propiedad');
+    }
+    return this.prisma.propertyAssignment.update({
+      where: { id: assignment.id },
+      data: { isActive: false, isLead: false },
+    });
+  }
+
+  private async findOwned(user: AuthenticatedUser, propertyId: string) {
+    const property = await this.prisma.property.findUnique({
+      where: { id: propertyId },
+      select: { id: true, organizationId: true },
+    });
+    if (!property || property.organizationId !== user.organizationId) {
+      throw new NotFoundException('Propiedad no encontrada');
+    }
+    return property;
   }
 }
