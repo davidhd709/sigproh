@@ -1,20 +1,35 @@
-import { Component, inject, signal, effect } from '@angular/core';
-import { RouterModule, RouterOutlet, Router } from '@angular/router';
+import { Component, inject, signal, effect, computed } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { RouterModule, RouterOutlet, Router, NavigationEnd } from '@angular/router';
+import { filter, map } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService, AvailableAccount } from './core/services/auth.service';
 import { NotificationsService } from './core/services/notifications.service';
+import { PwaService } from './core/services/pwa.service';
 import { AppNotification } from './core/models/issue.model';
+import { IconComponent, IconName } from './shared/icon/icon.component';
+import { initialsOf, roleLabel } from './shared/presentation';
+
+interface NavItem {
+  path: string;
+  label: string;
+  icon: IconName;
+}
 
 @Component({
-  imports: [CommonModule, RouterModule, RouterOutlet, FormsModule],
+  imports: [CommonModule, RouterModule, RouterOutlet, FormsModule, IconComponent],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',
+  host: {
+    '(document:keydown.escape)': 'closeSheets()',
+  },
 })
 export class App {
   readonly authService = inject(AuthService);
   readonly notificationsService = inject(NotificationsService);
+  readonly pwa = inject(PwaService);
   private readonly router = inject(Router);
 
   // Formulario de credenciales auténticas
@@ -29,6 +44,36 @@ export class App {
   readonly showNotificationsDropdown = signal<boolean>(false);
   readonly notificationsLoading = signal<boolean>(false);
 
+  // Navegación
+  readonly showAccountMenu = signal<boolean>(false);
+  readonly navItems: NavItem[] = [
+    { path: '/dashboard', label: 'Inicio', icon: 'home' },
+    { path: '/issues', label: 'Novedades', icon: 'inbox' },
+    { path: '/reports', label: 'Informes', icon: 'file-text' },
+  ];
+  private readonly currentUrl = toSignal(
+    this.router.events.pipe(
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd),
+      map((e) => e.urlAfterRedirects),
+    ),
+    { initialValue: this.router.url },
+  );
+  /** En formularios de creación se ocultan las pestañas inferiores para dar espacio a sus acciones. */
+  readonly isFormScreen = computed(() => /^\/(issues|reports)\/new(\?|$)/.test(this.currentUrl()));
+  readonly initials = computed(() => {
+    const user = this.authService.currentUser();
+    return user ? initialsOf(user.firstName, user.lastName) || 'U' : '';
+  });
+  readonly roleLabel = computed(() => roleLabel(this.authService.currentUser()?.role));
+  /** El administrador técnico no accede a expedientes (aislamiento operativo, RN-001): solo ve Configuración. */
+  readonly isAdmin = computed(() => this.authService.currentUser()?.role === 'ADMINISTRADOR');
+  readonly visibleNavItems = computed(() => (this.isAdmin() ? [] : this.navItems));
+  /** Configuración: administrador (todo) y Director Operativo (catálogos). */
+  readonly canConfigure = computed(() => {
+    const role = this.authService.currentUser()?.role;
+    return role === 'ADMINISTRADOR' || role === 'DIRECTOR_OPERATIVO';
+  });
+
   constructor() {
     effect(() => {
       const user = this.authService.currentUser();
@@ -37,9 +82,88 @@ export class App {
       } else {
         this.notifications.set([]);
         this.unreadNotificationsCount.set(0);
-        this.showNotificationsDropdown.set(false);
+        this.closeSheets();
       }
     });
+    // El administrador no tiene acceso a novedades, tablero ni informes: se le lleva a Configuración
+    effect(() => {
+      const url = this.currentUrl().split('?')[0];
+      if (this.isAdmin() && (url === '/' || /^\/(issues|dashboard|reports)(\/|$)/.test(url))) {
+        this.router.navigate(['/settings/users']);
+      }
+    });
+    // Al navegar se cierran los paneles abiertos
+    effect(() => {
+      this.currentUrl();
+      this.closeSheets();
+    });
+  }
+
+  /** "Novedades" queda activa en la bandeja y en el detalle, no en "Nueva novedad". */
+  isActive(path: string): boolean {
+    const url = this.currentUrl().split('?')[0];
+    if (path === '/issues') return url === '/issues' || (url.startsWith('/issues/') && !url.startsWith('/issues/new'));
+    return url === path || url.startsWith(path + '/');
+  }
+
+  toggleAccountMenu(): void {
+    this.showNotificationsDropdown.set(false);
+    this.showAccountMenu.update((open) => !open);
+  }
+
+  closeSheets(): void {
+    this.showChangePassword.set(false);
+    this.showAccountMenu.set(false);
+    this.showNotificationsDropdown.set(false);
+  }
+
+  // ---------- Cambiar contraseña ----------
+  readonly showChangePassword = signal(false);
+  readonly passwordSaving = signal(false);
+  readonly passwordError = signal<string | null>(null);
+  readonly passwordChanged = signal(false);
+  pwd = { current: '', next: '', confirm: '' };
+
+  openChangePassword(): void {
+    this.showAccountMenu.set(false);
+    this.pwd = { current: '', next: '', confirm: '' };
+    this.passwordError.set(null);
+    this.passwordChanged.set(false);
+    this.showChangePassword.set(true);
+  }
+
+  submitChangePassword(): void {
+    const { current, next, confirm } = this.pwd;
+    if (!current || !next) {
+      this.passwordError.set('Completa la contraseña actual y la nueva.');
+      return;
+    }
+    if (next.length < 10) {
+      this.passwordError.set('La nueva contraseña debe tener al menos 10 caracteres.');
+      return;
+    }
+    if (next !== confirm) {
+      this.passwordError.set('Las contraseñas nuevas no coinciden.');
+      return;
+    }
+    this.passwordSaving.set(true);
+    this.passwordError.set(null);
+    this.authService.changePassword(current, next).subscribe({
+      next: () => {
+        this.passwordSaving.set(false);
+        this.passwordChanged.set(true);
+      },
+      error: (err) => {
+        this.passwordSaving.set(false);
+        const msg = err.error?.message;
+        this.passwordError.set(Array.isArray(msg) ? msg.join('. ') : msg || 'No se pudo cambiar la contraseña.');
+      },
+    });
+  }
+
+  async installApp(): Promise<void> {
+    this.showAccountMenu.set(false);
+    await this.pwa.install();
   }
 
   refreshNotifications(): void {
@@ -63,6 +187,7 @@ export class App {
   }
 
   toggleNotificationsDropdown(): void {
+    this.showAccountMenu.set(false);
     const next = !this.showNotificationsDropdown();
     this.showNotificationsDropdown.set(next);
     if (next) {
@@ -126,7 +251,7 @@ export class App {
       next: () => {
         this.loginSubmitting.set(false);
         this.loginPassword = '';
-        this.router.navigate(['/issues']);
+        this.router.navigate(this.isAdmin() ? ['/settings/users'] : ['/issues']);
       },
       error: (err) => {
         this.loginSubmitting.set(false);

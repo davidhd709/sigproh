@@ -1,27 +1,59 @@
-<div class="app-layout">
-  @if (!authService.currentUser()) {
-    <!-- Formulario Auténtico de Inicio de Sesión -->
-    <div class="login-wrapper">
+@if (!pwa.isOnline()) {
+  <div class="offline-strip" role="status">
+    <app-icon name="alert" /> Sin conexión. Los cambios no se guardarán hasta recuperar la red.
+  </div>
+}
+
+@if (authService.restoring() && !authService.currentUser()) {
+  <!-- Recuperando la sesión guardada -->
+  <div class="splash" role="status" aria-label="Cargando">
+    <img src="brand/isotipo.png" alt="" width="56" height="70" />
+    <span class="splash-bar"><span></span></span>
+  </div>
+} @else if (!authService.currentUser()) {
+  <!-- Inicio de sesión -->
+  <div class="login-wrapper">
+    <section class="login-hero" aria-hidden="true">
+      <img src="brand/logo-full.png" alt="" class="login-hero-logo" width="320" height="132" />
+      <p class="login-hero-claim">Las novedades de tu copropiedad, del reporte al cierre.</p>
+      <div class="login-hero-cards">
+        <div class="hero-chip"><span class="hero-dot dot-critical"></span>NOV-001 · Filtración en bombas</div>
+        <div class="hero-chip"><span class="hero-dot dot-progress"></span>Actividad en curso · Torre B</div>
+        <div class="hero-chip"><span class="hero-dot dot-done"></span>Informe mensual aprobado</div>
+      </div>
+    </section>
+
+    <section class="login-panel">
       <div class="login-card">
+        <img src="brand/logo-full.png" alt="SIGPROH — Gestión de Propiedad Horizontal" class="login-mobile-logo" width="220" height="91" />
+
         <div class="login-header">
-          <div class="brand-badge-large">SIGPROH</div>
           <h1 class="login-title">EG S.A.S.</h1>
-          <p class="login-subtitle">Sistema Integrado de Gestión de Propiedad Horizontal</p>
+          <p class="login-subtitle">Ingresa con tu correo institucional</p>
         </div>
+
+        @if (authService.sessionNotice(); as notice) {
+          <div class="login-session-notice" role="status">
+            <app-icon name="clock" />
+            <span>{{ notice }}</span>
+          </div>
+        }
 
         @if (loginError() || authService.authError(); as err) {
           <div class="login-error-alert" role="alert">
-            ⚠️ {{ err }}
+            <app-icon name="alert" />
+            <span>{{ err }}</span>
           </div>
         }
 
         <form (ngSubmit)="onLoginSubmit()" class="login-form">
           <div class="form-group">
-            <label for="loginEmail">Correo Institucional *</label>
+            <label for="loginEmail">Correo</label>
             <input
               id="loginEmail"
               name="loginEmail"
               type="email"
+              inputmode="email"
               [(ngModel)]="loginEmail"
               placeholder="usuario@sigproh.local"
               required
@@ -31,40 +63,32 @@
           </div>
 
           <div class="form-group">
-            <label for="loginPassword">Contraseña *</label>
+            <label for="loginPassword">Contraseña</label>
             <input
               id="loginPassword"
               name="loginPassword"
               type="password"
               [(ngModel)]="loginPassword"
-              placeholder="••••••••••••"
+              placeholder="••••••••"
               required
               class="form-control"
               autocomplete="current-password"
             />
           </div>
 
-          <button
-            type="submit"
-            class="btn btn-primary btn-block"
-            [disabled]="loginSubmitting() || authService.loading()"
-          >
+          <button type="submit" class="btn-login" [disabled]="loginSubmitting() || authService.loading()">
             @if (loginSubmitting() || authService.loading()) {
-              <span>Verificando credenciales...</span>
+              <span class="btn-spinner"></span> Verificando…
             } @else {
-              <span>Iniciar Sesión</span>
+              Iniciar sesión
             }
           </button>
         </form>
 
-        <!-- Acceso Rápido restringido estrictamente a Entorno de Desarrollo -->
+        <!-- Acceso rápido restringido estrictamente a entorno de desarrollo -->
         @if (authService.isDev && authService.availableAccounts.length > 0) {
-          <div class="dev-quick-accounts">
-            <div class="dev-header">
-              <span class="dev-badge">⚙️ Entorno de Desarrollo</span>
-              <span class="dev-note">Accesos de Prueba Rápida</span>
-            </div>
-            <p class="dev-desc">Seleccione una cuenta para autocompletar credenciales:</p>
+          <details class="dev-quick-accounts">
+            <summary>Cuentas de prueba (desarrollo)</summary>
             <div class="dev-chips-grid">
               @for (acc of authService.availableAccounts; track acc.email) {
                 <button
@@ -77,40 +101,175 @@
                 </button>
               }
             </div>
-          </div>
+          </details>
         }
       </div>
-    </div>
-  } @else {
-    <!-- Barra de Navegación Principal para Sesiones Autenticadas -->
-    <header class="app-navbar">
-      <div class="navbar-left">
-        <a routerLink="/issues" class="brand-link">
-          <span class="brand-badge">SIGPROH</span>
-          <span class="brand-name">EG S.A.S.</span>
+      <p class="login-footer">SIGPROH · Gestión de Propiedad Horizontal</p>
+    </section>
+  </div>
+} @else {
+  <div class="app-shell" [class.no-tabs]="isFormScreen()">
+    <!-- Barra lateral (escritorio) -->
+    <aside class="app-sidebar">
+      <a routerLink="/dashboard" class="sidebar-brand" aria-label="SIGPROH, ir al inicio">
+        <img src="brand/isotipo.png" alt="" width="30" height="37" />
+        <img src="brand/wordmark-name.png" alt="" class="sidebar-wordmark" width="104" height="28" />
+      </a>
+
+      @if (!isAdmin()) {
+        <a routerLink="/issues/new" class="sidebar-cta">
+          <app-icon name="plus" /> Nueva novedad
+        </a>
+      } @else {
+        <div class="sidebar-spacer"></div>
+      }
+
+      <nav class="sidebar-nav" aria-label="Navegación principal">
+        @for (item of visibleNavItems(); track item.path) {
+          <a
+            [routerLink]="item.path"
+            class="nav-item"
+            [class.active]="isActive(item.path)"
+            [attr.aria-current]="isActive(item.path) ? 'page' : null"
+          >
+            <app-icon [name]="item.icon" size="20px" />
+            <span>{{ item.label }}</span>
+          </a>
+        }
+        @if (canConfigure()) {
+          <a routerLink="/settings" class="nav-item nav-settings" [class.active]="isActive('/settings')" [attr.aria-current]="isActive('/settings') ? 'page' : null">
+            <app-icon name="settings" size="20px" />
+            <span>Configuración</span>
+          </a>
+        }
+      </nav>
+
+      <div class="sidebar-footer">
+        @if (authService.currentUser(); as user) {
+          <button type="button" class="user-card" (click)="toggleAccountMenu()" [attr.aria-expanded]="showAccountMenu()">
+            <span class="user-avatar">{{ initials() }}</span>
+            <span class="user-text">
+              <span class="user-name">{{ user.firstName }} {{ user.lastName }}</span>
+              <span class="brand-name">EG S.A.S.</span>
+            </span>
+          </button>
+        }
+      </div>
+    </aside>
+
+    <div class="app-content">
+      <!-- Barra superior -->
+      <header class="app-topbar">
+        <a routerLink="/dashboard" class="topbar-brand" aria-label="SIGPROH, ir al inicio">
+          <img src="brand/isotipo.png" alt="" width="26" height="32" />
+          <img src="brand/wordmark-name.png" alt="" class="topbar-wordmark" width="88" height="24" />
         </a>
 
-        <nav class="nav-links">
-          <a routerLink="/dashboard" routerLinkActive="active" class="nav-item">
-            📊 Tablero Operativo
-          </a>
-          <a routerLink="/reports" routerLinkActive="active" class="nav-item">
-            📄 Informes de Gestión
-          </a>
-          <a routerLink="/issues" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" class="nav-item">
-            📋 Bandeja de Novedades
-          </a>
-          <a routerLink="/issues/new" routerLinkActive="active" class="nav-item">
-            ➕ Nueva Novedad
-          </a>
-        </nav>
-      </div>
+        <div class="topbar-actions">
+          <div class="notifications-wrapper">
+            <button
+              type="button"
+              class="icon-btn notifications-bell-btn"
+              (click)="toggleNotificationsDropdown()"
+              aria-label="Notificaciones"
+              [attr.aria-expanded]="showNotificationsDropdown()"
+            >
+              <app-icon name="bell" size="22px" />
+              @if (unreadNotificationsCount() > 0) {
+                <span class="notifications-badge">{{ unreadNotificationsCount() }}</span>
+              }
+            </button>
+          </div>
 
-      <div class="navbar-right">
-        <!-- Selector de Sesión activo ÚNICAMENTE en entorno de desarrollo -->
+        </div>
+      </header>
+
+      <main class="app-main">
+        <router-outlet></router-outlet>
+      </main>
+    </div>
+
+    <!-- Navegación inferior (celular y tableta) -->
+    @if (isAdmin()) {
+      <nav class="bottom-nav admin-nav" aria-label="Navegación principal">
+        <a routerLink="/settings" class="tab" [class.active]="isActive('/settings')">
+          <app-icon name="settings" size="22px" /><span>Configuración</span>
+        </a>
+        <button type="button" class="tab" (click)="toggleAccountMenu()" [class.active]="showAccountMenu()">
+          <app-icon name="user" size="22px" /><span>Cuenta</span>
+        </button>
+      </nav>
+    } @else {
+      <nav class="bottom-nav" aria-label="Navegación principal">
+        <a routerLink="/dashboard" class="tab" [class.active]="isActive('/dashboard')">
+          <app-icon name="home" size="22px" /><span>Inicio</span>
+        </a>
+        <a routerLink="/issues" class="tab" [class.active]="isActive('/issues')">
+          <app-icon name="inbox" size="22px" /><span>Novedades</span>
+        </a>
+        <a routerLink="/issues/new" class="tab tab-fab" aria-label="Nueva novedad">
+          <span class="fab"><app-icon name="plus" size="26px" /></span>
+        </a>
+        <a routerLink="/reports" class="tab" [class.active]="isActive('/reports')">
+          <app-icon name="file-text" size="22px" /><span>Informes</span>
+        </a>
+        <button type="button" class="tab" (click)="toggleAccountMenu()" [class.active]="showAccountMenu()">
+          <app-icon name="user" size="22px" /><span>Cuenta</span>
+        </button>
+      </nav>
+    }
+
+    <!-- Panel de notificaciones -->
+    @if (showNotificationsDropdown()) {
+      <div class="sheet-backdrop" (click)="showNotificationsDropdown.set(false)"></div>
+      <section class="sheet notifications-dropdown-panel" role="dialog" aria-label="Notificaciones">
+        <header class="sheet-header">
+          <h2>Notificaciones</h2>
+          @if (unreadNotificationsCount() > 0) {
+            <button type="button" class="btn-mark-all" (click)="markAllNotificationsAsRead()">Marcar todas como leídas</button>
+          }
+        </header>
+        <div class="notifications-list">
+          @if (notificationsLoading()) {
+            <div class="sheet-empty">Cargando…</div>
+          } @else if (notifications().length === 0) {
+            <div class="sheet-empty">
+              <app-icon name="bell" size="28px" />
+              <span>Estás al día</span>
+            </div>
+          } @else {
+            @for (n of notifications(); track n.id) {
+              <button type="button" class="notification-item" [class.unread]="!n.isRead" (click)="onNotificationClick(n)">
+                <span class="notif-dot"></span>
+                <span class="notif-body">
+                  <span class="notif-item-title">{{ n.title }}</span>
+                  <span class="notif-item-message">{{ n.message }}</span>
+                  <span class="notif-item-time">{{ n.createdAt | date: 'd MMM, h:mm a' }}</span>
+                </span>
+              </button>
+            }
+          }
+        </div>
+      </section>
+    }
+
+    <!-- Panel de cuenta -->
+    @if (showAccountMenu()) {
+      <div class="sheet-backdrop" (click)="showAccountMenu.set(false)"></div>
+      <section class="sheet account-sheet" role="dialog" aria-label="Mi cuenta">
+        @if (authService.currentUser(); as user) {
+          <div class="account-head">
+            <span class="user-avatar large">{{ initials() }}</span>
+            <div>
+              <p class="account-name">{{ user.firstName }} {{ user.lastName }}</p>
+              <p class="account-role">{{ roleLabel() }} · EG S.A.S.</p>
+            </div>
+          </div>
+        }
+
         @if (authService.isDev && authService.availableAccounts.length > 0) {
-          <div class="role-switcher">
-            <span class="switcher-label">Dev:</span>
+          <label class="account-field">
+            <span>Cuenta de prueba (desarrollo)</span>
             <select
               [ngModel]="authService.currentUser()?.email"
               (ngModelChange)="onAccountChange($event)"
@@ -121,90 +280,100 @@
                 <option [value]="acc.email">{{ acc.label }}</option>
               }
             </select>
-            @if (authService.loading()) {
-              <span class="auth-spinner" title="Iniciando sesión real...">⏳</span>
-            }
-          </div>
+          </label>
         }
 
-        <!-- Campana de Notificaciones Operativas F5 -->
-        <div class="notifications-wrapper">
-          <button
-            type="button"
-            class="notifications-bell-btn"
-            (click)="toggleNotificationsDropdown()"
-            title="Notificaciones operativas"
-          >
-            🔔
-            @if (unreadNotificationsCount() > 0) {
-              <span class="notifications-badge">{{ unreadNotificationsCount() }}</span>
-            }
+        @if (canConfigure()) {
+          <a routerLink="/settings" class="account-action" (click)="showAccountMenu.set(false)">
+            <app-icon name="settings" size="20px" /> Configuración
+          </a>
+        }
+        <button type="button" class="account-action" (click)="openChangePassword()">
+          <app-icon name="edit" size="20px" /> Cambiar contraseña
+        </button>
+        @if (!pwa.isStandalone() && pwa.canPromptInstall) {
+          <button type="button" class="account-action" (click)="installApp()">
+            <app-icon name="download" size="20px" /> Instalar aplicación
           </button>
+        }
+        <button type="button" class="account-action danger btn-logout" (click)="onLogout()">
+          <app-icon name="logout" size="20px" /> Cerrar sesión
+        </button>
+      </section>
+    }
 
-          @if (showNotificationsDropdown()) {
-            <div class="notifications-dropdown-panel">
-              <div class="notifications-dropdown-header">
-                <span class="dropdown-title">Notificaciones</span>
-                @if (unreadNotificationsCount() > 0) {
-                  <button
-                    type="button"
-                    class="btn-mark-all"
-                    (click)="markAllNotificationsAsRead()"
-                  >
-                    Marcar todas leídas
-                  </button>
-                }
+    <!-- Cambiar contraseña -->
+    @if (showChangePassword()) {
+      <div class="modal-backdrop" role="presentation">
+        <form class="modal-card" role="dialog" aria-modal="true" aria-labelledby="pwdTitle" (ngSubmit)="submitChangePassword()">
+          <div class="modal-header">
+            <h3 id="pwdTitle">Cambiar contraseña</h3>
+            <button type="button" class="modal-close-btn" aria-label="Cerrar" (click)="showChangePassword.set(false)"><app-icon name="x" /></button>
+          </div>
+          <div class="modal-body">
+            @if (passwordChanged()) {
+              <div class="notice notice-success" role="status">
+                <app-icon name="check-circle" />
+                <span>Contraseña actualizada. Se cerraron tus sesiones en otros dispositivos.</span>
               </div>
+            } @else {
+              @if (passwordError()) {
+                <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ passwordError() }}</span></div>
+              }
+              <label class="field">
+                <span>Contraseña actual</span>
+                <input type="password" name="currentPassword" [(ngModel)]="pwd.current" autocomplete="current-password" required />
+              </label>
+              <label class="field">
+                <span>Nueva contraseña</span>
+                <input type="password" name="newPassword" [(ngModel)]="pwd.next" autocomplete="new-password" required minlength="10" />
+                <small class="field-hint">Mínimo 10 caracteres. Mejor una frase fácil de recordar que una palabra con símbolos.</small>
+              </label>
+              <label class="field">
+                <span>Repite la nueva contraseña</span>
+                <input type="password" name="confirmPassword" [(ngModel)]="pwd.confirm" autocomplete="new-password" required />
+              </label>
+            }
+          </div>
+          <div class="modal-footer">
+            @if (passwordChanged()) {
+              <button type="button" class="btn-primary" (click)="showChangePassword.set(false)">Listo</button>
+            } @else {
+              <button type="button" class="btn-secondary" (click)="showChangePassword.set(false)">Cancelar</button>
+              <button type="submit" class="btn-primary" [disabled]="passwordSaving()">
+                {{ passwordSaving() ? 'Guardando…' : 'Cambiar contraseña' }}
+              </button>
+            }
+          </div>
+        </form>
+      </div>
+    }
 
-              <div class="notifications-list">
-                @if (notificationsLoading()) {
-                  <div class="notif-loading">Cargando notificaciones...</div>
-                } @else if (notifications().length === 0) {
-                  <div class="notif-empty">No tienes notificaciones recientes.</div>
-                } @else {
-                  @for (n of notifications(); track n.id) {
-                    <div
-                      class="notification-item"
-                      [class.unread]="!n.isRead"
-                      (click)="onNotificationClick(n)"
-                    >
-                      <div class="notif-item-header">
-                        <span class="notif-item-title">{{ n.title }}</span>
-                        <span class="notif-item-time">{{ n.createdAt | date:'short' }}</span>
-                      </div>
-                      <p class="notif-item-message">{{ n.message }}</p>
-                    </div>
-                  }
-                }
-              </div>
-            </div>
+    <!-- Avisos de la aplicación instalable -->
+    @if (pwa.updateReady()) {
+      <div class="app-toast" role="status">
+        <app-icon name="refresh" size="20px" />
+        <span>Hay una nueva versión disponible.</span>
+        <button type="button" (click)="pwa.applyUpdate()">Actualizar</button>
+      </div>
+    } @else if (pwa.showInstallBanner()) {
+      <div class="install-banner" role="complementary" aria-label="Instalar aplicación">
+        <img src="icons/icon-96x96.png" alt="" width="44" height="44" />
+        <div class="install-text">
+          <strong>Instala SIGPROH</strong>
+          @if (pwa.canPromptInstall) {
+            <span>Ábrela desde tu pantalla de inicio, como una app.</span>
+          } @else {
+            <span>En Safari toca Compartir y luego «Agregar a inicio».</span>
           }
         </div>
-
-        @if (authService.currentUser(); as user) {
-          <div class="user-chip">
-            <div class="user-avatar">{{ user.firstName ? user.firstName[0] : 'U' }}</div>
-            <div class="user-text">
-              <span class="user-name">{{ user.firstName }} {{ user.lastName }}</span>
-              <span class="user-role">{{ user.role }}</span>
-            </div>
-          </div>
+        @if (pwa.canPromptInstall) {
+          <button type="button" class="install-btn" (click)="installApp()">Instalar</button>
         }
-
-        <button
-          type="button"
-          class="btn-logout"
-          (click)="onLogout()"
-          title="Cerrar Sesión Activa"
-        >
-          🚪 Salir
+        <button type="button" class="install-close" (click)="pwa.dismissInstall()" aria-label="Ahora no">
+          <app-icon name="x" size="18px" />
         </button>
       </div>
-    </header>
-
-    <!-- Contenido de las Vistas Autenticadas -->
-    <main class="app-main">
-      <router-outlet></router-outlet>
-    </main>
-  }
-</div>
+    }
+  </div>
+}
