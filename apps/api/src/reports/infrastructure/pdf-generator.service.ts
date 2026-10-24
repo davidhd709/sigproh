@@ -42,12 +42,12 @@ export class PdfGeneratorService {
         const pageWidth = doc.page.width - 90; // 595.28 - 90 = 505.28 pt usable
 
         // Colores y textos de diseño institucional personalizables (RF-044, RF-045, RF-046)
-        const primaryColor = options?.primaryColor || '#1E3A8A'; // Navy institucional
-        const secondaryColor = options?.secondaryColor || '#2563EB'; // Blue
+        const primaryColor = options?.primaryColor || '#1B365D'; // Azul Marino de marca
+        const secondaryColor = options?.secondaryColor || '#2D68C4'; // Azul Tecnológico de marca
         const headerTitle = options?.headerTitle || 'EG S.A.S. — PLATAFORMA SIGPROH';
         const headerSubtitle = options?.headerSubtitle || 'GESTIÓN Y CONTROL DE NOVEDADES OPERATIVAS';
         const globalFooterText = options?.footerText || 'EG S.A.S. — SIGPROH | Informe Oficial';
-        const darkText = '#1F2937';
+        const darkText = '#374151';
         const mutedText = '#6B7280';
         const lightBg = '#F3F4F6';
         const borderColor = '#E5E7EB';
@@ -195,7 +195,7 @@ export class PdfGeneratorService {
             {
               label: 'Registradas en Periodo',
               val: String(opData.kpis.totalRegisteredInPeriod),
-              color: '#3B82F6',
+              color: '#2D68C4',
             },
             {
               label: 'Cerradas en Periodo',
@@ -215,7 +215,7 @@ export class PdfGeneratorService {
             {
               label: 'Tiempo Promedio Res.',
               val: `${opData.kpis.averageResolutionDays}d (${opData.kpis.averageResolutionHours}h)`,
-              color: '#6366F1',
+              color: '#1B365D',
             },
             {
               label: 'Cumplimiento Actividades',
@@ -321,7 +321,7 @@ export class PdfGeneratorService {
             doc.text(issue.categoryName, 50 + colWidths[0] + colWidths[1], currentY + 4, { width: colWidths[2] });
 
             // Color para prioridad
-            let prioColor = '#3B82F6';
+            let prioColor = '#2D68C4';
             if (issue.priority === 'CRITICA') prioColor = '#EF4444';
             else if (issue.priority === 'ALTA') prioColor = '#F59E0B';
             doc.font('Helvetica-Bold').fillColor(prioColor);

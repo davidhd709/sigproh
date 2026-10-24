@@ -630,8 +630,8 @@ export class ReportsService {
         isPublished,
         headerTitle: dto.headerTitle?.trim() || 'EG S.A.S. — PLATAFORMA SIGPROH',
         headerSubtitle: dto.headerSubtitle?.trim() || 'GESTIÓN Y CONTROL DE NOVEDADES OPERATIVAS',
-        primaryColor: dto.primaryColor || '#1E3A8A',
-        secondaryColor: dto.secondaryColor || '#2563EB',
+        primaryColor: dto.primaryColor || '#1B365D',
+        secondaryColor: dto.secondaryColor || '#2D68C4',
         footerText: dto.footerText?.trim() || 'Documento oficial generado por la Plataforma SIGPROH — EG S.A.S.',
         mandatorySections: dto.mandatorySections || coreMandatory,
         allowedOptionalSections: dto.allowedOptionalSections || [
@@ -709,8 +709,8 @@ export class ReportsService {
       isPublished: true,
       headerTitle: 'EG S.A.S. — PLATAFORMA SIGPROH',
       headerSubtitle: 'GESTIÓN Y CONTROL DE NOVEDADES OPERATIVAS',
-      primaryColor: '#1E3A8A',
-      secondaryColor: '#2563EB',
+      primaryColor: '#1B365D',
+      secondaryColor: '#2D68C4',
       footerText: 'Documento oficial generado por la Plataforma SIGPROH — EG S.A.S.',
       mandatorySections: ['header', 'metadata', 'kpis', 'audit'],
       allowedOptionalSections: [

@@ -18,12 +18,12 @@ export class ExcelGeneratorService {
     const headerFill: ExcelJS.Fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FF1E3A8A' }, // Navy blue
+      fgColor: { argb: 'FF1B365D' }, // Azul Marino de marca
     };
     const subHeaderFill: ExcelJS.Fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FF2563EB' }, // Blue
+      fgColor: { argb: 'FF2D68C4' }, // Azul Tecnológico de marca
     };
     const headerFont: Partial<ExcelJS.Font> = {
       name: 'Calibri',
@@ -35,7 +35,7 @@ export class ExcelGeneratorService {
       name: 'Calibri',
       size: 14,
       bold: true,
-      color: { argb: 'FF1E3A8A' },
+      color: { argb: 'FF1B365D' },
     };
     const boldFont: Partial<ExcelJS.Font> = {
       name: 'Calibri',
