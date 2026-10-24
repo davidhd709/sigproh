@@ -1,237 +1,200 @@
-<div class="issues-container">
-  <!-- Header con título y acción principal -->
-  <header class="page-header">
+<div class="page">
+  <header class="page-head">
     <div>
-      <div class="breadcrumb">Operación EG S.A.S. / Novedades</div>
-      <h1 class="page-title">Bandeja Operativa de Novedades</h1>
+      <h1 class="page-title">Novedades</h1>
       <p class="page-subtitle">
-        Control de registro, asignación principal y seguimiento crítico conforme a las fases F2/F3
+        @if (loading()) {
+          Cargando…
+        } @else {
+          {{ stats().total }} en total · {{ stats().critical }} {{ stats().critical === 1 ? 'crítica' : 'críticas' }}
+        }
       </p>
-    </div>
-    <div class="header-actions">
-      <a routerLink="/issues/new" class="btn btn-primary">
-        <span class="icon">+</span> Registrar Novedad
-      </a>
     </div>
   </header>
 
-  <!-- Métricas rápidas de bandeja -->
-  <div class="stats-grid">
-    <div class="stat-card">
-      <div class="stat-icon stat-icon-total">📋</div>
-      <div class="stat-info">
-        <span class="stat-value">{{ stats().total }}</span>
-        <span class="stat-label">Total Novedades</span>
-      </div>
-    </div>
-    <div class="stat-card stat-card-critical" (click)="onlyCritical.set(!onlyCritical())" [class.active]="onlyCritical()">
-      <div class="stat-icon stat-icon-crit">🚨</div>
-      <div class="stat-info">
-        <span class="stat-value">{{ stats().critical }}</span>
-        <span class="stat-label">Casos Críticos (F3)</span>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon stat-icon-review">⏳</div>
-      <div class="stat-info">
-        <span class="stat-value">{{ stats().inReview }}</span>
-        <span class="stat-label">En Revisión (Pend. Director)</span>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon stat-icon-assigned">👤</div>
-      <div class="stat-info">
-        <span class="stat-value">{{ stats().assigned }}</span>
-        <span class="stat-label">Asignadas Activas</span>
-      </div>
-    </div>
+  <!-- Bandejas según el rol -->
+  <div class="quick-filters" role="group" aria-label="Bandejas">
+    @for (v of views(); track v.key) {
+      <button
+        type="button"
+        class="chip"
+        [class.active]="view() === v.key"
+        [attr.data-tone]="v.tone"
+        [attr.aria-pressed]="view() === v.key"
+        (click)="setView(v.key)"
+      >
+        @if (v.key !== 'ALL' && (viewCounts()[v.key] ?? 0) > 0) {
+          <span class="dot"></span>
+        }
+        {{ v.label }} <span class="chip-count">{{ viewCounts()[v.key] ?? 0 }}</span>
+      </button>
+    }
   </div>
 
-  <!-- Barra de Filtros y Búsqueda -->
-  <div class="filters-card">
-    <div class="search-box">
-      <span class="search-icon">🔍</span>
+  @if (locationFilter(); as loc) {
+    <div class="location-filter">
+      <app-icon [name]="loc.propertyId ? 'building' : 'landmark'" />
+      Solo <strong>{{ loc.name }}</strong>
+      <button type="button" class="location-clear" (click)="clearLocation()" aria-label="Quitar filtro de ubicación">
+        <app-icon name="x" size="16px" />
+      </button>
+    </div>
+  }
+
+  <!-- Búsqueda y filtros avanzados -->
+  <div class="search-row">
+    <label class="search-box">
+      <app-icon name="search" size="18px" />
       <input
-        type="text"
-        placeholder="Buscar por código (NOV-...), título, propiedad o área..."
+        type="search"
+        placeholder="Buscar por código, título o ubicación"
+        aria-label="Buscar novedades"
         [ngModel]="searchQuery()"
         (ngModelChange)="searchQuery.set($event)"
       />
-    </div>
+    </label>
+    <button
+      type="button"
+      class="filter-toggle"
+      [class.active]="showFilters() || activeFilterCount() > 0"
+      (click)="showFilters.set(!showFilters())"
+      [attr.aria-expanded]="showFilters()"
+    >
+      <app-icon name="sliders" size="18px" />
+      <span class="filter-toggle-label">Filtros</span>
+      @if (activeFilterCount() > 0) {
+        <span class="filter-count">{{ activeFilterCount() }}</span>
+      }
+    </button>
+  </div>
 
-    <div class="filter-controls">
-      <!-- Filtro Ámbito -->
-      <div class="filter-group">
-        <label>Ámbito:</label>
-        <div class="pill-group">
-          <button
-            class="pill-btn"
-            [class.active]="selectedScope() === 'ALL'"
-            (click)="selectedScope.set('ALL')"
-          >
-            Todos
-          </button>
-          <button
-            class="pill-btn"
-            [class.active]="selectedScope() === 'PROPIEDAD'"
-            (click)="selectedScope.set('PROPIEDAD')"
-          >
-            🏢 Propiedades
-          </button>
-          <button
-            class="pill-btn"
-            [class.active]="selectedScope() === 'INTERNA'"
-            (click)="selectedScope.set('INTERNA')"
-          >
-            🏛️ Áreas Internas
-          </button>
+  @if (showFilters()) {
+    <div class="filters-panel">
+      <div class="filter-field">
+        <span class="filter-label">Ámbito</span>
+        <div class="segmented">
+          <button type="button" [class.active]="selectedScope() === 'ALL'" (click)="selectedScope.set('ALL')">Todos</button>
+          <button type="button" [class.active]="selectedScope() === 'PROPIEDAD'" (click)="selectedScope.set('PROPIEDAD')">Propiedades</button>
+          <button type="button" [class.active]="selectedScope() === 'INTERNA'" (click)="selectedScope.set('INTERNA')">Áreas internas</button>
         </div>
       </div>
-
-      <!-- Filtro Prioridad -->
-      <div class="filter-group">
-        <label>Prioridad:</label>
-        <select
-          [ngModel]="selectedPriority()"
-          (ngModelChange)="selectedPriority.set($event)"
-          class="custom-select"
-        >
-          <option value="ALL">Todas las prioridades</option>
-          <option value="CRITICA">🚨 Crítica</option>
+      <label class="filter-field">
+        <span class="filter-label">Prioridad</span>
+        <select [ngModel]="selectedPriority()" (ngModelChange)="selectedPriority.set($event)">
+          <option value="ALL">Todas</option>
+          <option value="CRITICA">Crítica</option>
           <option value="ALTA">Alta</option>
           <option value="MEDIA">Media</option>
           <option value="BAJA">Baja</option>
         </select>
-      </div>
-
-      <!-- Filtro Estado -->
-      <div class="filter-group">
-        <label>Estado:</label>
-        <select
-          [ngModel]="selectedStatus()"
-          (ngModelChange)="selectedStatus.set($event)"
-          class="custom-select"
-        >
-          <option value="ALL">Todos los estados</option>
-          <option value="EN_REVISION">En Revisión</option>
+      </label>
+      <label class="filter-field">
+        <span class="filter-label">Estado</span>
+        <select [ngModel]="selectedStatus()" (ngModelChange)="selectedStatus.set($event)">
+          <option value="ALL">Todos</option>
+          <option value="REGISTRADA">Registrada</option>
+          <option value="EN_REVISION">En revisión</option>
           <option value="ASIGNADA">Asignada</option>
-          <option value="EN_PROCESO">En Proceso</option>
+          <option value="EN_ATENCION">En atención</option>
+          <option value="EN_PROCESO">En proceso</option>
+          <option value="PENDIENTE_CIERRE">Pendiente de cierre</option>
           <option value="CERRADA">Cerrada</option>
         </select>
-      </div>
-    </div>
-  </div>
-
-  <!-- Mensaje de aviso de permisos si aplica -->
-  @if (errorMessage()) {
-    <div class="alert-banner">
-      <span class="alert-icon">ℹ️</span>
-      <div>{{ errorMessage() }}</div>
+      </label>
+      @if (activeFilterCount() > 0) {
+        <button type="button" class="clear-filters" (click)="clearFilters()">Limpiar filtros</button>
+      }
     </div>
   }
 
-  <!-- Tabla de Novedades -->
-  <div class="table-card">
-    @if (loading()) {
-      <div class="loading-state">
-        <div class="spinner"></div>
-        <p>Cargando bandeja de novedades...</p>
-      </div>
-    } @else if (errorMessage()) {
-      <div class="empty-state">
-        <div class="empty-icon">🚫</div>
-        <h3>Acceso Restringido o Error de Conexión</h3>
-        <p>{{ errorMessage() }}</p>
-        <button class="btn btn-secondary" (click)="loadIssues()">Reintentar</button>
-      </div>
-    } @else if (filteredIssues().length === 0) {
-      <div class="empty-state">
-        <div class="empty-icon">📭</div>
-        <h3>No se encontraron novedades con los filtros actuales</h3>
-        <p>Intente modificar los criterios de búsqueda o registre una nueva novedad.</p>
-        <a routerLink="/issues/new" class="btn btn-secondary">Crear Novedad</a>
-      </div>
-    } @else {
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Código</th>
-              <th>Ámbito / Ubicación</th>
-              <th>Título y Categoría</th>
-              <th>Prioridad</th>
-              <th>Estado</th>
-              <th>Responsable</th>
-              <th>Medidas Urgentes</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (issue of filteredIssues(); track issue.id) {
-              <tr [class.row-critical]="issue.priority === 'CRITICA'">
-                <td class="col-code">
-                  <span class="code-tag">{{ issue.code }}</span>
-                </td>
-                <td class="col-scope">
-                  <span class="scope-indicator" [class.scope-prop]="issue.scope === 'PROPIEDAD'">
-                    {{ issue.scope === 'PROPIEDAD' ? '🏢 Propiedad' : '🏛️ Interna' }}
-                  </span>
-                  <div class="location-name">
-                    {{ issue.scope === 'PROPIEDAD' ? issue.property?.name : issue.internalArea?.name }}
-                  </div>
-                </td>
-                <td class="col-title">
-                  <div class="issue-title">{{ issue.title }}</div>
-                  <div class="issue-cat">{{ issue.category?.name }}</div>
-                </td>
-                <td class="col-priority">
-                  <span class="badge" [ngClass]="getPriorityClass(issue.priority)">
-                    {{ issue.priority }}
-                  </span>
-                </td>
-                <td class="col-status">
-                  <span class="badge" [ngClass]="getStatusClass(issue.status)">
-                    {{ issue.status }}
-                  </span>
-                </td>
-                <td class="col-responsible">
-                  @if (issue.assignedUser) {
-                    <div class="user-pill confirmed">
-                      <span class="user-status-dot green"></span>
-                      <span>{{ issue.assignedUser.firstName }} {{ issue.assignedUser.lastName }}</span>
-                      <small class="user-role-sub">Confirmado</small>
-                    </div>
-                  } @else if (issue.suggestedUser) {
-                    <div class="user-pill suggested">
-                      <span class="user-status-dot yellow"></span>
-                      <span>{{ issue.suggestedUser.firstName }} {{ issue.suggestedUser.lastName }}</span>
-                      <small class="user-role-sub">Sugerido (Líder)</small>
-                    </div>
-                  } @else {
-                    <span class="unassigned-text">Sin responsable</span>
+  <!-- Lista -->
+  @if (loading()) {
+    <div class="issue-list" aria-busy="true">
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="issue-card skeleton"></div>
+      }
+    </div>
+  } @else if (errorMessage()) {
+    <div class="empty-state">
+      <span class="empty-icon tone-danger"><app-icon name="ban" size="28px" /></span>
+      <h2>No pudimos cargar las novedades</h2>
+      <p>{{ errorMessage() }}</p>
+      <button type="button" class="btn-secondary" (click)="loadIssues()">Reintentar</button>
+    </div>
+  } @else if (filteredIssues().length === 0) {
+    <div class="empty-state">
+      <span class="empty-icon"><app-icon name="inbox" size="28px" /></span>
+      @if (stats().total === 0) {
+        <h2>Aún no hay novedades</h2>
+        <p>Cuando se registre una novedad aparecerá aquí.</p>
+        <a routerLink="/issues/new" class="btn-primary">Registrar la primera</a>
+      } @else {
+        @if (view() !== 'ALL' && !searchQuery() && activeFilterCount() === 0) {
+          <h2>Nada pendiente aquí</h2>
+          <p>No hay novedades en «{{ currentViewLabel() }}».</p>
+          <button type="button" class="btn-secondary" (click)="setView('ALL')">Ver todas</button>
+        } @else {
+          <h2>Sin resultados</h2>
+          <p>Ninguna novedad coincide con la búsqueda o los filtros.</p>
+          <button type="button" class="btn-secondary" (click)="clearFilters()">Limpiar filtros</button>
+        }
+      }
+    </div>
+  } @else {
+    <ul class="issue-list">
+      @for (issue of filteredIssues(); track issue.id) {
+        <li>
+          <a [routerLink]="['/issues', issue.id]" class="issue-card" [attr.data-priority]="issue.priority">
+            <div class="issue-main">
+              <div class="issue-meta">
+                <span class="issue-code">{{ issue.code }}</span>
+                <span class="sep">·</span>
+                <app-icon [name]="issue.scope === 'PROPIEDAD' ? 'building' : 'landmark'" />
+                <span class="issue-location">
+                  {{ issue.scope === 'PROPIEDAD' ? issue.property?.name : issue.internalArea?.name }}
+                </span>
+              </div>
+              <h3 class="issue-title">{{ issue.title }}</h3>
+              <div class="issue-tags">
+                <span class="pill" [attr.data-tone]="priorityTone(issue.priority)">
+                  @if (issue.priority === 'CRITICA') {
+                    <app-icon name="alert-octagon" />
                   }
-                </td>
-                <td class="col-urgent">
-                  @if (issue.urgentMeasures) {
-                    <span class="urgent-tag" title="{{ issue.urgentMeasures }}">
-                      🚨 Atendida
-                    </span>
-                  } @else if (issue.priority === 'CRITICA') {
-                    <span class="urgent-pending-tag">⚠️ Pendiente</span>
-                  } @else {
-                    <span class="muted-dash">—</span>
-                  }
-                </td>
-                <td class="col-action">
-                  <a [routerLink]="['/issues', issue.id]" class="btn-link">
-                    Gestionar →
-                  </a>
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-    }
-  </div>
+                  {{ priorityLabel(issue.priority) }}
+                </span>
+                <span class="pill pill-soft" [attr.data-tone]="statusTone(issue.status)">{{ statusLabel(issue.status) }}</span>
+                @if (issue.category?.name) {
+                  <span class="issue-category">{{ issue.category?.name }}</span>
+                }
+                @if (issue.priority === 'CRITICA' && !issue.urgentMeasures) {
+                  <span class="pill pill-soft" data-tone="danger"><app-icon name="alert" /> Sin medida urgente</span>
+                }
+                @for (f of followUps(issue); track f.label) {
+                  <span class="pill pill-soft" [attr.data-tone]="f.tone">{{ f.label }}</span>
+                }
+              </div>
+            </div>
+
+            <div class="issue-side">
+              @if (issue.assignedUser; as u) {
+                <span class="person" title="Responsable: {{ u.firstName }} {{ u.lastName }}">
+                  <span class="avatar">{{ initials(u.firstName, u.lastName) }}</span>
+                  <span class="person-name">{{ u.firstName }} {{ u.lastName }}</span>
+                </span>
+              } @else if (issue.suggestedUser; as u) {
+                <span class="person suggested" title="Responsable sugerido: {{ u.firstName }} {{ u.lastName }}">
+                  <span class="avatar">{{ initials(u.firstName, u.lastName) }}</span>
+                  <span class="person-name">{{ u.firstName }} {{ u.lastName }} <small>(sugerido)</small></span>
+                </span>
+              } @else {
+                <span class="person unassigned">Sin responsable</span>
+              }
+              <span class="issue-age">{{ timeAgo(issue.createdAt) }}</span>
+              <app-icon name="chevron-right" class="chevron" />
+            </div>
+          </a>
+        </li>
+      }
+    </ul>
+  }
 </div>
