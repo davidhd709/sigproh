@@ -21,6 +21,7 @@ Para trabajar por partes:
 | `08_CATALOGO_REGLAS_RN_001_221.md` | Registro histórico normalizado de las 221 reglas numeradas durante el diseño. |
 | `09_FUENTES_GLOSARIO_Y_CAMBIOS.md` | Glosario, fuentes aportadas y control de versiones documentales. |
 | `10_FASES_DE_DESARROLLO.md` | Plan detallado F0–F10 con cronograma indicativo, dependencias, entregables, pruebas e hitos de aceptación. |
+| `13_CI_CD_GITHUB_VPS.md` | Flujo local → GitHub Actions → GHCR → VPS, configuración inicial, secretos y operación. |
 
 ## Qué se ha confirmado
 
