@@ -121,7 +121,7 @@ describe('IssuesListComponent', () => {
     const now = new Date().toISOString();
     const sample = [
       { id: 'a', status: 'EN_REVISION', priority: 'MEDIA', assignedUserId: null, propertyId: 'p1', property: { name: 'Torres' }, createdAt: now, code: 'A', title: 'A' },
-      { id: 'b', status: 'EN_ATENCION', priority: 'ALTA', assignedUserId: 'coord-1', propertyId: 'p2', property: { name: 'Plaza' }, createdAt: now, code: 'B', title: 'B',
+      { id: 'b', status: 'EN_ATENCION', priority: 'ALTA', assignedUserId: 'coord-1', createdById: 'coord-1', propertyId: 'p2', property: { name: 'Plaza' }, createdAt: now, code: 'B', title: 'B',
         inbox: { openActivities: 2, overdueActivities: 1, blockedActivities: 0, myOpenActivities: 1, returned: true, returnedAt: now } },
       { id: 'c', status: 'CERRADA', priority: 'CRITICA', assignedUserId: 'coord-1', propertyId: 'p1', property: { name: 'Torres' }, createdAt: now, code: 'C', title: 'C' },
     ];
@@ -129,10 +129,10 @@ describe('IssuesListComponent', () => {
     beforeEach(() => component.issues.set(sample as any));
 
     it('lee la vista y la propiedad desde la URL (enlaces de Inicio)', async () => {
-      await TestBed.inject(Router).navigateByUrl('/?view=TO_REVIEW&propertyId=p1');
+      await TestBed.inject(Router).navigateByUrl('/?view=UNASSIGNED&propertyId=p1');
       fixture.detectChanges();
 
-      expect(component.view()).toBe('TO_REVIEW');
+      expect(component.view()).toBe('UNASSIGNED');
       expect(component.locationFilter()?.name).toBe('Torres');
       expect(component.filteredIssues().map((i) => i.id)).toEqual(['a']);
     });
@@ -142,18 +142,17 @@ describe('IssuesListComponent', () => {
       expect(component.view()).toBe('ALL');
     });
 
-    it('el coordinador ve sus vistas: asignadas, actividades, vencidas y devueltas', async () => {
+    it('el coordinador ve sus vistas: a su cargo, por cerrar, actividades y vencidas', async () => {
       currentUserSignal.set({ id: 'coord-1', email: 'c@x', role: 'COORDINADOR_OPERATIVO' });
       fixture.detectChanges();
       component.issues.set(sample as any);
 
-      expect(component.views().map((v) => v.key)).toEqual(['ALL', 'MINE', 'MY_ACTIVITIES', 'OVERDUE', 'RETURNED', 'BLOCKED']);
+      expect(component.views().map((v) => v.key)).toEqual(['ALL', 'MINE', 'TO_CLOSE', 'MY_ACTIVITIES', 'OVERDUE']);
       const counts = component.viewCounts();
       // La novedad cerrada no cuenta como asignada pendiente
       expect(counts.MINE).toBe(1);
       expect(counts.OVERDUE).toBe(1);
-      expect(counts.RETURNED).toBe(1);
-      expect(component.followUps(sample[1] as any).map((f) => f.label)).toEqual(['Devuelta', '1 vencida', '1 para ti']);
+      expect(component.followUps(sample[1] as any).map((f) => f.label)).toEqual(['1 vencida', '1 para ti']);
     });
   });
 });

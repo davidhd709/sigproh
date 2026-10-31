@@ -14,7 +14,7 @@ export class ScopeAuthorizationService {
   /**
    * Valida si un usuario autenticado tiene permiso operativo sobre una propiedad horizontal (novedades, etc.).
    * Reglas de negocio:
-   * - DIRECTOR_OPERATIVO y GERENTE tienen visibilidad y control global dentro de la organización.
+   * - DIRECTOR_OPERATIVO, GERENTE y AUXILIAR_GERENCIA tienen visibilidad y control global dentro de la organización.
    * - ADMINISTRADOR no cuenta con acceso operativo automático a novedades sin asignación explícita (RF-049 / Matriz Roles).
    * - COORDINADOR_OPERATIVO, AUXILIAR_GERENCIA y ADMINISTRADOR SOLO tienen acceso operativo si cuentan con asignación activa (PropertyAssignment).
    */
@@ -33,7 +33,8 @@ export class ScopeAuthorizationService {
 
     if (
       user.role === Role.DIRECTOR_OPERATIVO ||
-      user.role === Role.GERENTE
+      user.role === Role.GERENTE ||
+      user.role === Role.AUXILIAR_GERENCIA
     ) {
       return true;
     }
@@ -71,7 +72,7 @@ export class ScopeAuthorizationService {
   }
 
   /**
-   * Valida acceso a gestión de catálogo estructural de propiedades (ADMINISTRADOR, DIRECTOR, GERENTE).
+   * Valida acceso a gestión de catálogo estructural de propiedades (ADMINISTRADOR, DIRECTOR, GERENTE, AUXILIAR_GERENCIA).
    */
   async validatePropertyCatalogAccess(
     user: AuthenticatedUser,
@@ -89,7 +90,8 @@ export class ScopeAuthorizationService {
     if (
       user.role === Role.ADMINISTRADOR ||
       user.role === Role.DIRECTOR_OPERATIVO ||
-      user.role === Role.GERENTE
+      user.role === Role.GERENTE ||
+      user.role === Role.AUXILIAR_GERENCIA
     ) {
       return true;
     }
@@ -130,7 +132,8 @@ export class ScopeAuthorizationService {
 
     if (
       user.role === Role.DIRECTOR_OPERATIVO ||
-      user.role === Role.GERENTE
+      user.role === Role.GERENTE ||
+      user.role === Role.AUXILIAR_GERENCIA
     ) {
       return true;
     }
@@ -186,7 +189,8 @@ export class ScopeAuthorizationService {
     if (
       user.role === Role.ADMINISTRADOR ||
       user.role === Role.DIRECTOR_OPERATIVO ||
-      user.role === Role.GERENTE
+      user.role === Role.GERENTE ||
+      user.role === Role.AUXILIAR_GERENCIA
     ) {
       return true;
     }
@@ -211,7 +215,7 @@ export class ScopeAuthorizationService {
 
   /**
    * Obtiene la lista de IDs de propiedades a las que el usuario tiene acceso operativo (RF-049).
-   * Si retorna null, significa que no tiene restricción por asignación (visión global de la organización: DIRECTOR, GERENTE).
+   * Si retorna null, significa que no tiene restricción por asignación (visión global de la organización: DIRECTOR, GERENTE, AUXILIAR_GERENCIA).
    * ADMINISTRADOR sin asignación no tiene acceso operativo global.
    */
   async getAccessiblePropertyIds(
@@ -219,7 +223,8 @@ export class ScopeAuthorizationService {
   ): Promise<string[] | null> {
     if (
       user.role === Role.DIRECTOR_OPERATIVO ||
-      user.role === Role.GERENTE
+      user.role === Role.GERENTE ||
+      user.role === Role.AUXILIAR_GERENCIA
     ) {
       return null;
     }
@@ -244,7 +249,8 @@ export class ScopeAuthorizationService {
     if (
       user.role === Role.ADMINISTRADOR ||
       user.role === Role.DIRECTOR_OPERATIVO ||
-      user.role === Role.GERENTE
+      user.role === Role.GERENTE ||
+      user.role === Role.AUXILIAR_GERENCIA
     ) {
       return null;
     }
@@ -268,7 +274,8 @@ export class ScopeAuthorizationService {
   ): Promise<string[] | null> {
     if (
       user.role === Role.DIRECTOR_OPERATIVO ||
-      user.role === Role.GERENTE
+      user.role === Role.GERENTE ||
+      user.role === Role.AUXILIAR_GERENCIA
     ) {
       return null;
     }
@@ -293,7 +300,8 @@ export class ScopeAuthorizationService {
     if (
       user.role === Role.ADMINISTRADOR ||
       user.role === Role.DIRECTOR_OPERATIVO ||
-      user.role === Role.GERENTE
+      user.role === Role.GERENTE ||
+      user.role === Role.AUXILIAR_GERENCIA
     ) {
       return null;
     }

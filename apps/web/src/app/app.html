@@ -89,15 +89,24 @@
         @if (authService.isDev && authService.availableAccounts.length > 0) {
           <details class="dev-quick-accounts">
             <summary>Cuentas de prueba (desarrollo)</summary>
+            <p class="dev-quick-hint">Toca una cuenta para entrar directamente.</p>
             <div class="dev-chips-grid">
               @for (acc of authService.availableAccounts; track acc.email) {
                 <button
                   type="button"
                   class="dev-chip-btn"
                   (click)="fillDevCredentials(acc)"
-                  title="Cargar credenciales de {{ acc.name }}"
+                  [disabled]="loginSubmitting()"
+                  [attr.aria-label]="'Entrar como ' + acc.label"
                 >
-                  {{ acc.label }}
+                  @let view = devAccountView(acc);
+                  <app-icon [name]="view.icon" size="18px" />
+                  <span class="dev-chip-text">
+                    <strong>{{ view.role }}</strong>
+                    @if (view.person) {
+                      <small>{{ view.person }}</small>
+                    }
+                  </span>
                 </button>
               }
             </div>

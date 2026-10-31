@@ -107,7 +107,7 @@ export class PropertiesService {
   }
 
   /**
-   * Crea una nueva propiedad horizontal.
+   * Crea una nueva propiedad horizontal con su coordinador principal y su director responsable (ambos obligatorios).
    */
   async create(user: AuthenticatedUser, dto: CreatePropertyDto) {
     const code = dto.code.trim().toUpperCase();
@@ -125,15 +125,30 @@ export class PropertiesService {
       throw new ConflictException(`Ya existe una propiedad con el código ${code}`);
     }
 
-    return this.prisma.property.create({
-      data: {
-        organizationId: user.organizationId,
-        name: dto.name.trim(),
-        code,
-        address: dto.address?.trim(),
-        nit: dto.nit?.trim(),
-        isActive: true,
-      },
+    await this.findAssignableUser(user, dto.coordinatorId, Role.COORDINADOR_OPERATIVO);
+    await this.findAssignableUser(user, dto.directorId, Role.DIRECTOR_OPERATIVO);
+
+    return this.prisma.$transaction(async (tx) => {
+      const property = await tx.property.create({
+        data: {
+          organizationId: user.organizationId,
+          name: dto.name.trim(),
+          code,
+          address: dto.address?.trim(),
+          nit: dto.nit?.trim(),
+          isActive: true,
+        },
+      });
+
+      // isLead marca al coordinador principal y, en el caso del director, al responsable de la propiedad
+      await tx.propertyAssignment.createMany({
+        data: [
+          { propertyId: property.id, userId: dto.coordinatorId, isLead: true, isActive: true },
+          { propertyId: property.id, userId: dto.directorId, isLead: true, isActive: true },
+        ],
+      });
+
+      return property;
     });
   }
 
@@ -161,8 +176,9 @@ export class PropertiesService {
   }
 
   /**
-   * Asigna un coordinador a una propiedad.
-   * Si isLead es true, desactiva el flag isLead de otros coordinadores en la misma propiedad.
+   * Asigna un coordinador o el director responsable a una propiedad.
+   * - Coordinador: si isLead es true, pasa a ser el principal y los demás coordinadores dejan de serlo.
+   * - Director: cada propiedad tiene un único director responsable; el anterior queda retirado.
    */
   async assignCoordinator(
     user: AuthenticatedUser,
@@ -178,31 +194,24 @@ export class PropertiesService {
       throw new NotFoundException('Propiedad no encontrada');
     }
 
-    const targetUser = await this.prisma.user.findUnique({
-      where: { id: dto.userId },
-      select: { id: true, organizationId: true, role: true, isActive: true },
-    });
-
-    if (!targetUser || targetUser.organizationId !== user.organizationId) {
-      throw new NotFoundException('Usuario a asignar no encontrado en la organización');
-    }
-
-    if (!targetUser.isActive) {
-      throw new BadRequestException('No se puede asignar un usuario inactivo');
-    }
-
-    if (targetUser.role !== Role.COORDINADOR_OPERATIVO) {
-      throw new BadRequestException(
-        'Solo se pueden asignar usuarios con rol COORDINADOR_OPERATIVO como coordinadores de propiedad',
-      );
-    }
-
-    const isLead = dto.isLead ?? false;
+    const targetUser = await this.findAssignableUser(user, dto.userId);
+    const isDirector = targetUser.role === Role.DIRECTOR_OPERATIVO;
+    const isLead = isDirector || (dto.isLead ?? false);
 
     return this.prisma.$transaction(async (tx) => {
-      if (isLead) {
+      if (isDirector) {
         await tx.propertyAssignment.updateMany({
-          where: { propertyId, isLead: true },
+          where: {
+            propertyId,
+            isActive: true,
+            userId: { not: targetUser.id },
+            user: { role: Role.DIRECTOR_OPERATIVO },
+          },
+          data: { isActive: false, isLead: false },
+        });
+      } else if (isLead) {
+        await tx.propertyAssignment.updateMany({
+          where: { propertyId, isLead: true, user: { role: Role.COORDINADOR_OPERATIVO } },
           data: { isLead: false },
         });
       }
@@ -270,10 +279,51 @@ export class PropertiesService {
     if (!assignment || !assignment.isActive) {
       throw new NotFoundException('El usuario no está asignado a esta propiedad');
     }
+
+    // La propiedad no puede quedarse sin coordinador ni sin director responsable
+    const assignedUser = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const sameRoleLeft = await this.prisma.propertyAssignment.count({
+      where: { propertyId, isActive: true, userId: { not: userId }, user: { role: assignedUser?.role } },
+    });
+    if (sameRoleLeft === 0) {
+      throw new BadRequestException(
+        assignedUser?.role === Role.DIRECTOR_OPERATIVO
+          ? 'La propiedad debe tener un director responsable. Asigne otro director antes de retirar este.'
+          : 'La propiedad debe tener al menos un coordinador. Asigne otro antes de retirar este.',
+      );
+    }
+
     return this.prisma.propertyAssignment.update({
       where: { id: assignment.id },
       data: { isActive: false, isLead: false },
     });
+  }
+
+  /** Usuario activo de la organización con rol asignable a propiedades (coordinador o director). */
+  private async findAssignableUser(user: AuthenticatedUser, userId: string, expectedRole?: Role) {
+    const target = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, organizationId: true, role: true, isActive: true },
+    });
+
+    if (!target || target.organizationId !== user.organizationId) {
+      throw new NotFoundException('Usuario a asignar no encontrado en la organización');
+    }
+    if (!target.isActive) {
+      throw new BadRequestException('No se puede asignar un usuario inactivo');
+    }
+
+    const allowed = expectedRole ? [expectedRole] : [Role.COORDINADOR_OPERATIVO, Role.DIRECTOR_OPERATIVO];
+    if (!allowed.includes(target.role)) {
+      throw new BadRequestException(
+        expectedRole === Role.DIRECTOR_OPERATIVO
+          ? 'El director responsable debe tener el rol Director Operativo'
+          : expectedRole === Role.COORDINADOR_OPERATIVO
+            ? 'El coordinador principal debe tener el rol Coordinador Operativo'
+            : 'A una propiedad solo se asignan coordinadores operativos o el director operativo',
+      );
+    }
+    return target;
   }
 
   private async findOwned(user: AuthenticatedUser, propertyId: string) {

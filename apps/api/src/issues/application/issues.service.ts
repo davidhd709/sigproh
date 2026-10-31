@@ -29,11 +29,32 @@ import { UpdateActivityDto } from '../presentation/dto/update-activity.dto';
 import { AssignActivityDto } from '../presentation/dto/assign-activity.dto';
 import { CreateCommentDto } from '../presentation/dto/create-comment.dto';
 import { CreateAttachmentDto } from '../presentation/dto/create-attachment.dto';
-import { RequestClosureDto } from '../presentation/dto/request-closure.dto';
 import { CloseIssueDto } from '../presentation/dto/close-issue.dto';
-import { ReturnIssueDto } from '../presentation/dto/return-issue.dto';
 import { ReopenIssueDto } from '../presentation/dto/reopen-issue.dto';
 import { DiscardIssueDto } from '../presentation/dto/discard-issue.dto';
+
+/** Roles que pueden registrar novedades. */
+export const ISSUE_REPORTER_ROLES: Role[] = [
+  Role.DIRECTOR_OPERATIVO,
+  Role.GERENTE,
+  Role.AUXILIAR_GERENCIA,
+  Role.COORDINADOR_OPERATIVO,
+];
+
+/** Roles que pueden asignar (y reasignar) el responsable principal. */
+export const ISSUE_ASSIGNER_ROLES: Role[] = [
+  Role.DIRECTOR_OPERATIVO,
+  Role.GERENTE,
+  Role.AUXILIAR_GERENCIA,
+];
+
+/** Roles que pueden ser responsables principales (son quienes luego cambian el estado y cierran). */
+const ISSUE_RESPONSIBLE_ROLES: Role[] = [
+  Role.DIRECTOR_OPERATIVO,
+  Role.COORDINADOR_OPERATIVO,
+];
+
+const FINAL_STATUSES: IssueStatus[] = [IssueStatus.CERRADA, IssueStatus.DESCARTADA];
 
 @Injectable()
 export class IssuesService {
@@ -47,22 +68,9 @@ export class IssuesService {
    * Registra una nueva novedad en el sistema con asignación mixta y gestión crítica.
    */
   async create(user: AuthenticatedUser, dto: CreateIssueDto) {
-    // 1. Validar rol autorizado para reportar
-    // PEN-03: Inicialmente se confirmó que reportan Gerencia, Director y Coordinadores.
-    // El Auxiliar de Gerencia NO tiene autorización confirmada para crear novedades (ordinarias ni críticas),
-    // conforme al principio de no conceder por suposición mientras PEN-03 continúe pendiente.
-    const allowedRoles: Role[] = [
-      Role.DIRECTOR_OPERATIVO,
-      Role.GERENTE,
-      Role.COORDINADOR_OPERATIVO,
-    ];
-
-    if (!allowedRoles.includes(user.role)) {
-      throw new ForbiddenException(
-        user.role === Role.AUXILIAR_GERENCIA
-          ? 'El rol Auxiliar de Gerencia no tiene autorización para registrar novedades (PEN-03 pendiente de definición)'
-          : 'Su rol no tiene autorización para registrar novedades',
-      );
+    // 1. Validar rol autorizado para reportar (PEN-03 resuelto: Director, Gerente, Auxiliar de Gerencia y Coordinadores)
+    if (!ISSUE_REPORTER_ROLES.includes(user.role)) {
+      throw new ForbiddenException('Su rol no tiene autorización para registrar novedades');
     }
 
     // 2. Validar exclusividad estricta de ámbito (RN-003, RN-021, RN-022)
@@ -127,33 +135,34 @@ export class IssuesService {
       );
     }
 
-    // 4. Algoritmo de sugerencia de responsable principal (RN-031 a RN-034)
-    let suggestedUserId: string | null = null;
+    // 4. Asignación automática del responsable principal:
+    //    - Si reporta un Coordinador, la novedad queda a su cargo.
+    //    - Si reporta Gerencia, Auxiliar o Director, pasa al coordinador principal del ámbito.
+    //    - Si no hay a quién asignarla, queda "por asignar" (EN_REVISION).
+    let assignedUserId: string | null = null;
 
-    if (dto.scope === IssueScope.PROPIEDAD && dto.propertyId) {
+    if (user.role === Role.COORDINADOR_OPERATIVO) {
+      assignedUserId = user.id;
+    } else if (dto.scope === IssueScope.PROPIEDAD && dto.propertyId) {
       const leadAssignment = await this.prisma.propertyAssignment.findFirst({
         where: {
           propertyId: dto.propertyId,
           isLead: true,
           isActive: true,
-          user: { isActive: true },
+          user: { isActive: true, role: Role.COORDINADOR_OPERATIVO },
         },
       });
-      if (leadAssignment) {
-        suggestedUserId = leadAssignment.userId;
-      }
+      assignedUserId = leadAssignment?.userId ?? null;
     } else if (dto.scope === IssueScope.INTERNA && dto.internalAreaId) {
       const leadAreaAssignment = await this.prisma.areaAssignment.findFirst({
         where: {
           internalAreaId: dto.internalAreaId,
           isLead: true,
           isActive: true,
-          user: { isActive: true },
+          user: { isActive: true, role: Role.COORDINADOR_OPERATIVO },
         },
       });
-      if (leadAreaAssignment) {
-        suggestedUserId = leadAreaAssignment.userId;
-      }
+      assignedUserId = leadAreaAssignment?.userId ?? null;
     }
 
     const currentYear = new Date().getFullYear();
@@ -189,20 +198,22 @@ export class IssuesService {
           description: dto.description.trim(),
           priority: dto.priority,
           initialPriority: dto.priority,
-          status: IssueStatus.EN_REVISION,
+          // Con responsable pasa directo a "en proceso"; sin él, queda "por asignar"
+          status: assignedUserId ? IssueStatus.EN_ATENCION : IssueStatus.EN_REVISION,
           propertyId: dto.propertyId ?? null,
           propertyZoneId: dto.propertyZoneId ?? null,
           internalAreaId: dto.internalAreaId ?? null,
           categoryId: dto.categoryId,
           createdById: user.id,
-          suggestedUserId,
+          suggestedUserId: assignedUserId,
+          assignedUserId,
           urgentMeasures: isCritical && dto.urgentMeasures ? dto.urgentMeasures.trim() : null,
         },
         include: {
           category: { select: { id: true, name: true } },
           property: { select: { id: true, name: true, code: true } },
           internalArea: { select: { id: true, name: true, code: true } },
-          suggestedUser: {
+          assignedUser: {
             select: { id: true, firstName: true, lastName: true, email: true },
           },
         },
@@ -218,22 +229,46 @@ export class IssuesService {
           details: {
             priority: dto.priority,
             scope: dto.scope,
-            suggestedUserId,
+            assignedUserId,
           },
         },
       });
 
-      // Si se sugirió un responsable, registrar evento
-      if (suggestedUserId) {
+      if (assignedUserId) {
+        await tx.issueAssignment.create({
+          data: {
+            issueId: issue.id,
+            userId: assignedUserId,
+            assignedById: user.id,
+            reason: 'Asignación automática al reportar',
+            isCurrent: true,
+          },
+        });
+
         await tx.issueEvent.create({
           data: {
             issueId: issue.id,
             userId: user.id,
-            eventType: IssueEventType.SUGERENCIA_RESPONSABLE,
-            summary: `Responsable sugerido automáticamente según asignación principal`,
-            details: { suggestedUserId },
+            eventType: IssueEventType.CONFIRMACION_ASIGNACION,
+            summary:
+              assignedUserId === user.id
+                ? 'Asignada automáticamente a quien la reportó'
+                : 'Asignada automáticamente al coordinador principal del ámbito',
+            details: { assignedUserId, automatic: true },
           },
         });
+
+        if (assignedUserId !== user.id) {
+          await tx.notification.create({
+            data: {
+              organizationId: user.organizationId,
+              recipientId: assignedUserId,
+              issueId: issue.id,
+              title: `Novedad asignada: ${code}`,
+              message: `Se le asignó la novedad "${dto.title.trim()}" reportada por ${user.email}.`,
+            },
+          });
+        }
       }
 
       // Si es crítica y se aportaron medidas urgentes iniciales
@@ -249,25 +284,31 @@ export class IssuesService {
         });
       }
 
-      // Alerta al Director Operativo si es crítica (DEC-06 / RF-014)
-      if (isCritical) {
-        const directors = await tx.user.findMany({
+      // Gerencia, Auxiliar y el director responsable se enteran si hay que asignarla o si es crítica (DEC-06 / RF-014)
+      if (!assignedUserId || isCritical) {
+        const management = await tx.user.findMany({
           where: {
             organizationId: user.organizationId,
-            role: Role.DIRECTOR_OPERATIVO,
+            role: { in: [Role.GERENTE, Role.AUXILIAR_GERENCIA] },
             isActive: true,
           },
           select: { id: true },
         });
+        const directorIds = await this.directorIdsFor(tx, user.organizationId, dto.propertyId ?? null);
+        const assigners = [...new Set([...directorIds, ...management.map((m) => m.id)])]
+          .filter((id) => id !== user.id)
+          .map((id) => ({ id }));
 
-        for (const dir of directors) {
+        for (const assigner of assigners) {
           await tx.notification.create({
             data: {
               organizationId: user.organizationId,
-              recipientId: dir.id,
+              recipientId: assigner.id,
               issueId: issue.id,
-              title: `ALERTA: Novedad crítica ${code}`,
-              message: `Se ha reportado la novedad crítica "${dto.title.trim()}". Requiere atención inmediata y confirmación de responsable.`,
+              title: isCritical ? `ALERTA: Novedad crítica ${code}` : `Novedad por asignar: ${code}`,
+              message: isCritical
+                ? `Se ha reportado la novedad crítica "${dto.title.trim()}". Requiere atención inmediata.`
+                : `Se ha reportado la novedad "${dto.title.trim()}" y no tiene responsable. Asígnela a un coordinador.`,
             },
           });
         }
@@ -278,16 +319,17 @@ export class IssuesService {
   }
 
   /**
-   * Confirma o reasigna el responsable principal de la novedad (Exclusivo Director Operativo - DEC-04 / RN-006 / RN-039).
+   * Asigna o reasigna el responsable principal de la novedad (Director Operativo, Gerente o Auxiliar de Gerencia).
+   * Una novedad por asignar pasa a "en proceso" (EN_ATENCION); una reasignación conserva el estado en curso.
    */
   async assignPrincipal(
     user: AuthenticatedUser,
     issueId: string,
     dto: AssignPrincipalDto,
   ) {
-    if (user.role !== Role.DIRECTOR_OPERATIVO) {
+    if (!ISSUE_ASSIGNER_ROLES.includes(user.role)) {
       throw new ForbiddenException(
-        'Solo el Director Operativo tiene la facultad de confirmar o reasignar el responsable principal',
+        'Solo el Director Operativo, la Gerencia o el Auxiliar de Gerencia pueden asignar el responsable principal',
       );
     }
 
@@ -308,6 +350,14 @@ export class IssuesService {
 
     if (!issue || issue.organizationId !== user.organizationId) {
       throw new NotFoundException('Novedad no encontrada');
+    }
+
+    await this.validateIssueScopeAccess(user, issue);
+
+    if (FINAL_STATUSES.includes(issue.status)) {
+      throw new BadRequestException(
+        `No es posible asignar responsable a una novedad en estado ${issue.status}`,
+      );
     }
 
     const targetUser = await this.prisma.user.findUnique({
@@ -331,9 +381,9 @@ export class IssuesService {
       throw new BadRequestException('No se puede asignar un usuario inactivo');
     }
 
-    if (targetUser.role === Role.ADMINISTRADOR) {
+    if (!ISSUE_RESPONSIBLE_ROLES.includes(targetUser.role)) {
       throw new BadRequestException(
-        'El rol Administrador del Sistema no puede ser asignado como responsable operativo de novedades (RN-001 / RN-002)',
+        'El responsable principal debe ser un Coordinador Operativo o el Director Operativo',
       );
     }
 
@@ -377,7 +427,18 @@ export class IssuesService {
       );
     }
 
+    const isFirstAssignment =
+      issue.status === IssueStatus.REGISTRADA || issue.status === IssueStatus.EN_REVISION;
+
     return this.prisma.$transaction(async (tx) => {
+      // Escritura condicionada al estado leído para no pisar una transición concurrente (409)
+      await this.transitionStatus(
+        tx,
+        issue.id,
+        [issue.status],
+        isFirstAssignment ? IssueStatus.EN_ATENCION : issue.status,
+      );
+
       // Inactivar asignaciones previas
       await tx.issueAssignment.updateMany({
         where: { issueId: issue.id, isCurrent: true },
@@ -400,7 +461,6 @@ export class IssuesService {
         where: { id: issue.id },
         data: {
           assignedUserId: targetUser.id,
-          status: IssueStatus.ASIGNADA,
         },
         include: {
           assignedUser: {
@@ -439,7 +499,7 @@ export class IssuesService {
           recipientId: targetUser.id,
           issueId: issue.id,
           title: `Novedad asignada: ${issue.code}`,
-          message: `El Director Operativo le ha asignado como responsable principal de la novedad "${issue.title}".`,
+          message: `${user.email} le ha asignado como responsable principal de la novedad "${issue.title}".`,
         },
       });
 
@@ -470,12 +530,16 @@ export class IssuesService {
         priority: true,
         code: true,
         title: true,
+        status: true,
+        propertyId: true,
       },
     });
 
     if (!issue || issue.organizationId !== user.organizationId) {
       throw new NotFoundException('Novedad no encontrada');
     }
+
+    this.assertIssueIsOpen(issue.status, 'cambiar la prioridad de');
 
     const previousPriority = issue.priority;
 
@@ -504,14 +568,9 @@ export class IssuesService {
         dto.priority === IssuePriority.CRITICA &&
         previousPriority !== IssuePriority.CRITICA
       ) {
-        const directors = await tx.user.findMany({
-          where: {
-            organizationId: user.organizationId,
-            role: Role.DIRECTOR_OPERATIVO,
-            isActive: true,
-          },
-          select: { id: true },
-        });
+        const directors = (
+          await this.directorIdsFor(tx, user.organizationId, issue.propertyId)
+        ).map((id) => ({ id }));
 
         for (const dir of directors) {
           await tx.notification.create({
@@ -602,14 +661,9 @@ export class IssuesService {
 
       // Notificar al director de la actuación urgente si el autor no es director
       if (user.role !== Role.DIRECTOR_OPERATIVO) {
-        const directors = await tx.user.findMany({
-          where: {
-            organizationId: user.organizationId,
-            role: Role.DIRECTOR_OPERATIVO,
-            isActive: true,
-          },
-          select: { id: true },
-        });
+        const directors = (
+          await this.directorIdsFor(tx, user.organizationId, issue.propertyId)
+        ).map((id) => ({ id }));
 
         for (const dir of directors) {
           await tx.notification.create({
@@ -700,8 +754,10 @@ export class IssuesService {
     }));
   }
 
+  // La asignación posterior a una devolución deja de mostrarla como devuelta
   private static readonly CLOSURE_FLOW_EVENTS: IssueEventType[] = [
     IssueEventType.SOLICITUD_CIERRE,
+    IssueEventType.CONFIRMACION_ASIGNACION,
     IssueEventType.DEVOLUCION,
     IssueEventType.CIERRE_DEFINITIVO,
     IssueEventType.REAPERTURA,
@@ -799,9 +855,8 @@ export class IssuesService {
   }
 
   /**
-   * Obtiene los candidatos autorizados para asignación en una novedad específica (RF-011).
-   * Director Operativo y Gerente tienen visibilidad global.
-   * Otros roles operativos (e.g. Coordinador) requieren acceso vigente al ámbito de la novedad.
+   * Obtiene los candidatos a responsable principal de una novedad (RF-011):
+   * el Director Operativo y los coordinadores con asignación activa en el ámbito de la novedad.
    */
   async getCandidates(user: AuthenticatedUser, issueId: string) {
     if (user.role === Role.ADMINISTRADOR) {
@@ -825,21 +880,14 @@ export class IssuesService {
       throw new NotFoundException('Novedad no encontrada');
     }
 
-    // Validar acceso vigente al ámbito si no es Director o Gerente
-    if (user.role !== Role.DIRECTOR_OPERATIVO && user.role !== Role.GERENTE) {
-      if (issue.propertyId) {
-        await this.scopeAuth.validatePropertyAccess(user, issue.propertyId);
-      } else if (issue.internalAreaId) {
-        await this.scopeAuth.validateInternalAreaAccess(user, issue.internalAreaId);
-      }
-    }
+    await this.validateIssueScopeAccess(user, issue);
 
-    // 1. Roles con alcance global operativo (Director y Gerente)
+    // 1. Director Operativo: puede ser responsable de cualquier novedad
     const globalUsers = await this.prisma.user.findMany({
       where: {
         organizationId: user.organizationId,
         isActive: true,
-        role: { in: [Role.DIRECTOR_OPERATIVO, Role.GERENTE] },
+        role: Role.DIRECTOR_OPERATIVO,
       },
       select: {
         id: true,
@@ -865,7 +913,7 @@ export class IssuesService {
         where: {
           propertyId: issue.propertyId,
           isActive: true,
-          user: { isActive: true, role: { not: Role.ADMINISTRADOR } },
+          user: { isActive: true, role: { in: ISSUE_RESPONSIBLE_ROLES } },
         },
         include: {
           user: {
@@ -888,7 +936,7 @@ export class IssuesService {
         where: {
           internalAreaId: issue.internalAreaId,
           isActive: true,
-          user: { isActive: true, role: { not: Role.ADMINISTRADOR } },
+          user: { isActive: true, role: { in: ISSUE_RESPONSIBLE_ROLES } },
         },
         include: {
           user: {
@@ -952,6 +1000,101 @@ export class IssuesService {
       where,
       orderBy: { name: 'asc' },
     });
+  }
+
+  /**
+   * Directores a avisar sobre una novedad: el director responsable de la propiedad o,
+   * si no tiene (novedades internas o datos anteriores), todos los directores activos.
+   */
+  private async directorIdsFor(
+    tx: Pick<PrismaService, 'user' | 'propertyAssignment'>,
+    organizationId: string,
+    propertyId: string | null,
+  ): Promise<string[]> {
+    if (propertyId) {
+      const responsible = await tx.propertyAssignment.findMany({
+        where: {
+          propertyId,
+          isActive: true,
+          user: { role: Role.DIRECTOR_OPERATIVO, isActive: true },
+        },
+        select: { userId: true },
+      });
+      if (responsible.length > 0) return responsible.map((r) => r.userId);
+    }
+
+    const directors = await tx.user.findMany({
+      where: { organizationId, role: Role.DIRECTOR_OPERATIVO, isActive: true },
+      select: { id: true },
+    });
+    return directors.map((d) => d.id);
+  }
+
+  /**
+   * Una novedad cerrada o descartada no admite cambios en su trabajo operativo.
+   */
+  private assertIssueIsOpen(status: IssueStatus, action: string) {
+    if (FINAL_STATUSES.includes(status)) {
+      throw new BadRequestException(
+        `No es posible ${action} una novedad en estado ${status}`,
+      );
+    }
+  }
+
+  /**
+   * Valida que el usuario tenga acceso vigente a la propiedad o área de la novedad.
+   */
+  private async validateIssueScopeAccess(
+    user: AuthenticatedUser,
+    issue: { propertyId: string | null; internalAreaId: string | null },
+  ) {
+    if (issue.propertyId) {
+      await this.scopeAuth.validatePropertyAccess(user, issue.propertyId);
+    } else if (issue.internalAreaId) {
+      await this.scopeAuth.validateInternalAreaAccess(user, issue.internalAreaId);
+    }
+  }
+
+  /**
+   * Los cambios de estado (cerrar, reabrir) corresponden al Director Operativo
+   * o al Coordinador Operativo que es responsable principal de la novedad.
+   */
+  private assertCanChangeState(
+    user: AuthenticatedUser,
+    issue: { assignedUserId: string | null },
+  ) {
+    const isDirector = user.role === Role.DIRECTOR_OPERATIVO;
+    const isResponsibleCoordinator =
+      user.role === Role.COORDINADOR_OPERATIVO && issue.assignedUserId === user.id;
+
+    if (!isDirector && !isResponsibleCoordinator) {
+      throw new ForbiddenException(
+        'Solo el Director Operativo o el coordinador responsable de la novedad pueden cambiar su estado',
+      );
+    }
+  }
+
+  /**
+   * Cambia el estado solo si la novedad sigue en uno de los estados esperados.
+   * Si otra operación la modificó entre la lectura y la escritura, responde 409.
+   */
+  private async transitionStatus(
+    tx: Pick<PrismaService, 'issue'>,
+    issueId: string,
+    from: IssueStatus[],
+    to: IssueStatus,
+    extraData: { closedAt?: Date | null } = {},
+  ) {
+    const result = await tx.issue.updateMany({
+      where: { id: issueId, status: { in: from } },
+      data: { status: to, ...extraData },
+    });
+
+    if (result.count === 0) {
+      throw new ConflictException(
+        'Conflicto de concurrencia (409): el estado de la novedad cambió mientras se procesaba la solicitud',
+      );
+    }
   }
 
   /**
@@ -1068,6 +1211,8 @@ export class IssuesService {
         'Solo el Director Operativo o el responsable principal de la novedad pueden crear actividades',
       );
     }
+
+    this.assertIssueIsOpen(issue.status, 'crear actividades en');
 
     let assignedUser: { id: string; firstName: string; lastName: string } | null = null;
     if (dto.assignedUserId) {
@@ -1209,6 +1354,7 @@ export class IssuesService {
         propertyId: true,
         internalAreaId: true,
         assignedUserId: true,
+        status: true,
       },
     });
 
@@ -1231,6 +1377,8 @@ export class IssuesService {
         'Solo el Director Operativo o el responsable principal de la novedad pueden reasignar actividades',
       );
     }
+
+    this.assertIssueIsOpen(issue.status, 'reasignar actividades en');
 
     // Integridad: verificar que la actividad pertenezca a esta novedad
     const activity = await this.prisma.issueActivity.findFirst({
@@ -1415,6 +1563,8 @@ export class IssuesService {
         'No tiene permisos para modificar esta actividad (solo el Director, el responsable principal o el responsable asignado a la actividad pueden modificarla)',
       );
     }
+
+    this.assertIssueIsOpen(issue.status, 'modificar actividades en');
 
     // Si el usuario es ÚNICAMENTE el responsable asignado a la actividad (no Director ni Principal de novedad):
     if (!isDirector && !isPrincipal && isActivityAssignee) {
@@ -1967,160 +2117,85 @@ export class IssuesService {
     };
   }
 
-  // --- CICLO DE CIERRE, DEVOLUCIÓN, REAPERTURA Y DESCARTE (F5 / RF-012, RF-023, RF-024, RF-025, RF-026, CP-12 a CP-16) ---
+  // --- CICLO DE CIERRE, REAPERTURA Y DESCARTE (F5 / RF-012, RF-023, RF-025, RF-026) ---
 
-  async requestClosure(
-    user: AuthenticatedUser,
-    issueId: string,
-    dto: RequestClosureDto,
-  ) {
+  private async findIssueForTransition(user: AuthenticatedUser, issueId: string) {
     if (user.role === Role.ADMINISTRADOR) {
       throw new ForbiddenException(
-        'El rol Administrador del sistema no tiene autorización para gestionar cierres operativos',
+        'El rol Administrador del sistema no tiene autorización para gestionar estados operativos',
       );
     }
 
     const issue = await this.prisma.issue.findUnique({
       where: { id: issueId },
-      include: {
-        category: true,
-        activities: true,
-        attachments: true,
-      },
     });
 
     if (!issue || issue.organizationId !== user.organizationId) {
       throw new NotFoundException('Novedad no encontrada');
     }
 
-    if (issue.propertyId) {
-      await this.scopeAuth.validatePropertyAccess(user, issue.propertyId);
-    } else if (issue.internalAreaId) {
-      await this.scopeAuth.validateInternalAreaAccess(user, issue.internalAreaId);
-    }
-
-    const isDirector = user.role === Role.DIRECTOR_OPERATIVO;
-    const isAssignedLead = issue.assignedUserId === user.id;
-
-    if (!isDirector && !isAssignedLead) {
-      throw new ForbiddenException(
-        'Solo el responsable principal asignado o el Director Operativo pueden solicitar el cierre de la novedad (RF-024)',
-      );
-    }
-
-    if (
-      issue.status !== IssueStatus.ASIGNADA &&
-      issue.status !== IssueStatus.EN_ATENCION
-    ) {
-      throw new BadRequestException(
-        `No es posible solicitar el cierre de una novedad en estado ${issue.status}. Debe estar ASIGNADA o EN_ATENCION`,
-      );
-    }
-
-    const pendingActivities = issue.activities.filter(
-      (a) =>
-        a.status === ActivityStatus.PENDIENTE ||
-        a.status === ActivityStatus.EN_CURSO ||
-        a.status === ActivityStatus.BLOQUEADA,
-    );
-
-    if (pendingActivities.length > 0) {
-      throw new BadRequestException(
-        `Todas las actividades de la novedad deben estar completadas o canceladas antes de solicitar el cierre (${pendingActivities.length} actividad(es) pendiente(s)) (RF-018)`,
-      );
-    }
-
-    if (issue.category.requiresEvidence) {
-      const hasFinalEvidence = issue.attachments.some(
-        (att) => att.stage === EvidenceStage.FINAL,
-      );
-      if (!hasFinalEvidence) {
-        throw new BadRequestException(
-          'La categoría exige evidencia en etapa FINAL antes de solicitar el cierre (CP-12 / RF-023)',
-        );
-      }
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const updatedIssue = await tx.issue.update({
-        where: { id: issue.id },
-        data: {
-          status: IssueStatus.PENDIENTE_CIERRE,
-        },
-      });
-
-      await tx.issueEvent.create({
-        data: {
-          issueId: issue.id,
-          userId: user.id,
-          eventType: IssueEventType.SOLICITUD_CIERRE,
-          summary: `Solicitud de cierre registrada por ${user.email}`,
-          details: {
-            notes: dto.notes || null,
-            requestedBy: user.id,
-          },
-        },
-      });
-
-      const directors = await tx.user.findMany({
-        where: {
-          organizationId: user.organizationId,
-          role: Role.DIRECTOR_OPERATIVO,
-          isActive: true,
-        },
-        select: { id: true },
-      });
-
-      for (const director of directors) {
-        await tx.notification.create({
-          data: {
-            organizationId: user.organizationId,
-            recipientId: director.id,
-            issueId: issue.id,
-            title: `Solicitud de cierre pendiente: ${issue.code}`,
-            message: `El responsable ${user.email} ha solicitado verificar y cerrar la novedad ${issue.code}.`,
-          },
-        });
-      }
-
-      return updatedIssue;
-    });
+    await this.validateIssueScopeAccess(user, issue);
+    return issue;
   }
 
+  /**
+   * Cierre directo por el Director o el coordinador responsable (RF-023 / RF-025).
+   * Las actividades son opcionales; si existen deben estar terminadas. Se exige la evidencia FINAL que pida la categoría.
+   */
   async close(user: AuthenticatedUser, issueId: string, dto: CloseIssueDto) {
-    if (user.role !== Role.DIRECTOR_OPERATIVO) {
-      throw new ForbiddenException(
-        'Únicamente el Director Operativo tiene autorización para cerrar definitivamente una novedad (RF-025 / CP-14)',
+    const issue = await this.findIssueForTransition(user, issueId);
+    this.assertCanChangeState(user, issue);
+
+    // ASIGNADA y PENDIENTE_CIERRE se conservan solo por compatibilidad con datos anteriores
+    const closableStatuses: IssueStatus[] = [
+      IssueStatus.EN_ATENCION,
+      IssueStatus.ASIGNADA,
+      IssueStatus.PENDIENTE_CIERRE,
+    ];
+
+    if (!closableStatuses.includes(issue.status)) {
+      throw new BadRequestException(
+        issue.assignedUserId
+          ? `No es posible cerrar una novedad en estado ${issue.status}`
+          : 'La novedad aún no tiene responsable; asígnela antes de cerrarla',
       );
     }
 
-    const issue = await this.prisma.issue.findUnique({
-      where: { id: issueId },
-    });
+    const [pendingActivities, category, finalEvidenceCount] = await Promise.all([
+      this.prisma.issueActivity.count({
+        where: {
+          issueId: issue.id,
+          status: {
+            in: [ActivityStatus.PENDIENTE, ActivityStatus.EN_CURSO, ActivityStatus.BLOQUEADA],
+          },
+        },
+      }),
+      this.prisma.category.findUnique({
+        where: { id: issue.categoryId },
+        select: { requiresEvidence: true },
+      }),
+      this.prisma.issueAttachment.count({
+        where: { issueId: issue.id, stage: EvidenceStage.FINAL },
+      }),
+    ]);
 
-    if (!issue || issue.organizationId !== user.organizationId) {
-      throw new NotFoundException('Novedad no encontrada');
+    if (pendingActivities > 0) {
+      throw new BadRequestException(
+        `Todas las actividades de la novedad deben estar completadas o canceladas antes del cierre (${pendingActivities} actividad(es) pendiente(s)) (RF-018)`,
+      );
     }
 
-    if (
-      issue.status !== IssueStatus.PENDIENTE_CIERRE &&
-      issue.status !== IssueStatus.EN_ATENCION &&
-      issue.status !== IssueStatus.ASIGNADA
-    ) {
+    if (category?.requiresEvidence && finalEvidenceCount === 0) {
       throw new BadRequestException(
-        `No es posible cerrar definitivamente una novedad en estado ${issue.status}`,
+        'La categoría exige evidencia en etapa FINAL antes del cierre (CP-12 / RF-023)',
       );
     }
 
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      const updatedIssue = await tx.issue.update({
-        where: { id: issue.id },
-        data: {
-          status: IssueStatus.CERRADA,
-          closedAt: now,
-        },
+      await this.transitionStatus(tx, issue.id, closableStatuses, IssueStatus.CERRADA, {
+        closedAt: now,
       });
 
       await tx.issueEvent.create({
@@ -2128,21 +2203,27 @@ export class IssuesService {
           issueId: issue.id,
           userId: user.id,
           eventType: IssueEventType.CIERRE_DEFINITIVO,
-          summary: `Cierre definitivo verificado y aprobado por el Director Operativo (${user.email})`,
+          summary: `Novedad cerrada por ${user.email}`,
           details: {
             observations: dto.closureObservations || null,
+            previousStatus: issue.status,
             closedAt: now.toISOString(),
           },
         },
       });
 
       const recipients = new Set<string>();
-      if (issue.assignedUserId && issue.assignedUserId !== user.id) {
-        recipients.add(issue.assignedUserId);
+      if (issue.assignedUserId) recipients.add(issue.assignedUserId);
+      if (issue.createdById) recipients.add(issue.createdById);
+
+      // Si cierra el coordinador, la Dirección Operativa queda enterada
+      if (user.role !== Role.DIRECTOR_OPERATIVO) {
+        const directors = (
+          await this.directorIdsFor(tx, user.organizationId, issue.propertyId)
+        ).map((id) => ({ id }));
+        directors.forEach((d) => recipients.add(d.id));
       }
-      if (issue.createdById && issue.createdById !== user.id) {
-        recipients.add(issue.createdById);
-      }
+      recipients.delete(user.id);
 
       for (const recipientId of recipients) {
         await tx.notification.create({
@@ -2151,94 +2232,21 @@ export class IssuesService {
             recipientId,
             issueId: issue.id,
             title: `Novedad cerrada: ${issue.code}`,
-            message: `La novedad ${issue.code} ha sido cerrada formalmente por la Dirección Operativa.`,
+            message: `La novedad ${issue.code} ha sido cerrada por ${user.email}.`,
           },
         });
       }
 
-      return updatedIssue;
+      return tx.issue.findUniqueOrThrow({ where: { id: issue.id } });
     });
   }
 
-  async return(user: AuthenticatedUser, issueId: string, dto: ReturnIssueDto) {
-    if (user.role !== Role.DIRECTOR_OPERATIVO) {
-      throw new ForbiddenException(
-        'Únicamente el Director Operativo tiene autorización para devolver una solicitud de cierre (RF-025)',
-      );
-    }
-
-    const issue = await this.prisma.issue.findUnique({
-      where: { id: issueId },
-    });
-
-    if (!issue || issue.organizationId !== user.organizationId) {
-      throw new NotFoundException('Novedad no encontrada');
-    }
-
-    if (
-      issue.status !== IssueStatus.PENDIENTE_CIERRE &&
-      issue.status !== IssueStatus.EN_REVISION
-    ) {
-      throw new BadRequestException(
-        `Solo es posible devolver novedades en estado PENDIENTE_CIERRE o EN_REVISION (estado actual: ${issue.status})`,
-      );
-    }
-
-    const newStatus =
-      issue.status === IssueStatus.PENDIENTE_CIERRE
-        ? IssueStatus.EN_ATENCION
-        : IssueStatus.REGISTRADA;
-
-    return this.prisma.$transaction(async (tx) => {
-      const updatedIssue = await tx.issue.update({
-        where: { id: issue.id },
-        data: { status: newStatus },
-      });
-
-      await tx.issueEvent.create({
-        data: {
-          issueId: issue.id,
-          userId: user.id,
-          eventType: IssueEventType.DEVOLUCION,
-          summary: `Devolución de novedad por la Dirección Operativa: ${dto.reason}`,
-          details: {
-            reason: dto.reason,
-            previousStatus: issue.status,
-            newStatus,
-          },
-        },
-      });
-
-      if (issue.assignedUserId && issue.assignedUserId !== user.id) {
-        await tx.notification.create({
-          data: {
-            organizationId: user.organizationId,
-            recipientId: issue.assignedUserId,
-            issueId: issue.id,
-            title: `Devolución de novedad: ${issue.code}`,
-            message: `La solicitud de cierre de la novedad ${issue.code} ha sido devuelta. Motivo: ${dto.reason}`,
-          },
-        });
-      }
-
-      return updatedIssue;
-    });
-  }
-
+  /**
+   * Reabre una novedad cerrada (Director o coordinador responsable, con motivo - CP-16).
+   */
   async reopen(user: AuthenticatedUser, issueId: string, dto: ReopenIssueDto) {
-    if (user.role !== Role.DIRECTOR_OPERATIVO) {
-      throw new ForbiddenException(
-        'Únicamente el Director Operativo tiene autorización para reabrir novedades cerradas (RF-025 / CP-16)',
-      );
-    }
-
-    const issue = await this.prisma.issue.findUnique({
-      where: { id: issueId },
-    });
-
-    if (!issue || issue.organizationId !== user.organizationId) {
-      throw new NotFoundException('Novedad no encontrada');
-    }
+    const issue = await this.findIssueForTransition(user, issueId);
+    this.assertCanChangeState(user, issue);
 
     if (issue.status !== IssueStatus.CERRADA) {
       throw new BadRequestException(
@@ -2249,12 +2257,8 @@ export class IssuesService {
     const previousClosedAt = issue.closedAt;
 
     return this.prisma.$transaction(async (tx) => {
-      const updatedIssue = await tx.issue.update({
-        where: { id: issue.id },
-        data: {
-          status: IssueStatus.EN_ATENCION,
-          closedAt: null,
-        },
+      await this.transitionStatus(tx, issue.id, [IssueStatus.CERRADA], IssueStatus.EN_ATENCION, {
+        closedAt: null,
       });
 
       await tx.issueEvent.create({
@@ -2262,7 +2266,7 @@ export class IssuesService {
           issueId: issue.id,
           userId: user.id,
           eventType: IssueEventType.REAPERTURA,
-          summary: `Reapertura de novedad por la Dirección Operativa: ${dto.reason}`,
+          summary: `Reapertura de novedad por ${user.email}: ${dto.reason}`,
           details: {
             reason: dto.reason,
             previousClosedAt: previousClosedAt ? previousClosedAt.toISOString() : null,
@@ -2277,12 +2281,12 @@ export class IssuesService {
             recipientId: issue.assignedUserId,
             issueId: issue.id,
             title: `Reapertura de novedad: ${issue.code}`,
-            message: `La novedad ${issue.code} ha sido reabierta por la Dirección Operativa. Motivo: ${dto.reason}`,
+            message: `La novedad ${issue.code} ha sido reabierta por ${user.email}. Motivo: ${dto.reason}`,
           },
         });
       }
 
-      return updatedIssue;
+      return tx.issue.findUniqueOrThrow({ where: { id: issue.id } });
     });
   }
 
@@ -2293,28 +2297,13 @@ export class IssuesService {
       );
     }
 
-    const issue = await this.prisma.issue.findUnique({
-      where: { id: issueId },
-    });
+    const issue = await this.findIssueForTransition(user, issueId);
 
-    if (!issue || issue.organizationId !== user.organizationId) {
-      throw new NotFoundException('Novedad no encontrada');
-    }
-
-    if (
-      issue.status !== IssueStatus.REGISTRADA &&
-      issue.status !== IssueStatus.EN_REVISION
-    ) {
-      throw new BadRequestException(
-        `Solo es posible descartar novedades en estado REGISTRADA o EN_REVISION (estado actual: ${issue.status})`,
-      );
-    }
+    this.assertIssueIsOpen(issue.status, 'descartar');
 
     return this.prisma.$transaction(async (tx) => {
-      const updatedIssue = await tx.issue.update({
-        where: { id: issue.id },
-        data: { status: IssueStatus.DESCARTADA },
-      });
+      // Se condiciona al estado leído para no pisar un cierre concurrente
+      await this.transitionStatus(tx, issue.id, [issue.status], IssueStatus.DESCARTADA);
 
       await tx.issueEvent.create({
         data: {
@@ -2341,7 +2330,7 @@ export class IssuesService {
         });
       }
 
-      return updatedIssue;
+      return tx.issue.findUniqueOrThrow({ where: { id: issue.id } });
     });
   }
 }

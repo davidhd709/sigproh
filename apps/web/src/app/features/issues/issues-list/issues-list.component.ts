@@ -182,7 +182,6 @@ export class IssuesListComponent {
     const s = issue.inbox;
     if (!s) return [];
     const out: { label: string; tone: 'danger' | 'warning' | 'info' }[] = [];
-    if (s.returned && issue.status !== 'CERRADA') out.push({ label: 'Devuelta', tone: 'warning' });
     if (s.overdueActivities) out.push({ label: `${s.overdueActivities} ${s.overdueActivities === 1 ? 'vencida' : 'vencidas'}`, tone: 'danger' });
     if (s.blockedActivities) out.push({ label: s.blockedActivities === 1 ? 'Bloqueada' : `${s.blockedActivities} bloqueadas`, tone: 'danger' });
     if (s.myOpenActivities) out.push({ label: `${s.myOpenActivities} para ti`, tone: 'info' });

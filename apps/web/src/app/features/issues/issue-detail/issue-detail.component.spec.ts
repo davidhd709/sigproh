@@ -26,9 +26,7 @@ describe('IssueDetailComponent', () => {
       uploadAttachment: vi.fn(),
       listAttachments: vi.fn().mockReturnValue(of([])),
       downloadAttachment: vi.fn(),
-      requestClosure: vi.fn(),
       closeIssue: vi.fn(),
-      returnIssue: vi.fn(),
       reopenIssue: vi.fn(),
       discardIssue: vi.fn(),
     };
@@ -44,6 +42,7 @@ describe('IssueDetailComponent', () => {
       isAuxiliar: vi.fn().mockReturnValue(false),
       isManager: vi.fn().mockReturnValue(false),
       isAdmin: vi.fn().mockReturnValue(false),
+      canAssignIssues: vi.fn().mockReturnValue(true),
     };
 
     TestBed.resetTestingModule();
@@ -359,27 +358,44 @@ describe('IssueDetailComponent', () => {
       expect(component.hasMissingFinalEvidence()).toBe(false);
     });
 
-    it('solicitar cierre invoca requestClosure y actualiza la novedad', () => {
-      const mockIssue: any = { id: 'issue-502', status: 'EN_ATENCION' };
-      component.issue.set(mockIssue);
-      component.closureNotes = 'Trabajo terminado satisfactoriamente';
+    it('el coordinador responsable puede cerrar; otro coordinador o la Gerencia no', () => {
+      const issue: any = { id: 'issue-510', status: 'EN_ATENCION', assignedUserId: 'coord-1' };
+      component.issue.set(issue);
 
-      mockIssuesService.requestClosure.mockReturnValue(
-        of({ id: 'issue-502', status: 'PENDIENTE_CIERRE' }),
-      );
-      mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
+      mockAuthService.isDirector.mockReturnValue(false);
+      mockAuthService.isCoordinator.mockReturnValue(true);
+      mockAuthService.currentUser.mockReturnValue({ id: 'coord-1', role: 'COORDINADOR_OPERATIVO' });
+      expect(component.canClose()).toBe(true);
 
-      component.submitRequestClosure();
+      mockAuthService.currentUser.mockReturnValue({ id: 'coord-2', role: 'COORDINADOR_OPERATIVO' });
+      expect(component.canClose()).toBe(false);
 
-      expect(mockIssuesService.requestClosure).toHaveBeenCalledWith('issue-502', {
-        notes: 'Trabajo terminado satisfactoriamente',
-      });
-      expect(component.successMessage()).toContain('Solicitud de cierre enviada a la Dirección');
-      expect(component.showRequestClosureModal()).toBe(false);
+      mockAuthService.isCoordinator.mockReturnValue(false);
+      mockAuthService.isManager.mockReturnValue(true);
+      mockAuthService.currentUser.mockReturnValue({ id: 'ger-1', role: 'GERENTE' });
+      expect(component.canClose()).toBe(false);
     });
 
-    it('aprobar cierre definitivo como Director invoca closeIssue', () => {
-      const mockIssue: any = { id: 'issue-503', status: 'PENDIENTE_CIERRE' };
+    it('closeBlocker informa actividades sin terminar antes de cerrar', () => {
+      component.issue.set({
+        id: 'issue-511',
+        status: 'EN_ATENCION',
+        category: { requiresEvidence: false },
+        activities: [{ status: 'EN_CURSO' }, { status: 'COMPLETADA' }],
+      } as any);
+      expect(component.closeBlocker()).toBe('Hay 1 actividad sin terminar');
+
+      component.issue.set({
+        id: 'issue-511',
+        status: 'EN_ATENCION',
+        category: { requiresEvidence: false },
+        activities: [{ status: 'COMPLETADA' }],
+      } as any);
+      expect(component.closeBlocker()).toBeNull();
+    });
+
+    it('cerrar como Director invoca closeIssue', () => {
+      const mockIssue: any = { id: 'issue-503', status: 'EN_ATENCION' };
       component.issue.set(mockIssue);
       component.closureObservations = 'Verificado en campo a conformidad';
 
@@ -393,32 +409,7 @@ describe('IssueDetailComponent', () => {
       expect(mockIssuesService.closeIssue).toHaveBeenCalledWith('issue-503', {
         closureObservations: 'Verificado en campo a conformidad',
       });
-      expect(component.successMessage()).toContain('Novedad cerrada definitivamente');
-    });
-
-    it('devolver novedad exige motivo obligatorio e invoca returnIssue', () => {
-      const mockIssue: any = { id: 'issue-504', status: 'PENDIENTE_CIERRE' };
-      component.issue.set(mockIssue);
-
-      // Sin motivo
-      component.returnReason = '   ';
-      component.submitReturn();
-      expect(component.errorMessage()).toContain('El motivo de devolución es obligatorio');
-      expect(mockIssuesService.returnIssue).not.toHaveBeenCalled();
-
-      // Con motivo
-      component.returnReason = 'Falta ajustar la tornillería';
-      mockIssuesService.returnIssue.mockReturnValue(
-        of({ id: 'issue-504', status: 'EN_ATENCION' }),
-      );
-      mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
-
-      component.submitReturn();
-
-      expect(mockIssuesService.returnIssue).toHaveBeenCalledWith('issue-504', {
-        reason: 'Falta ajustar la tornillería',
-      });
-      expect(component.successMessage()).toContain('Solicitud devuelta al responsable');
+      expect(component.successMessage()).toContain('Novedad cerrada');
     });
 
     it('reabrir novedad cerrada exige motivo obligatorio e invoca reopenIssue', () => {
@@ -477,11 +468,32 @@ describe('IssueDetailComponent', () => {
       attachments: [],
     };
 
-    it('para el Director con la novedad pendiente de cierre, la acción principal es aprobar el cierre', () => {
-      component.issue.set({ ...baseIssue, status: 'PENDIENTE_CIERRE' });
+    it('para el Director con la novedad en atención, la acción principal es cerrarla', () => {
+      component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
 
-      expect(component.primaryAction()?.key).toBe('approve-closure');
-      expect(component.moreActions().map((a) => a.key)).toContain('return');
+      expect(component.primaryAction()?.key).toBe('close');
+    });
+
+    it('si falta la foto final, la acción principal es subirla y el cierre queda después', () => {
+      component.issue.set({
+        ...baseIssue,
+        status: 'EN_ATENCION',
+        category: { name: 'Equipos', requiresEvidence: true },
+      });
+
+      expect(component.actions().map((a) => a.key).slice(0, 2)).toEqual(['attach-final', 'close']);
+    });
+
+    it('explica en una línea qué sigue según el rol', () => {
+      component.issue.set({ ...baseIssue, status: 'EN_REVISION', assignedUserId: null });
+      expect(component.nextStepHint()).toContain('Asígnala a un coordinador');
+
+      mockAuthService.isDirector.mockReturnValue(false);
+      mockAuthService.isCoordinator.mockReturnValue(true);
+      mockAuthService.canAssignIssues.mockReturnValue(false);
+      mockAuthService.currentUser.mockReturnValue({ id: 'coord-1', role: 'COORDINADOR_OPERATIVO' });
+      component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
+      expect(component.nextStepHint()).toContain('Está a tu cargo');
     });
 
     it('para el Director sin responsable confirmado, la acción principal es confirmar responsable', () => {
@@ -502,9 +514,9 @@ describe('IssueDetailComponent', () => {
       component.issue.set({ ...baseIssue, status: 'EN_REVISION' });
       expect(component.currentStep()).toBe(0);
       component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
-      expect(component.currentStep()).toBe(2);
+      expect(component.currentStep()).toBe(1);
       component.issue.set({ ...baseIssue, status: 'CERRADA' });
-      expect(component.currentStep()).toBe(4);
+      expect(component.currentStep()).toBe(2);
     });
 
     it('separa las fotos de los demás documentos', () => {

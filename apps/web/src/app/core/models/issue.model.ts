@@ -255,16 +255,8 @@ export interface AppNotification {
   createdAt: string;
 }
 
-export interface RequestClosurePayload {
-  notes?: string;
-}
-
 export interface CloseIssuePayload {
   closureObservations?: string;
-}
-
-export interface ReturnIssuePayload {
-  reason: string;
 }
 
 export interface ReopenIssuePayload {

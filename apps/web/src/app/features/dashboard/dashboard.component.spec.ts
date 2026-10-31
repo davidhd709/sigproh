@@ -93,7 +93,7 @@ describe('DashboardComponent', () => {
       getIssues: vi.fn().mockReturnValue(
         of([
           { id: 'i1', status: 'EN_REVISION', priority: 'MEDIA', assignedUserId: null, createdAt: new Date().toISOString() },
-          { id: 'i2', status: 'PENDIENTE_CIERRE', priority: 'ALTA', assignedUserId: 'c1', createdAt: new Date().toISOString() },
+          { id: 'i2', status: 'EN_ATENCION', priority: 'ALTA', assignedUserId: 'c1', createdAt: new Date().toISOString(), inbox: { openActivities: 0 } },
           { id: 'i3', status: 'CERRADA', priority: 'CRITICA', assignedUserId: 'c1', createdAt: new Date().toISOString() },
         ]),
       ),
@@ -183,12 +183,12 @@ describe('DashboardComponent', () => {
     expect(component.errorMessage()).toContain('Acceso denegado (403)');
   });
 
-  it('Tus pendientes: el director ve por revisar, sin responsable, por cerrar e informes por aprobar', () => {
+  it('Tus pendientes: el director ve por asignar, por cerrar e informes en revisión', () => {
     fixture.detectChanges();
     const pending = component.pending() ?? [];
     const byKey = Object.fromEntries(pending.map((p) => [p.def.key, p.count]));
 
-    expect(byKey).toEqual(expect.objectContaining({ TO_REVIEW: 1, UNASSIGNED: 1, TO_CLOSE: 1 }));
+    expect(byKey).toEqual(expect.objectContaining({ UNASSIGNED: 1, TO_CLOSE: 1 }));
     // La crítica ya cerrada no cuenta como pendiente
     expect(byKey['CRITICAL']).toBeUndefined();
     expect(mockReportService.getReports).toHaveBeenCalledWith({ status: 'EN_REVISION' });

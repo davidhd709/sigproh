@@ -18,6 +18,7 @@ describe('ReportsService', () => {
   let scopeAuthMock: any;
   let pdfGeneratorMock: any;
   let excelGeneratorMock: any;
+  let privateStorageMock: any;
 
   const mockDirectorUser: AuthenticatedUser = {
     userId: '00000000-0000-0000-0000-000000000001',
@@ -30,6 +31,13 @@ describe('ReportsService', () => {
     userId: '00000000-0000-0000-0000-000000000002',
     email: 'coordinador@egsas.com',
     role: Role.COORDINADOR_OPERATIVO,
+    organizationId: '00000000-0000-0000-0000-000000000000',
+  };
+
+  const mockGerenteUser: AuthenticatedUser = {
+    userId: '00000000-0000-0000-0000-000000000004',
+    email: 'gerente@egsas.com',
+    role: Role.GERENTE,
     organizationId: '00000000-0000-0000-0000-000000000000',
   };
 
@@ -96,6 +104,10 @@ describe('ReportsService', () => {
       generateReportPdf: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4 mock pdf')),
     };
 
+    privateStorageMock = {
+      getFile: vi.fn().mockResolvedValue(Buffer.from('foto')),
+    };
+
     excelGeneratorMock = {
       generateReportExcel: vi.fn().mockResolvedValue(Buffer.from('mock excel buffer')),
     };
@@ -105,6 +117,7 @@ describe('ReportsService', () => {
       scopeAuthMock,
       pdfGeneratorMock,
       excelGeneratorMock,
+      privateStorageMock,
     );
   });
 
@@ -112,6 +125,18 @@ describe('ReportsService', () => {
     it('debe rechazar con ForbiddenException si el usuario es ADMINISTRADOR (RF-049)', async () => {
       await expect(
         service.createDraft(mockAdminUser, {
+          scope: ReportScope.PROPIEDAD,
+          propertyId: '00000000-0000-0000-0000-000000000010',
+          title: 'Informe Edificio A',
+          periodStart: '2026-05-01',
+          periodEnd: '2026-05-31',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('la Gerencia no puede redactar informes', async () => {
+      await expect(
+        service.createDraft(mockGerenteUser, {
           scope: ReportScope.PROPIEDAD,
           propertyId: '00000000-0000-0000-0000-000000000010',
           title: 'Informe Edificio A',
@@ -189,6 +214,33 @@ describe('ReportsService', () => {
       expect(result.introduction).toBe('Introducción del informe mensual');
       expect(prismaMock.report.create).toHaveBeenCalledOnce();
     });
+
+    it('incluye por defecto todas las fotos de las novedades del periodo', async () => {
+      vi.spyOn(service as any, 'aggregateOperationalData').mockResolvedValue({
+        availableEvidences: [
+          { id: 'att-foto-1', mimeType: 'image/jpeg' },
+          { id: 'att-pdf-1', mimeType: 'application/pdf' },
+          { id: 'att-foto-2', mimeType: 'image/png' },
+        ],
+      });
+      prismaMock.report.create.mockImplementation(({ data }: any) =>
+        Promise.resolve({ id: 'report-uuid-2', ...data, createdBy: { firstName: 'Juan', lastName: 'Coord' } }),
+      );
+
+      await service.createDraft(mockCoordinatorUser, {
+        scope: ReportScope.PROPIEDAD,
+        propertyId: '00000000-0000-0000-0000-000000000010',
+        title: 'Informe con fotos',
+        periodStart: '2026-05-01',
+        periodEnd: '2026-05-31',
+      });
+
+      expect(prismaMock.report.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ selectedAttachmentIds: ['att-foto-1', 'att-foto-2'] }),
+        }),
+      );
+    });
   });
 
   describe('updateDraft', () => {
@@ -246,6 +298,40 @@ describe('ReportsService', () => {
           observations: 'Intento de modificar informe aprobado',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('Fotos en el PDF', () => {
+    it('incrusta solo las fotos seleccionadas en formato JPEG o PNG', async () => {
+      prismaMock.report.findUnique.mockResolvedValue({
+        id: 'rep-fotos',
+        code: 'INF-2026-0003',
+        organizationId: mockDirectorUser.organizationId,
+        scope: ReportScope.PROPIEDAD,
+        status: ReportStatus.APROBADO,
+        createdById: mockDirectorUser.userId,
+        title: 'Informe con fotos',
+        showEvidences: true,
+        selectedAttachmentIds: ['att-1', 'att-3'],
+        operationalData: {
+          availableEvidences: [
+            { id: 'att-1', mimeType: 'image/jpeg', storageKey: 'k1' },
+            { id: 'att-2', mimeType: 'image/png', storageKey: 'k2' },
+            { id: 'att-3', mimeType: 'application/pdf', storageKey: 'k3' },
+          ],
+        },
+        periodStart: new Date('2026-05-01'),
+        periodEnd: new Date('2026-05-31'),
+        cutoffDate: new Date('2026-05-31'),
+        createdBy: { firstName: 'Carlos', lastName: 'Director' },
+      });
+
+      await service.generatePdf(mockDirectorUser, 'rep-fotos');
+
+      expect(privateStorageMock.getFile).toHaveBeenCalledTimes(1);
+      expect(privateStorageMock.getFile).toHaveBeenCalledWith('k1');
+      const options = pdfGeneratorMock.generateReportPdf.mock.calls[0][1];
+      expect([...options.evidenceImages.keys()]).toEqual(['att-1']);
     });
   });
 
@@ -448,36 +534,79 @@ describe('ReportsService', () => {
     });
   });
 
-  describe('Flujo de Revisión Formal (RF-037 a RF-039, CP-21 a CP-24)', () => {
-    it('debe congelar snapshot y pasar de BORRADOR a EN_REVISION (RF-037, CP-21)', async () => {
-      prismaMock.report.findUnique.mockResolvedValue({
-        id: 'rep-rev-1',
-        organizationId: mockCoordinatorUser.organizationId,
-        scope: ReportScope.PROPIEDAD,
-        status: ReportStatus.BORRADOR,
-        createdById: mockCoordinatorUser.userId,
-      });
+  describe('Finalización y revisión (RF-037 a RF-039, CP-21 a CP-24)', () => {
+    const draftReport = {
+      id: 'rep-fin-1',
+      code: 'INF-2026-0002',
+      organizationId: mockCoordinatorUser.organizationId,
+      scope: ReportScope.PROPIEDAD,
+      title: 'Informe Mensual',
+      status: ReportStatus.BORRADOR,
+      version: 1,
+      periodStart: new Date('2026-05-01'),
+      periodEnd: new Date('2026-05-31'),
+      cutoffDate: new Date('2026-05-31'),
+      createdById: mockCoordinatorUser.userId,
+      createdBy: { firstName: 'Juan', lastName: 'Coord' },
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
 
-      prismaMock.report.update.mockResolvedValue({
-        id: 'rep-rev-1',
-        code: 'INF-2026-0001',
-        organizationId: mockCoordinatorUser.organizationId,
-        scope: ReportScope.PROPIEDAD,
-        title: 'Informe a Revisar',
-        status: ReportStatus.EN_REVISION,
-        version: 1,
-        templateVersion: 1,
-        createdBy: { firstName: 'Juan', lastName: 'Coord' },
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
+    it('el autor finaliza su borrador: genera PDF, versión congelada y queda APROBADO', async () => {
+      prismaMock.report.findUnique
+        .mockResolvedValueOnce(draftReport)
+        .mockResolvedValueOnce({ ...draftReport, status: ReportStatus.APROBADO });
 
-      const res = await service.sendToReview(mockCoordinatorUser, 'rep-rev-1');
-      expect(res.status).toBe(ReportStatus.EN_REVISION);
+      const res = await service.finalize(mockCoordinatorUser, 'rep-fin-1');
+
+      expect(pdfGeneratorMock.generateReportPdf).toHaveBeenCalledOnce();
+      expect(prismaMock.reportVersion.create).toHaveBeenCalledOnce();
       expect(prismaMock.report.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
-            status: ReportStatus.EN_REVISION,
+          data: expect.objectContaining({ status: ReportStatus.APROBADO }),
+        }),
+      );
+      expect(res.status).toBe(ReportStatus.APROBADO);
+    });
+
+    it('otro coordinador no puede ver ni finalizar un borrador ajeno', async () => {
+      const otherCoordinator = { ...mockCoordinatorUser, userId: '00000000-0000-0000-0000-000000000009' };
+      prismaMock.report.findUnique.mockResolvedValue(draftReport);
+
+      await expect(service.finalize(otherCoordinator, 'rep-fin-1')).rejects.toThrow(NotFoundException);
+      await expect(service.getReportById(otherCoordinator, 'rep-fin-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('el Director puede consultar borradores de cualquier autor', async () => {
+      prismaMock.report.findUnique.mockResolvedValue(draftReport);
+
+      const res = await service.getReportById(mockDirectorUser, 'rep-fin-1');
+      expect(res.status).toBe(ReportStatus.BORRADOR);
+    });
+
+    it('la Gerencia ve un informe una vez finalizado', async () => {
+      prismaMock.report.findUnique.mockResolvedValue({ ...draftReport, status: ReportStatus.APROBADO });
+
+      const res = await service.getReportById(mockGerenteUser, 'rep-fin-1');
+      expect(res.status).toBe(ReportStatus.APROBADO);
+    });
+
+    it('el listado de quien no es Director solo incluye finalizados o propios', async () => {
+      prismaMock.report.findMany.mockResolvedValue([]);
+
+      await service.getReports(mockGerenteUser, {} as any);
+
+      expect(prismaMock.report.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            AND: [
+              {
+                OR: [
+                  { status: ReportStatus.APROBADO },
+                  { createdById: mockGerenteUser.userId },
+                ],
+              },
+            ],
           }),
         }),
       );

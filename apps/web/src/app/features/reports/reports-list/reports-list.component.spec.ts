@@ -61,6 +61,7 @@ describe('ReportsListComponent', () => {
         role: 'DIRECTOR_OPERATIVO',
         organizationId: 'org-1',
       }),
+      canAuthorReports: vi.fn().mockReturnValue(true),
     };
 
     await TestBed.configureTestingModule({

@@ -17,10 +17,10 @@ import type { Response } from 'express';
 import { IssueScope } from '../../generated/prisma/client';
 import { JwtAuthGuard } from '../../auth/infrastructure/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/infrastructure/guards/roles.guard';
-import { DirectorOnly } from '../../auth/infrastructure/decorators/roles.decorator';
+import { DirectorOnly, Roles } from '../../auth/infrastructure/decorators/roles.decorator';
 import { CurrentUser } from '../../auth/infrastructure/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/domain/authenticated-user.type';
-import { IssuesService } from '../application/issues.service';
+import { ISSUE_ASSIGNER_ROLES, IssuesService } from '../application/issues.service';
 import { CreateIssueDto } from './dto/create-issue.dto';
 import { AssignPrincipalDto } from './dto/assign-principal.dto';
 import { UpdatePriorityDto } from './dto/update-priority.dto';
@@ -31,9 +31,7 @@ import { UpdateActivityDto } from './dto/update-activity.dto';
 import { AssignActivityDto } from './dto/assign-activity.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreateAttachmentDto } from './dto/create-attachment.dto';
-import { RequestClosureDto } from './dto/request-closure.dto';
 import { CloseIssueDto } from './dto/close-issue.dto';
-import { ReturnIssueDto } from './dto/return-issue.dto';
 import { ReopenIssueDto } from './dto/reopen-issue.dto';
 import { DiscardIssueDto } from './dto/discard-issue.dto';
 
@@ -75,7 +73,7 @@ export class IssuesController {
   }
 
   @Patch('issues/:id/assignment')
-  @DirectorOnly()
+  @Roles(...ISSUE_ASSIGNER_ROLES)
   async assignPrincipal(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -217,19 +215,10 @@ export class IssuesController {
     res.send(buffer);
   }
 
-  // --- Endpoints de Cierre, Devolución, Reapertura y Descarte (F5 / RF-012, RF-023, RF-024, RF-025, RF-026, CP-12 a CP-16) ---
-
-  @Post('issues/:id/request-closure')
-  async requestClosure(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-    @Body() dto: RequestClosureDto,
-  ) {
-    return this.issuesService.requestClosure(user, id, dto);
-  }
+  // --- Endpoints de Cierre, Reapertura y Descarte (F5 / RF-012, RF-023, RF-025, RF-026) ---
+  // Cerrar y reabrir: Director o coordinador responsable (validado en el servicio).
 
   @Post('issues/:id/close')
-  @DirectorOnly()
   async close(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
@@ -238,18 +227,7 @@ export class IssuesController {
     return this.issuesService.close(user, id, dto);
   }
 
-  @Post('issues/:id/return')
-  @DirectorOnly()
-  async return(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-    @Body() dto: ReturnIssueDto,
-  ) {
-    return this.issuesService.return(user, id, dto);
-  }
-
   @Post('issues/:id/reopen')
-  @DirectorOnly()
   async reopen(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,

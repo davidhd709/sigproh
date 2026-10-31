@@ -92,13 +92,10 @@
         <span class="filter-label">Estado</span>
         <select [ngModel]="selectedStatus()" (ngModelChange)="selectedStatus.set($event)">
           <option value="ALL">Todos</option>
-          <option value="REGISTRADA">Registrada</option>
-          <option value="EN_REVISION">En revisión</option>
-          <option value="ASIGNADA">Asignada</option>
-          <option value="EN_ATENCION">En atención</option>
-          <option value="EN_PROCESO">En proceso</option>
-          <option value="PENDIENTE_CIERRE">Pendiente de cierre</option>
+          <option value="EN_REVISION">Por asignar</option>
+          <option value="EN_ATENCION">En proceso</option>
           <option value="CERRADA">Cerrada</option>
+          <option value="DESCARTADA">Descartada</option>
         </select>
       </label>
       @if (activeFilterCount() > 0) {

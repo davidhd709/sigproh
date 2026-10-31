@@ -2,11 +2,13 @@
   <header class="page-head">
     <div>
       <h1 class="page-title">Informes</h1>
-      <p class="page-subtitle">Borradores, revisiones e informes aprobados</p>
+      <p class="page-subtitle">{{ canAuthor() ? 'Tus borradores e informes finalizados' : 'Informes finalizados' }}</p>
     </div>
-    <button type="button" class="btn-primary" (click)="openCreate()">
-      <app-icon name="plus" /> <span class="hide-sm">Nuevo informe</span>
-    </button>
+    @if (canAuthor()) {
+      <button type="button" class="btn-primary" (click)="openCreate()">
+        <app-icon name="plus" /> <span class="hide-sm">Nuevo informe</span>
+      </button>
+    }
   </header>
 
   @if (errorMessage()) {
@@ -64,8 +66,12 @@
         <button type="button" class="btn-secondary" (click)="resetFilters()">Limpiar filtros</button>
       } @else {
         <h2>Aún no hay informes</h2>
-        <p>Genera un borrador con los indicadores del período y complétalo antes de enviarlo a revisión.</p>
-        <button type="button" class="btn-primary" (click)="openCreate()"><app-icon name="plus" /> Crear el primero</button>
+        @if (canAuthor()) {
+          <p>Genera un borrador con los indicadores del período, elige las fotos y finalízalo para publicarlo.</p>
+          <button type="button" class="btn-primary" (click)="openCreate()"><app-icon name="plus" /> Crear el primero</button>
+        } @else {
+          <p>Aquí aparecerán los informes cuando sean finalizados.</p>
+        }
       }
     </div>
   } @else {

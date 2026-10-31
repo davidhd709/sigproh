@@ -3,12 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { Observable } from 'rxjs';
 import { AdminService, apiErrorMessage } from '../../../core/services/admin.service';
 import { AuthService } from '../../../core/services/auth.service';
-import { ManagedProperty, ManagedUser } from '../../../core/models/admin.model';
+import { AssignedPerson, ManagedProperty, ManagedUser } from '../../../core/models/admin.model';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { initialsOf } from '../../../shared/presentation';
 import { SettingsNavComponent, canManageCatalogs } from '../settings-nav.component';
 
-type PropertyForm = { name: string; code: string; address: string; nit: string };
+type PropertyForm = { name: string; code: string; address: string; nit: string; coordinatorId: string; directorId: string };
 
 @Component({
   selector: 'app-settings-properties',
@@ -34,9 +34,12 @@ export class SettingsPropertiesComponent {
     return this.properties().filter((p) => !q || `${p.name} ${p.code}`.toLowerCase().includes(q));
   });
 
-  /** Solo los coordinadores operativos activos pueden asignarse a propiedades (regla del backend). */
-  readonly assignableUsers = computed(() =>
+  /** A una propiedad se asignan coordinadores y un director operativo responsable (regla del backend). */
+  readonly coordinatorUsers = computed(() =>
     this.users().filter((u) => u.isActive && u.role === 'COORDINADOR_OPERATIVO'),
+  );
+  readonly directorUsers = computed(() =>
+    this.users().filter((u) => u.isActive && u.role === 'DIRECTOR_OPERATIVO'),
   );
 
   // Editor
@@ -45,10 +48,11 @@ export class SettingsPropertiesComponent {
     const id = this.editingId();
     return id && id !== 'new' ? (this.properties().find((p) => p.id === id) ?? null) : null;
   });
-  form: PropertyForm = { name: '', code: '', address: '', nit: '' };
+  form: PropertyForm = { name: '', code: '', address: '', nit: '', coordinatorId: '', directorId: '' };
   newZone = '';
   newAssigneeId = '';
   newAssigneeLead = false;
+  newDirectorId = '';
   readonly saving = signal(false);
   readonly formError = signal<string | null>(null);
 
@@ -75,17 +79,27 @@ export class SettingsPropertiesComponent {
   }
 
   openNew(): void {
-    this.form = { name: '', code: '', address: '', nit: '' };
+    // Si solo hay un director, se preselecciona para ahorrar un paso
+    const directors = this.directorUsers();
+    this.form = {
+      name: '',
+      code: '',
+      address: '',
+      nit: '',
+      coordinatorId: '',
+      directorId: directors.length === 1 ? directors[0].id : '',
+    };
     this.formError.set(null);
     this.notice.set(null);
     this.editingId.set('new');
   }
 
   openEdit(p: ManagedProperty): void {
-    this.form = { name: p.name, code: p.code, address: p.address ?? '', nit: p.nit ?? '' };
+    this.form = { name: p.name, code: p.code, address: p.address ?? '', nit: p.nit ?? '', coordinatorId: '', directorId: '' };
     this.newZone = '';
     this.newAssigneeId = '';
-    this.newAssigneeLead = p.assignments.length === 0;
+    this.newAssigneeLead = this.coordinatorsOf(p).length === 0;
+    this.newDirectorId = '';
     this.formError.set(null);
     this.notice.set(null);
     this.editingId.set(p.id);
@@ -102,12 +116,21 @@ export class SettingsPropertiesComponent {
       this.formError.set('El nombre y el código son obligatorios.');
       return;
     }
+    if (id === 'new' && (!this.form.coordinatorId || !this.form.directorId)) {
+      this.formError.set('Elige el coordinador principal y el director operativo de la propiedad.');
+      return;
+    }
     const payload = { name: this.form.name.trim(), address: this.form.address.trim(), nit: this.form.nit.trim() };
     const request: Observable<ManagedProperty> =
       id === 'new'
-        ? this.admin.createProperty({ ...payload, code: this.form.code.trim() })
+        ? this.admin.createProperty({
+            ...payload,
+            code: this.form.code.trim(),
+            coordinatorId: this.form.coordinatorId,
+            directorId: this.form.directorId,
+          })
         : this.admin.updateProperty(id, payload);
-    this.run(request, id === 'new' ? 'Propiedad creada. Ahora agrega zonas y coordinadores.' : 'Datos guardados.', (created) => {
+    this.run(request, id === 'new' ? 'Propiedad creada con su coordinador y su director.' : 'Datos guardados.', (created) => {
       // Tras crear, el editor sigue abierto sobre la nueva propiedad
       if (id === 'new' && created?.id) this.editingId.set(created.id);
     });
@@ -132,6 +155,13 @@ export class SettingsPropertiesComponent {
     });
   }
 
+  changeDirector(p: ManagedProperty): void {
+    if (!this.newDirectorId) return;
+    this.run(this.admin.assignToProperty(p.id, this.newDirectorId, true), 'Director responsable actualizado.', () => {
+      this.newDirectorId = '';
+    });
+  }
+
   makeLead(p: ManagedProperty, userId: string): void {
     this.run(this.admin.assignToProperty(p.id, userId, true), 'Coordinador principal actualizado.');
   }
@@ -149,15 +179,34 @@ export class SettingsPropertiesComponent {
     this.run(this.admin.updateProperty(p.id, { isActive: !p.isActive }), p.isActive ? 'Propiedad desactivada.' : 'Propiedad activada.');
   }
 
+  coordinatorsOf(p: ManagedProperty): AssignedPerson[] {
+    return p.assignments.filter((a) => a.user.role === 'COORDINADOR_OPERATIVO');
+  }
+
+  directorOf(p: ManagedProperty): AssignedPerson | null {
+    return p.assignments.find((a) => a.user.role === 'DIRECTOR_OPERATIVO') ?? null;
+  }
+
   /** Coordinadores aún no asignados a la propiedad. */
   candidatesFor(p: ManagedProperty): ManagedUser[] {
     const assigned = new Set(p.assignments.map((a) => a.user.id));
-    return this.assignableUsers().filter((u) => !assigned.has(u.id));
+    return this.coordinatorUsers().filter((u) => !assigned.has(u.id));
+  }
+
+  /** Directores que pueden reemplazar al responsable actual. */
+  directorCandidatesFor(p: ManagedProperty): ManagedUser[] {
+    const current = this.directorOf(p)?.user.id;
+    return this.directorUsers().filter((u) => u.id !== current);
   }
 
   leadName(p: ManagedProperty): string | null {
-    const lead = p.assignments.find((a) => a.isLead);
+    const lead = this.coordinatorsOf(p).find((a) => a.isLead);
     return lead ? `${lead.user.firstName} ${lead.user.lastName}` : null;
+  }
+
+  directorName(p: ManagedProperty): string | null {
+    const d = this.directorOf(p);
+    return d ? `${d.user.firstName} ${d.user.lastName}` : null;
   }
 
   private run<T>(request: Observable<T>, success: string, after?: (result: T) => void): void {

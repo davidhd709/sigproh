@@ -32,13 +32,14 @@ describe('AuthService', () => {
 
   it('debe contener las cuentas de prueba para validación operativa en entorno de desarrollo', () => {
     expect(service.isDev).toBe(true);
-    const emails = service.availableAccounts.map((a) => a.email);
-    expect(emails).toContain('director@sigproh.local');
-    expect(emails).toContain('coordinador1@sigproh.local');
-    expect(emails).toContain('coordinador2@sigproh.local');
-    expect(emails).toContain('gerencia@sigproh.local');
-    expect(emails).toContain('auxiliar@sigproh.local');
-    expect(emails).toContain('admin@sigproh.local');
+    // Una cuenta por rol, las mismas que existen en la base de desarrollo
+    expect(service.availableAccounts.map((a) => a.email)).toEqual([
+      'director@sigproh.local',
+      'coordinador1@sigproh.local',
+      'gerencia@sigproh.local',
+      'auxiliar@sigproh.local',
+      'admin@sigproh.local',
+    ]);
   });
 
   it('debe autenticar contra /auth/login, esperar /auth/me y almacenar el token JWT real', () => {

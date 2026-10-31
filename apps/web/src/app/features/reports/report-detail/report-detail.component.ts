@@ -1,6 +1,6 @@
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { priorityLabel, priorityTone, stageLabel, statusLabel, statusTone } from '../../../shared/presentation';
+import { priorityLabel, priorityTone, reportStatusLabel, stageLabel, statusLabel, statusTone } from '../../../shared/presentation';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -38,6 +38,7 @@ export class ReportDetailComponent implements OnInit {
 
   // Presentación
   readonly statusLabel = statusLabel;
+  readonly reportStatusLabel = reportStatusLabel;
   readonly statusTone = statusTone;
   readonly priorityLabel = priorityLabel;
   readonly priorityTone = priorityTone;
@@ -297,16 +298,21 @@ export class ReportDetailComponent implements OnInit {
     });
   }
 
+  /** El autor del informe o el Director Operativo lo gestionan. */
+  isAuthorOrDirector(): boolean {
+    const rep = this.report();
+    if (!rep) return false;
+    return this.isDirector() || rep.createdById === this.currentUser()?.id;
+  }
+
   canEdit(): boolean {
     const rep = this.report();
     if (!rep) return false;
-    return rep.status === 'BORRADOR' || rep.status === 'DEVUELTO';
+    return (rep.status === 'BORRADOR' || rep.status === 'DEVUELTO') && this.isAuthorOrDirector();
   }
 
-  canSendToReview(): boolean {
-    const rep = this.report();
-    if (!rep) return false;
-    return rep.status === 'BORRADOR' || rep.status === 'DEVUELTO';
+  canFinalize(): boolean {
+    return this.canEdit();
   }
 
   isDirector(): boolean {
@@ -324,18 +330,18 @@ export class ReportDetailComponent implements OnInit {
   }
 
   canCreateNewVersion(): boolean {
-    return this.isApproved();
+    return this.isApproved() && this.isAuthorOrDirector();
   }
 
   canDistribute(): boolean {
     return this.isApproved() && this.isDirector();
   }
 
-  sendToReview(): void {
+  finalize(): void {
     const rep = this.report();
     if (!rep) return;
 
-    if (!confirm('¿Confirma enviar este informe a revisión formal por parte de la Dirección Operativa? Los datos y configuración quedarán congelados.')) {
+    if (!confirm('¿Finalizar este informe? Quedará congelado con las fotos seleccionadas y todos podrán verlo.')) {
       return;
     }
 
@@ -343,17 +349,17 @@ export class ReportDetailComponent implements OnInit {
     this.errorMessage.set(null);
     this.successMessage.set(null);
 
-    this.reportService.sendToReview(rep.id).subscribe({
+    this.reportService.finalize(rep.id).subscribe({
       next: (updated) => {
         this.report.set(updated);
         this.syncEditableFields(updated);
         this.isSubmittingAction.set(false);
-        this.successMessage.set('Informe enviado a revisión formal exitosamente.');
+        this.successMessage.set('Informe finalizado. Ya está disponible para todos.');
         setTimeout(() => this.successMessage.set(null), 4000);
       },
       error: (err) => {
         this.isSubmittingAction.set(false);
-        this.errorMessage.set(err.error?.message || 'Error al enviar a revisión.');
+        this.errorMessage.set(err.error?.message || 'Error al finalizar el informe.');
       },
     });
   }

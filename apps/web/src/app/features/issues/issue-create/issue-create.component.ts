@@ -19,6 +19,7 @@ import {
   Category,
   CreateIssuePayload,
   EvidenceStage,
+  Issue,
   IssuePriority,
   IssueScope,
 } from '../../../core/models/issue.model';
@@ -193,17 +194,20 @@ export class IssueCreateComponent implements OnInit, OnDestroy {
     );
   }
 
+  /** Le dice a quien reporta quién se encargará, para que no tenga que adivinar el siguiente paso. */
+  private assignmentNote(created: Issue): string {
+    if (created.assignedUserId && created.assignedUserId === this.authService.currentUser()?.id) {
+      return 'Quedó a tu cargo.';
+    }
+    if (created.assignedUser) {
+      return `Quedó a cargo de ${created.assignedUser.firstName} ${created.assignedUser.lastName}.`;
+    }
+    return 'Quedó por asignar: Gerencia o la Dirección elegirán un responsable.';
+  }
+
   onSubmit(): void {
     this.errorMessage.set(null);
     this.successMessage.set(null);
-
-    // PEN-03: Bloqueo explícito de Auxiliar de Gerencia (ordinarias y críticas)
-    if (this.authService.isAuxiliar()) {
-      this.errorMessage.set(
-        'El rol Auxiliar de Gerencia no tiene autorización para registrar novedades (PEN-03 pendiente de definición).',
-      );
-      return;
-    }
 
     // Aislamiento Administrador (RN-001)
     if (this.authService.isAdmin()) {
@@ -255,11 +259,12 @@ export class IssueCreateComponent implements OnInit, OnDestroy {
 
     this.issuesService.createIssue(payload).subscribe({
       next: (created) => {
-        const goToDetail = () => setTimeout(() => this.router.navigate(['/issues', created.id]), 1200);
+        const goToDetail = () => setTimeout(() => this.router.navigate(['/issues', created.id]), 1600);
+        const whoHandlesIt = this.assignmentNote(created);
 
         if (this.pendingFiles().length === 0) {
           this.loading.set(false);
-          this.successMessage.set(`Novedad registrada exitosamente con código ${created.code}.`);
+          this.successMessage.set(`Novedad ${created.code} registrada. ${whoHandlesIt}`);
           goToDetail();
           return;
         }
@@ -269,7 +274,7 @@ export class IssueCreateComponent implements OnInit, OnDestroy {
           this.loading.set(false);
           this.uploadProgress.set(null);
           if (failed.length === 0) {
-            this.successMessage.set(`Novedad ${created.code} registrada con sus archivos.`);
+            this.successMessage.set(`Novedad ${created.code} registrada con sus archivos. ${whoHandlesIt}`);
           } else {
             this.errorMessage.set(
               `La novedad ${created.code} se registró, pero no se pudieron subir: ${failed.join(', ')}. ` +

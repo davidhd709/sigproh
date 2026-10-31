@@ -116,8 +116,8 @@ export class ReportService {
   // FLUJO DE REVISIÓN, APROBACIÓN Y VERSIONES (RF-037 a RF-041, CP-21 a CP-26)
   // =========================================================================
 
-  sendToReview(id: string): Observable<ReportDetail> {
-    return this.http.post<ReportDetail>(`${this.apiUrl}/reports/${id}/send-review`, {}, {
+  finalize(id: string): Observable<ReportDetail> {
+    return this.http.post<ReportDetail>(`${this.apiUrl}/reports/${id}/finalize`, {}, {
       headers: this.getAuthHeaders(),
     });
   }

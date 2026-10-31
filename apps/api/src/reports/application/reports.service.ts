@@ -37,6 +37,10 @@ import { CreateNewVersionDto } from '../presentation/dto/create-new-version.dto'
 import { CreateDistributionDto } from '../presentation/dto/create-distribution.dto';
 import { PdfGeneratorService } from '../infrastructure/pdf-generator.service';
 import { ExcelGeneratorService } from '../infrastructure/excel-generator.service';
+import { PrivateStorageService } from '../../issues/infrastructure/private-storage.service';
+
+/** Formatos de imagen que el generador de PDF puede incrustar. */
+const EMBEDDABLE_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
 
 
 @Injectable()
@@ -46,6 +50,7 @@ export class ReportsService {
     private readonly scopeAuth: ScopeAuthorizationService,
     private readonly pdfGenerator: PdfGeneratorService,
     private readonly excelGenerator: ExcelGeneratorService,
+    private readonly privateStorage: PrivateStorageService,
   ) {}
 
   /**
@@ -55,12 +60,8 @@ export class ReportsService {
     user: AuthenticatedUser,
     dto: CreateReportDraftDto,
   ): Promise<ReportResponseDto> {
-    // 1. Validar autorización de rol (El Administrador técnico no tiene acceso operativo - RF-049)
-    if (user.role === Role.ADMINISTRADOR) {
-      throw new ForbiddenException(
-        'El rol Administrador del sistema no tiene autorización para gestionar informes operacionales (RF-049)',
-      );
-    }
+    // 1. Solo el Director Operativo y los Coordinadores redactan informes
+    this.assertCanAuthorReports(user);
 
     // 2. Validar coherencia del ámbito seleccionado y sus dependencias
     if (dto.scope === ReportScope.PROPIEDAD && !dto.propertyId) {
@@ -166,7 +167,12 @@ export class ReportsService {
         observations: dto.observations?.trim() || null,
         recommendations: dto.recommendations?.trim() || null,
         finalComments: dto.finalComments?.trim() || null,
-        selectedAttachmentIds: dto.selectedAttachmentIds || [],
+        // Por defecto se incluyen todas las fotos subidas en las novedades; el autor puede quitarlas en borrador
+        selectedAttachmentIds:
+          dto.selectedAttachmentIds ??
+          operationalData.availableEvidences
+            .filter((e: any) => typeof e.mimeType === 'string' && e.mimeType.startsWith('image/'))
+            .map((e: any) => e.id),
         showIntroduction: dto.showIntroduction ?? true,
         showKpis: dto.showKpis ?? true,
         showIssuesList: dto.showIssuesList ?? true,
@@ -241,16 +247,27 @@ export class ReportsService {
       }
     }
 
+    const and: any[] = [];
+
+    // Antes de finalizarse, un informe solo lo ven su autor y el Director Operativo
+    if (user.role !== Role.DIRECTOR_OPERATIVO) {
+      and.push({
+        OR: [{ status: ReportStatus.APROBADO }, { createdById: this.userIdOf(user) }],
+      });
+    }
+
     if (filter.search) {
       const term = filter.search.trim();
-      where.AND = [
-        {
-          OR: [
-            { code: { contains: term, mode: 'insensitive' } },
-            { title: { contains: term, mode: 'insensitive' } },
-          ],
-        },
-      ];
+      and.push({
+        OR: [
+          { code: { contains: term, mode: 'insensitive' } },
+          { title: { contains: term, mode: 'insensitive' } },
+        ],
+      });
+    }
+
+    if (and.length > 0) {
+      where.AND = and;
     }
 
     const reports = await this.prisma.report.findMany({
@@ -333,9 +350,7 @@ export class ReportsService {
     id: string,
     dto: UpdateReportDraftDto,
   ): Promise<ReportResponseDto> {
-    if (user.role === Role.ADMINISTRADOR) {
-      throw new ForbiddenException('Administrador no tiene autorización operacional (RF-049)');
-    }
+    this.assertCanAuthorReports(user);
 
     const report = await this.prisma.report.findUnique({
       where: { id },
@@ -423,9 +438,7 @@ export class ReportsService {
     user: AuthenticatedUser,
     id: string,
   ): Promise<ReportResponseDto> {
-    if (user.role === Role.ADMINISTRADOR) {
-      throw new ForbiddenException('Administrador no tiene autorización operacional (RF-049)');
-    }
+    this.assertCanAuthorReports(user);
 
     const report = await this.prisma.report.findUnique({
       where: { id },
@@ -451,6 +464,8 @@ export class ReportsService {
         `Solo se pueden actualizar datos fuente en estado BORRADOR o DEVUELTO`,
       );
     }
+
+    this.assertIsAuthorOrDirector(user, report);
 
     const startStr = report.periodStart.toISOString().split('T')[0];
     const endStr = report.periodEnd.toISOString().split('T')[0];
@@ -524,7 +539,10 @@ export class ReportsService {
       // Usar defaults si falla la consulta opcional
     }
 
-    const buffer = await this.pdfGenerator.generateReportPdf(reportDto, templateOptions);
+    const buffer = await this.pdfGenerator.generateReportPdf(reportDto, {
+      ...templateOptions,
+      evidenceImages: await this.loadEvidenceImages(reportDto),
+    });
     return {
       buffer,
       filename: `informe-${reportDto.code}.pdf`,
@@ -551,9 +569,7 @@ export class ReportsService {
    * Elimina un borrador de informe (solo el autor o Director Operativo).
    */
   async deleteDraft(user: AuthenticatedUser, id: string): Promise<{ success: boolean; message: string }> {
-    if (user.role === Role.ADMINISTRADOR) {
-      throw new ForbiddenException('Administrador no tiene autorización operacional (RF-049)');
-    }
+    this.assertCanAuthorReports(user);
 
     const report = await this.prisma.report.findUnique({ where: { id } });
     if (!report || report.organizationId !== user.organizationId) {
@@ -875,15 +891,14 @@ export class ReportsService {
   // =========================================================================
 
   /**
-   * Congela el borrador y lo envía al flujo de revisión formal (RF-037, CP-21).
+   * Finaliza el borrador: lo congela, genera el PDF oficial y lo publica para todos los roles (RF-037, CP-21).
+   * Lo hace su autor (Director Operativo o Coordinador) o el Director Operativo.
    */
-  async sendToReview(
+  async finalize(
     user: AuthenticatedUser,
     id: string,
   ): Promise<ReportResponseDto> {
-    if (user.role === Role.ADMINISTRADOR) {
-      throw new ForbiddenException('El Administrador no participa en el flujo de revisión de informes (RF-049)');
-    }
+    this.assertCanAuthorReports(user);
 
     const report = await this.prisma.report.findUnique({
       where: { id },
@@ -900,50 +915,19 @@ export class ReportsService {
     }
 
     await this.validateReportAccess(user, report);
+    this.assertIsAuthorOrDirector(user, report);
 
     if (
       report.status !== ReportStatus.BORRADOR &&
       report.status !== ReportStatus.DEVUELTO
     ) {
       throw new BadRequestException(
-        `Solo se pueden enviar a revisión informes en estado BORRADOR o DEVUELTO (estado actual: ${report.status}) (RF-037)`,
+        `Solo se pueden finalizar informes en estado BORRADOR o DEVUELTO (estado actual: ${report.status})`,
       );
     }
 
-    // Congelar versiones activas de plantilla y personalización
-    const template = await this.getPublishedInstitutionalTemplate(user);
-    const propConfig = report.propertyId
-      ? await this.getPropertyReportConfig(user, report.propertyId)
-      : null;
-
-    const updated = await this.prisma.report.update({
-      where: { id },
-      data: {
-        status: ReportStatus.EN_REVISION,
-        templateVersion: template.version,
-        propertyConfigVersion: propConfig?.version || null,
-      },
-      include: {
-        property: true,
-        internalArea: true,
-        createdBy: true,
-        approvedBy: true,
-        versions: {
-          orderBy: { versionNumber: 'desc' },
-          include: { createdBy: true, approvedBy: true },
-        },
-        reviews: {
-          orderBy: { createdAt: 'desc' },
-          include: { reviewer: true },
-        },
-        distributions: {
-          orderBy: { deliveryDate: 'desc' },
-          include: { distributedBy: true },
-        },
-      },
-    });
-
-    return this.mapToReportResponse(updated);
+    await this.approveReport(user, report, 'Finalizado por el autor');
+    return this.getReportById(user, id);
   }
 
   /**
@@ -1009,84 +993,103 @@ export class ReportsService {
         });
       });
     } else {
-      // Decisión: APROBADO (CP-24)
-      const approverUser = await this.prisma.user.findUnique({
-        where: { id: currentUserId },
-        select: { firstName: true, lastName: true },
-      });
-      const approverName = approverUser
-        ? `${approverUser.firstName} ${approverUser.lastName}`.trim()
-        : user.email;
-
-      const reportResponse = this.mapToReportResponse(report);
-      reportResponse.status = ReportStatus.APROBADO;
-      reportResponse.approvedByName = approverName;
-      reportResponse.approvedAt = new Date().toISOString();
-
-      let templateOptions: any = undefined;
-      try {
-        const template = await this.getPublishedInstitutionalTemplate(user);
-        const propConfig = report.propertyId
-          ? await this.getPropertyReportConfig(user, report.propertyId)
-          : null;
-        templateOptions = {
-          primaryColor: template?.primaryColor,
-          secondaryColor: template?.secondaryColor,
-          headerTitle: template?.headerTitle,
-          headerSubtitle: propConfig?.customSubtitle || template?.headerSubtitle,
-          footerText: template?.footerText,
-          contactInfo: propConfig?.contactInfo || undefined,
-        };
-      } catch {
-        // fallback
-      }
-
-      const pdfBuffer = await this.pdfGenerator.generateReportPdf(reportResponse, templateOptions);
-      const sha256Hex = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
-      const storageKey = `reports/${report.id}/v${report.version}.pdf`;
-
-      await this.prisma.$transaction(async (tx) => {
-        await tx.reportReview.create({
-          data: {
-            reportId: report.id,
-            reportVersion: report.version,
-            reviewerId: currentUserId,
-            decision: ReportStatus.APROBADO,
-            notes: dto.notes?.trim() || 'Aprobado formalmente por la Dirección Operativa',
-          },
-        });
-
-        await tx.reportVersion.create({
-          data: {
-            reportId: report.id,
-            versionNumber: report.version,
-            status: ReportStatus.APROBADO,
-            title: report.title,
-            snapshotData: (report.operationalData as any) || {},
-            pdfStorageKey: storageKey,
-            pdfSha256: sha256Hex,
-            approvedById: currentUserId,
-            approvedAt: new Date(),
-            approvalNotes: dto.notes?.trim() || null,
-            createdById: report.createdById,
-          },
-        });
-
-        await tx.report.update({
-          where: { id: report.id },
-          data: {
-            status: ReportStatus.APROBADO,
-            approvedById: currentUserId,
-            approvedAt: new Date(),
-            approvalNotes: dto.notes?.trim() || null,
-            pdfSha256: sha256Hex,
-            pdfStorageKey: storageKey,
-          },
-        });
-      });
+      // Decisión: APROBADO (CP-24) — se conserva para informes enviados a revisión antes del flujo de finalización
+      await this.approveReport(user, report, dto.notes?.trim() || 'Aprobado formalmente por la Dirección Operativa');
     }
 
     return this.getReportById(user, id);
+  }
+
+  /**
+   * Congela una versión aprobada/finalizada: plantilla vigente, PDF con hash y snapshot de datos.
+   */
+  private async approveReport(user: AuthenticatedUser, report: any, notes: string): Promise<void> {
+    const currentUserId = user.id || (user as any).userId;
+
+    const approverUser = await this.prisma.user.findUnique({
+      where: { id: currentUserId },
+      select: { firstName: true, lastName: true },
+    });
+    const approverName = approverUser
+      ? `${approverUser.firstName} ${approverUser.lastName}`.trim()
+      : user.email;
+
+    const reportResponse = this.mapToReportResponse(report);
+    reportResponse.status = ReportStatus.APROBADO;
+    reportResponse.approvedByName = approverName;
+    reportResponse.approvedAt = new Date().toISOString();
+
+    let templateOptions: any = undefined;
+    // Versiones de plantilla y personalización congeladas con el informe
+    let templateVersion: number | undefined;
+    let propertyConfigVersion: number | null = null;
+    try {
+      const template = await this.getPublishedInstitutionalTemplate(user);
+      const propConfig = report.propertyId
+        ? await this.getPropertyReportConfig(user, report.propertyId)
+        : null;
+      templateVersion = template?.version;
+      propertyConfigVersion = propConfig?.version || null;
+      templateOptions = {
+        primaryColor: template?.primaryColor,
+        secondaryColor: template?.secondaryColor,
+        headerTitle: template?.headerTitle,
+        headerSubtitle: propConfig?.customSubtitle || template?.headerSubtitle,
+        footerText: template?.footerText,
+        contactInfo: propConfig?.contactInfo || undefined,
+      };
+    } catch {
+      // fallback
+    }
+
+    const pdfBuffer = await this.pdfGenerator.generateReportPdf(reportResponse, {
+      ...templateOptions,
+      evidenceImages: await this.loadEvidenceImages(reportResponse),
+    });
+    const sha256Hex = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+    const storageKey = `reports/${report.id}/v${report.version}.pdf`;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.reportReview.create({
+        data: {
+          reportId: report.id,
+          reportVersion: report.version,
+          reviewerId: currentUserId,
+          decision: ReportStatus.APROBADO,
+          notes,
+        },
+      });
+
+      await tx.reportVersion.create({
+        data: {
+          reportId: report.id,
+          versionNumber: report.version,
+          status: ReportStatus.APROBADO,
+          title: report.title,
+          snapshotData: (report.operationalData as any) || {},
+          pdfStorageKey: storageKey,
+          pdfSha256: sha256Hex,
+          approvedById: currentUserId,
+          approvedAt: new Date(),
+          approvalNotes: notes,
+          createdById: report.createdById,
+        },
+      });
+
+      await tx.report.update({
+        where: { id: report.id },
+        data: {
+          status: ReportStatus.APROBADO,
+          approvedById: currentUserId,
+          approvedAt: new Date(),
+          approvalNotes: notes,
+          pdfSha256: sha256Hex,
+          pdfStorageKey: storageKey,
+          templateVersion,
+          propertyConfigVersion,
+        },
+      });
+    });
   }
 
   /**
@@ -1097,9 +1100,7 @@ export class ReportsService {
     id: string,
     dto?: CreateNewVersionDto,
   ): Promise<ReportResponseDto> {
-    if (user.role === Role.ADMINISTRADOR) {
-      throw new ForbiddenException('Administrador no tiene autorización operacional (RF-049)');
-    }
+    this.assertCanAuthorReports(user);
 
     const report = await this.prisma.report.findUnique({
       where: { id },
@@ -1116,6 +1117,8 @@ export class ReportsService {
         `Solo se pueden crear nuevas versiones a partir de un informe APROBADO (estado actual: ${report.status}) (RF-040)`,
       );
     }
+
+    this.assertIsAuthorOrDirector(user, report);
 
     const nextVersionNumber = report.version + 1;
 
@@ -1298,7 +1301,65 @@ export class ReportsService {
   /**
    * Valida permisos del usuario para ver o gestionar el informe específico.
    */
+  /**
+   * Lee del almacenamiento privado las fotos seleccionadas para incrustarlas en el PDF.
+   * Un archivo faltante no impide generar el documento: se lista solo su referencia.
+   */
+  private async loadEvidenceImages(report: ReportResponseDto): Promise<Map<string, Buffer>> {
+    const images = new Map<string, Buffer>();
+    if (!report.showEvidences) return images;
+
+    const evidences = (report.operationalData?.availableEvidences || []).filter(
+      (e: any) =>
+        report.selectedAttachmentIds.includes(e.id) &&
+        EMBEDDABLE_IMAGE_TYPES.includes(e.mimeType) &&
+        e.storageKey,
+    );
+
+    for (const ev of evidences as any[]) {
+      try {
+        images.set(ev.id, await this.privateStorage.getFile(ev.storageKey));
+      } catch {
+        // Se conserva la referencia textual de la evidencia
+      }
+    }
+    return images;
+  }
+
+  private userIdOf(user: AuthenticatedUser): string {
+    return user.id || (user as any).userId;
+  }
+
+  /** Solo el Director Operativo y los Coordinadores crean, editan y finalizan informes. */
+  private assertCanAuthorReports(user: AuthenticatedUser): void {
+    if (
+      user.role !== Role.DIRECTOR_OPERATIVO &&
+      user.role !== Role.COORDINADOR_OPERATIVO
+    ) {
+      throw new ForbiddenException(
+        'Solo el Director Operativo y los Coordinadores pueden redactar informes',
+      );
+    }
+  }
+
+  private assertIsAuthorOrDirector(user: AuthenticatedUser, report: { createdById: string }): void {
+    if (report.createdById !== this.userIdOf(user) && user.role !== Role.DIRECTOR_OPERATIVO) {
+      throw new ForbiddenException(
+        'Solo el autor del informe o el Director Operativo pueden gestionarlo',
+      );
+    }
+  }
+
   private async validateReportAccess(user: AuthenticatedUser, report: any): Promise<void> {
+    if (
+      report.status !== ReportStatus.APROBADO &&
+      user.role !== Role.DIRECTOR_OPERATIVO &&
+      report.createdById !== this.userIdOf(user)
+    ) {
+      // Se responde como inexistente para no revelar borradores ajenos
+      throw new NotFoundException(`Informe con id ${report.id} no encontrado`);
+    }
+
     if (user.role === Role.COORDINADOR_OPERATIVO) {
       if (report.scope === ReportScope.CONSOLIDADO) {
         throw new ForbiddenException(
