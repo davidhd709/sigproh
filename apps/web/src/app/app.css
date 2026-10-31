@@ -905,36 +905,88 @@
 }
 
 .dev-quick-accounts summary {
-  padding: 0.8rem 1rem;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--warning-strong);
   cursor: pointer;
 }
 
+.dev-quick-hint {
+  margin: 0 0.75rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+/* Dos columnas también en el celular: la lista ocupa la mitad de alto */
 .dev-chips-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
   padding: 0 0.75rem 0.75rem;
 }
 
+/* Con un número impar de cuentas, la última ocupa toda la fila */
+.dev-chip-btn:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .dev-chip-btn {
-  width: 100%;
-  min-height: 40px;
-  padding: 0.45rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  color: var(--text-body);
-  font-size: 0.82rem;
+  color: var(--primary);
   text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
-.dev-chip-btn:hover {
+.dev-chip-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.dev-chip-text strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-chip-text small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.dev-chip-btn:hover,
+.dev-chip-btn:active {
   border-color: var(--primary-150);
   background: var(--primary-50);
+}
+
+.dev-chip-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* En pantallas muy angostas el ícono cede su espacio al texto */
+@media (max-width: 359px) {
+  .dev-chip-btn app-icon {
+    display: none;
+  }
 }
 
 .login-footer {

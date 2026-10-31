@@ -4,7 +4,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { ReportService } from '../../../core/services/report.service';
-import { statusLabel, statusTone } from '../../../shared/presentation';
+import { reportStatusLabel, statusTone } from '../../../shared/presentation';
 import { AuthService } from '../../../core/services/auth.service';
 import {
   ReportFilter,
@@ -38,14 +38,17 @@ export class ReportsListComponent implements OnInit {
 
   currentUser = this.authService.currentUser;
 
+  /** Director y Coordinadores redactan informes; el resto solo consulta los finalizados. */
+  canAuthor(): boolean {
+    return this.authService.canAuthorReports();
+  }
+
   readonly statusFilters: { value: '' | ReportStatus; label: string }[] = [
     { value: '', label: 'Todos' },
     { value: 'BORRADOR', label: 'Borradores' },
-    { value: 'EN_REVISION', label: 'En revisión' },
-    { value: 'DEVUELTO', label: 'Devueltos' },
-    { value: 'APROBADO', label: 'Aprobados' },
+    { value: 'APROBADO', label: 'Finalizados' },
   ];
-  readonly statusLabel = statusLabel;
+  readonly statusLabel = reportStatusLabel;
   readonly statusTone = statusTone;
 
   ngOnInit(): void {

@@ -249,6 +249,16 @@ export class AuthService {
     return this.currentUser()?.role === 'ADMINISTRADOR';
   }
 
+  /** Director, Gerencia y Auxiliar de Gerencia asignan el responsable de las novedades. */
+  canAssignIssues(): boolean {
+    return this.isDirector() || this.isManager() || this.isAuxiliar();
+  }
+
+  /** Director y Coordinadores redactan y finalizan informes. */
+  canAuthorReports(): boolean {
+    return this.isDirector() || this.isCoordinator();
+  }
+
   // Compatibilidad hacia atrás
   setUserRole(role: CurrentUserProfile['role']): void {
     if (!this.isDev) return;

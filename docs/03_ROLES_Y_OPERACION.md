@@ -8,10 +8,10 @@
 
 | Rol | Alcance y responsabilidad |
 |---|---|
-| **Gerente** | Crear novedades, supervisar propiedades y gestión interna, registrar observaciones, consultar tableros e informes, elaborar borradores autorizados. No aprueba ni distribuye informes oficialmente, no cierra novedades. |
-| **Auxiliar de Gerencia** | Apoyo a Gerencia, registro y seguimiento dentro de permisos otorgados; acceso no necesariamente idéntico al gerente. No aprueba ni distribuye oficialmente. |
-| **Director operativo** | Revisa novedades, confirma o modifica su responsable principal, supervisa actividades, cambia prioridades con trazabilidad, verifica y cierra/reabre novedades; revisa, devuelve, aprueba y distribuye oficialmente informes. Personaliza opciones permitidas de plantillas por propiedad. |
-| **Coordinador operativo** | Registra novedades, aporta evidencias, atiende asignaciones, crea y distribuye actividades de sus casos, registra avances, solicita cierre y elabora informes de sus propiedades autorizadas. |
+| **Gerente** | Crea novedades, asigna las que quedan sin responsable o cambia el responsable, comenta y consulta tableros e informes finalizados. No cierra novedades ni redacta informes. |
+| **Auxiliar de Gerencia** | Mismo alcance que Gerencia: ve todas las propiedades y áreas, crea novedades (también críticas), asigna o cambia responsable y comenta. No cierra ni redacta informes. |
+| **Director operativo** | Crea y asigna novedades, cambia prioridades con trazabilidad, cierra, reabre y descarta novedades; redacta, finaliza y distribuye informes y ve los borradores de todos. Personaliza opciones permitidas de plantillas por propiedad. |
+| **Coordinador operativo** | Registra novedades, que quedan a su cargo automáticamente; comenta, sube fotos y cierra o reabre las novedades que tiene a cargo. Puede dividirlas en actividades si lo necesita. Redacta y finaliza informes de sus propiedades autorizadas. |
 | **Administrador del sistema** | Configura cuentas, roles, permisos, catálogos y plantilla institucional. Este rol técnico no confiere automáticamente acceso a información operativa confidencial. |
 | **Participante interno autorizado** | Puede atender actividades asignadas y registrar avances/evidencias, si su acceso ha sido otorgado. Su alcance exacto es propuesta técnica derivada del concepto de participantes. |
 | **Técnico/proveedor externo** | Puede figurar como tercero relacionado con la intervención, **sin cuenta ni acceso** en el MVP. El responsable interno documenta su trabajo. |
@@ -19,36 +19,63 @@
 ### 4.2 Principios de control de acceso
 
 1. Las funciones se conceden por rol y permisos explícitos.
-2. Cada usuario tiene acceso solo a las propiedades y áreas autorizadas; Gerencia tiene visibilidad general según las políticas de la empresa.
+2. Cada usuario tiene acceso solo a las propiedades y áreas autorizadas; Gerencia y Auxiliar de Gerencia tienen visibilidad general.
 3. Una actividad interna asignada a un coordinador no abre automáticamente todas las novedades del área interna.
-4. Director: único cierre definitivo y única aprobación/distribución oficial de informes.
-5. Director: confirmación o reasignación del responsable principal de novedades.
-6. Director y responsable principal: creación y asignación de actividades a usuarios autorizados.
-7. El administrador de plantillas institucionales no puede alterar contenido histórico aprobado.
-8. El permiso para descargar un PDF no equivale a autorización para distribución oficial; fuera de la aplicación se requerirá una política interna de uso documental.
+4. Cerrar o reabrir una novedad: Director o coordinador responsable. Descartar: solo Director, en cualquier novedad abierta.
+5. Toda propiedad tiene, desde su creación, un **coordinador principal** y un **director operativo responsable** (ambos obligatorios; no se puede retirar al último). El director responsable recibe los avisos de esa propiedad (críticas, por asignar, cierres del coordinador, medidas urgentes) y sigue viendo todas las propiedades; las novedades internas o de propiedades sin director avisan a todos los directores.
+6. Asignación automática al reportar: si reporta un coordinador, queda a su cargo; si reporta Gerencia, Auxiliar o Director, pasa al coordinador principal del ámbito; si no hay, queda por asignar. Asignar o cambiar responsable: Director, Gerencia o Auxiliar de Gerencia.
+7. Director y responsable principal: creación y asignación de actividades a usuarios autorizados.
+8. El administrador de plantillas institucionales no puede alterar contenido histórico aprobado.
+9. El permiso para descargar un PDF no equivale a autorización para distribución oficial; fuera de la aplicación se requerirá una política interna de uso documental.
 
 ### 4.3 Matriz de operaciones principales
 
 | Operación | Gerente | Aux. Gerencia | Director | Coordinador | Admin. sistema |
 |---|:---:|:---:|:---:|:---:|:---:|
-| Crear novedad | Sí | **Por confirmar** | Sí | Sí | No por defecto |
-| Marcar novedad inicialmente crítica | Sí | **Por confirmar** | Sí | Sí | No por defecto |
-| Ver novedades propias/autorizadas | Sí | Sí | Sí | Sí | Solo permiso adicional |
-| Confirmar responsable principal | No | No | **Sí** | No | No |
-| Cambiar prioridad con motivo | Proponer | Proponer | **Sí** | Proponer | No |
-| Crear actividades | Solo si es responsable principal | Solo si es responsable principal | Sí | Si es responsable principal | No |
-| Asignar actividades | Solo si es responsable principal | Solo si es responsable principal | Sí | Si es responsable principal | No |
-| Registrar avances propios | Sí, según acceso | Sí, según acceso | Sí | Sí | No |
-| Solicitar cierre | Si es responsable principal | Si es responsable principal | Sí | Si es responsable principal | No |
-| Cerrar/reabrir novedad | No | No | **Sí** | No | No |
-| Elaborar borrador de informe | Sí | Sí, según acceso | Sí | Sí, según acceso | No por defecto |
-| Revisar para aprobación | No | No | **Sí** | No | No |
-| Aprobar informe | No | No | **Sí** | No | No |
+| Crear novedad | Sí | Sí | Sí | Sí | No |
+| Marcar novedad inicialmente crítica | Sí | Sí | Sí | Sí | No |
+| Ver novedades | Sí (todas) | Sí (todas) | Sí (todas) | Sí (su ámbito) | No |
+| Comentar | Sí | Sí | Sí | Sí | No |
+| Asignar o cambiar responsable principal | Sí | Sí | Sí | No (queda a su cargo al reportar) | No |
+| Cambiar prioridad con motivo | No | No | **Sí** | No | No |
+| Crear actividades (opcional) | No | No | Sí | Si es responsable principal | No |
+| Cerrar / reabrir novedad | No | No | Sí | Si es responsable principal | No |
+| Descartar novedad | No | No | **Sí** | No | No |
+| Crear, editar y finalizar informe | No | No | Sí | Sí (los propios, de su ámbito) | No |
+| Ver informe en borrador | No | No | Sí (todos) | Solo los propios | No |
+| Ver informe finalizado | Sí | Sí | Sí | Sí (su ámbito) | No |
 | Distribución externa oficial | No | No | **Sí** | No | No |
 | Plantilla institucional | No | No | No | No | **Sí** |
 | Configuración por propiedad | No | No | **Sí** | No | No |
 
-**Pendiente real:** inicialmente se confirmó que reportan *Gerencia, Director y Coordinadores*. El Auxiliar de Gerencia se incorporó después con permisos similares a Gerencia, pero no se confirmó expresamente su facultad para crear o marcar crítica una novedad. Debe validarse; no se concede por suposición.
+**PEN-03 resuelto (2026-10-26):** el Auxiliar de Gerencia registra novedades (también críticas) y tiene el mismo alcance de visibilidad que Gerencia.
+
+### 4.4 Ciclo de la novedad y del informe
+
+La novedad tiene solo tres estados visibles:
+
+```
+Por asignar ──asignar──► En proceso ──cerrar──► Cerrada
+     │          ▲ (automático al reportar si hay responsable)  │
+     │          └──────────────── reabrir ─────────────────────┘
+     └─descartar (Director, en cualquier estado abierto)──► Descartada
+
+Informe:  Borrador (solo autor y Director) ──finalizar──► Finalizado (visible para todos) ──nueva versión──► Borrador
+```
+
+| Estado visible | Código interno | Qué significa |
+|---|---|---|
+| Por asignar | `EN_REVISION` | Nadie la tiene a cargo; Gerencia, Auxiliar o Director eligen un coordinador. |
+| En proceso | `EN_ATENCION` | Un responsable la está atendiendo. |
+| Cerrada | `CERRADA` | Trabajo terminado y verificado por el responsable o el Director. |
+| Descartada | `DESCARTADA` | No requiere atención (duplicada, improcedente). |
+
+- La mayoría de novedades no pasa por "Por asignar": quedan a cargo de quien reporta (coordinador) o del coordinador principal del ámbito.
+- El cierre es directo. Las actividades son opcionales; si existen deben estar terminadas. Se exige la foto FINAL cuando la categoría la pide.
+- No hay devolución al reportante: si falta información se pide con un comentario con mención.
+- `REGISTRADA`, `ASIGNADA` y `PENDIENTE_CIERRE` quedan sin uso (la migración `20261026120000_simplified_issue_flow` movió los registros existentes).
+- Cada ficha muestra en una línea qué sigue y una sola acción principal; lo demás está en "Más opciones".
+- Al crear el borrador de informe se incluyen todas las fotos de las novedades del periodo; el autor desmarca las que no quiera mientras esté en borrador. El PDF incluye las fotos seleccionadas (JPEG/PNG).
 
 ## 5. Novedades: estructura y clasificación
 

@@ -13,6 +13,7 @@ describe('Informes automáticos, borradores, PDF y Excel F7 (e2e)', () => {
   let coordinator2Token: string;
   let directorToken: string;
   let adminToken: string;
+  let gerenteToken: string;
 
   const directorId = '00000000-0000-0000-0000-000000000011';
   const coordinator1Id = '00000000-0000-0000-0000-000000000014';
@@ -63,6 +64,11 @@ describe('Informes automáticos, borradores, PDF y Excel F7 (e2e)', () => {
       .post('/auth/login')
       .send({ email: 'admin@sigproh.local', password: 'Cambiar123!' });
     adminToken = adminRes.body.accessToken;
+
+    const gerRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'gerencia@sigproh.local', password: 'Cambiar123!' });
+    gerenteToken = gerRes.body.accessToken;
     // Limpieza de datos de informes para idempotencia de pruebas
     await prisma.reportDistribution.deleteMany({});
     await prisma.reportReview.deleteMany({});
@@ -325,7 +331,21 @@ describe('Informes automáticos, borradores, PDF y Excel F7 (e2e)', () => {
       expect(getRes.body.customSubtitle).toBe('CONDOMINIO TORRES DEL PARQUE P.H.');
     });
 
-    it('CP-21: Crear borrador y enviar a revisión formal (BORRADOR -> EN_REVISION)', async () => {
+    it('La Gerencia no redacta informes (403 Forbidden)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/reports/draft')
+        .set('Authorization', `Bearer ${gerenteToken}`)
+        .send({
+          scope: 'PROPIEDAD',
+          propertyId: torresDelParqueId,
+          title: 'Intento de la Gerencia',
+          periodStart: '2026-05-01',
+          periodEnd: '2026-05-31',
+        });
+      expect(res.status).toBe(403);
+    });
+
+    it('CP-21: El borrador solo lo ven su autor y el Director', async () => {
       const draftRes = await request(app.getHttpServer())
         .post('/reports/draft')
         .set('Authorization', `Bearer ${coordinator1Token}`)
@@ -342,77 +362,55 @@ describe('Informes automáticos, borradores, PDF y Excel F7 (e2e)', () => {
       reportId = draftRes.body.id;
       expect(draftRes.body.status).toBe('BORRADOR');
 
-      // Enviar a revisión
-      const reviewSendRes = await request(app.getHttpServer())
-        .post(`/reports/${reportId}/send-review`)
-        .set('Authorization', `Bearer ${coordinator1Token}`);
+      const gerenteView = await request(app.getHttpServer())
+        .get(`/reports/${reportId}`)
+        .set('Authorization', `Bearer ${gerenteToken}`);
+      expect(gerenteView.status).toBe(404);
 
-      expect(reviewSendRes.status).toBe(200);
-      expect(reviewSendRes.body.status).toBe('EN_REVISION');
-    });
+      const gerenteList = await request(app.getHttpServer())
+        .get('/reports')
+        .set('Authorization', `Bearer ${gerenteToken}`);
+      expect(gerenteList.status).toBe(200);
+      expect(gerenteList.body.some((r: any) => r.id === reportId)).toBe(false);
 
-    it('CP-23, RN-130: Director devuelve el informe con observaciones obligatorias', async () => {
-      // Intento sin notas obligatorias
-      const emptyNotesRes = await request(app.getHttpServer())
-        .post(`/reports/${reportId}/review`)
-        .set('Authorization', `Bearer ${directorToken}`)
-        .send({
-          decision: 'DEVUELTO',
-          notes: '',
-        });
-      expect(emptyNotesRes.status).toBe(400);
+      const directorView = await request(app.getHttpServer())
+        .get(`/reports/${reportId}`)
+        .set('Authorization', `Bearer ${directorToken}`);
+      expect(directorView.status).toBe(200);
 
-      // Devolución formal con observaciones
-      const devueltoRes = await request(app.getHttpServer())
-        .post(`/reports/${reportId}/review`)
-        .set('Authorization', `Bearer ${directorToken}`)
-        .send({
-          decision: 'DEVUELTO',
-          notes: 'Favor ampliar el detalle de las novedades de seguridad perimetral.',
-        });
-
-      expect(devueltoRes.status).toBe(200);
-      expect(devueltoRes.body.status).toBe('DEVUELTO');
-      expect(devueltoRes.body.approvalNotes).toContain('seguridad perimetral');
-
-      // El autor puede volver a editar el informe devuelto (RN-132)
+      // El autor ajusta el borrador (incluida la selección de fotos) antes de finalizar (RN-132)
       const editRes = await request(app.getHttpServer())
         .put(`/reports/${reportId}`)
         .set('Authorization', `Bearer ${coordinator1Token}`)
         .send({
           observations: 'Se amplió el detalle del cerramiento y rondas de vigilancia.',
+          selectedAttachmentIds: [],
         });
       expect(editRes.status).toBe(200);
       expect(editRes.body.observations).toContain('rondas de vigilancia');
-
-      // Y lo envía nuevamente a revisión
-      const resendRes = await request(app.getHttpServer())
-        .post(`/reports/${reportId}/send-review`)
-        .set('Authorization', `Bearer ${coordinator1Token}`);
-      expect(resendRes.status).toBe(200);
-      expect(resendRes.body.status).toBe('EN_REVISION');
     });
 
-    it('CP-22, CP-24: Director aprueba formalmente el informe (EN_REVISION -> APROBADO) con hash SHA-256', async () => {
-      const approveRes = await request(app.getHttpServer())
-        .post(`/reports/${reportId}/review`)
-        .set('Authorization', `Bearer ${directorToken}`)
-        .send({
-          decision: 'APROBADO',
-          notes: 'Aprobado satisfactoriamente para emisión oficial.',
-        });
+    it('CP-22, CP-24: El autor finaliza el informe (BORRADOR -> APROBADO) con hash SHA-256 y queda visible para todos', async () => {
+      const finalizeRes = await request(app.getHttpServer())
+        .post(`/reports/${reportId}/finalize`)
+        .set('Authorization', `Bearer ${coordinator1Token}`);
 
-      expect(approveRes.status).toBe(200);
-      expect(approveRes.body.status).toBe('APROBADO');
-      expect(approveRes.body.approvedByName).toBeDefined();
-      expect(approveRes.body.pdfSha256).toBeDefined();
-      expect(approveRes.body.pdfSha256.length).toBe(64); // SHA-256 hex string
+      expect(finalizeRes.status).toBe(200);
+      expect(finalizeRes.body.status).toBe('APROBADO');
+      expect(finalizeRes.body.approvedByName).toBeDefined();
+      expect(finalizeRes.body.pdfSha256).toBeDefined();
+      expect(finalizeRes.body.pdfSha256.length).toBe(64); // SHA-256 hex string
 
-      // Verificar que el informe aprobado es estrictamente inmutable (RN-132)
+      const gerenteView = await request(app.getHttpServer())
+        .get(`/reports/${reportId}`)
+        .set('Authorization', `Bearer ${gerenteToken}`);
+      expect(gerenteView.status).toBe(200);
+
+      // El informe finalizado es estrictamente inmutable (RN-132)
       const editFail = await request(app.getHttpServer())
         .put(`/reports/${reportId}`)
         .set('Authorization', `Bearer ${coordinator1Token}`)
-        .send({ title: 'Intento de modificar informe aprobado' });
+        .send({ title: 'Intento de modificar informe finalizado' });
       expect(editFail.status).toBe(400);
     });
 
@@ -451,15 +449,11 @@ describe('Informes automáticos, borradores, PDF y Excel F7 (e2e)', () => {
         });
       expect(distFail.status).toBe(400);
 
-      // Enviamos v2 a revisión y aprobamos
+      // Finalizamos v2
       await request(app.getHttpServer())
-        .post(`/reports/${reportId}/send-review`)
-        .set('Authorization', `Bearer ${coordinator1Token}`);
-
-      await request(app.getHttpServer())
-        .post(`/reports/${reportId}/review`)
+        .post(`/reports/${reportId}/finalize`)
         .set('Authorization', `Bearer ${directorToken}`)
-        .send({ decision: 'APROBADO' });
+        .expect(200);
 
       // Ahora distribuir v2 aprobada
       const distSuccess = await request(app.getHttpServer())
@@ -504,9 +498,9 @@ describe('Informes automáticos, borradores, PDF y Excel F7 (e2e)', () => {
 
     it('CP-35: Concurrencia e integridad en transiciones paralelas y versiones de informe', async () => {
       // El informe ya fue APROBADO (v2).
-      // 1. Intento de enviar a revisión un informe que ya está APROBADO -> 400 Bad Request
+      // 1. Intento de finalizar un informe que ya está APROBADO -> 400 Bad Request
       const reReviewRes = await request(app.getHttpServer())
-        .post(`/reports/${reportId}/send-review`)
+        .post(`/reports/${reportId}/finalize`)
         .set('Authorization', `Bearer ${coordinator1Token}`);
 
       expect(reReviewRes.status).toBe(400);

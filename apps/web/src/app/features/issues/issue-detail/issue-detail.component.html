@@ -66,6 +66,9 @@
     <div class="detail-grid">
       <!-- Siguiente paso -->
       <section class="section area-actions next-step">
+        @if (nextStepHint(); as hint) {
+          <p class="next-hint">{{ hint }}</p>
+        }
         @if (primaryAction(); as main) {
           <button
             type="button"
@@ -90,7 +93,7 @@
                 [attr.aria-expanded]="showMoreActions()"
                 aria-haspopup="menu"
               >
-                Más acciones <app-icon name="chevron-down" />
+                Más opciones <app-icon name="chevron-down" />
               </button>
               @if (showMoreActions()) {
                 <div class="more-backdrop" (click)="showMoreActions.set(false)"></div>
@@ -106,7 +109,7 @@
           }
         } @else {
           <p class="no-actions">
-            <app-icon name="eye" /> Estás consultando esta novedad. No tienes acciones pendientes en ella.
+            <app-icon name="eye" /> No tienes nada pendiente en esta novedad. Puedes dejar un comentario abajo.
           </p>
         }
       </section>
@@ -210,14 +213,14 @@
       <!-- Seguimiento -->
       <div class="area-tabs">
         <nav class="tabs" role="tablist" aria-label="Seguimiento">
-          <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'actividades'" [attr.aria-selected]="activeTab() === 'actividades'" (click)="selectTab('actividades')">
-            Actividades <span class="tab-count">{{ current.activities?.length || 0 }}</span>
-          </button>
           <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'comentarios'" [attr.aria-selected]="activeTab() === 'comentarios'" (click)="selectTab('comentarios')">
             Comentarios <span class="tab-count">{{ current.comments?.length || 0 }}</span>
           </button>
           <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'evidencias'" [attr.aria-selected]="activeTab() === 'evidencias'" (click)="selectTab('evidencias')">
-            Archivos <span class="tab-count">{{ current.attachments?.length || 0 }}</span>
+            Fotos y archivos <span class="tab-count">{{ current.attachments?.length || 0 }}</span>
+          </button>
+          <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'actividades'" [attr.aria-selected]="activeTab() === 'actividades'" (click)="selectTab('actividades')">
+            Actividades <small class="tab-optional">(opcional)</small> <span class="tab-count">{{ current.activities?.length || 0 }}</span>
           </button>
           <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'historial'" [attr.aria-selected]="activeTab() === 'historial'" (click)="selectTab('historial')">
             Historial
@@ -229,11 +232,13 @@
           <section class="tab-panel">
             @if (canCreateActivity()) {
               <button type="button" class="add-row" (click)="openCreateActivityModal()">
-                <app-icon name="plus" /> Nueva actividad
+                <app-icon name="plus" /> Dividir en actividades
               </button>
             }
             @if (!current.activities || current.activities.length === 0) {
-              <p class="panel-empty">Todavía no hay actividades en esta novedad.</p>
+              <p class="panel-empty">
+                Las actividades son opcionales. Úsalas solo si el trabajo tiene varias tareas o varias personas; si no, basta con subir la foto final y cerrar.
+              </p>
             } @else {
               <ul class="activity-list">
                 @for (act of current.activities; track act.id) {
@@ -774,64 +779,25 @@
       </div>
     }
 
-    <!-- MODAL 8: Solicitar Cierre Operativo -->
-    @if (showRequestClosureModal()) {
-      <div class="modal-backdrop" role="presentation">
-        <div class="modal-card" role="dialog" aria-modal="true">
-          <div class="modal-header">
-            <h3>Solicitar cierre</h3>
-            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showRequestClosureModal.set(false)"><app-icon name="x" /></button>
-          </div>
-          <div class="modal-body">
-            @if (hasMissingFinalEvidence()) {
-              <div class="alert-box error">
-                <span class="alert-icon"><app-icon name="alert" /></span>
-                <div>
-                  Esta categoría exige al menos una evidencia de etapa <strong>final</strong> antes de solicitar el cierre.
-                </div>
-              </div>
-            } @else {
-              <p class="modal-desc">
-                La novedad quedará <strong>pendiente de cierre</strong> y la Dirección Operativa recibirá el aviso para dar el visto bueno.
-              </p>
-            }
-
-            <label class="field">
-              <span>Notas de cierre (opcional)</span>
-              <textarea
-                [(ngModel)]="closureNotes"
-                rows="4"
-               
-                placeholder="Detalle el trabajo final realizado, recomendaciones de mantenimiento o resultados..."
-              ></textarea>
-            </label>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn-secondary" (click)="showRequestClosureModal.set(false)">Cancelar</button>
-            <button
-              type="button" class="btn-primary"
-              [disabled]="actionLoading() || hasMissingFinalEvidence()"
-              (click)="submitRequestClosure()"
-            >
-              {{ actionLoading() ? 'Enviando...' : 'Enviar solicitud' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    }
-
-    <!-- MODAL 9: Cierre Definitivo / Verificación -->
+    <!-- MODAL 9: Cierre de la novedad -->
     @if (showCloseModal()) {
       <div class="modal-backdrop" role="presentation">
         <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Aprobar cierre</h3>
+            <h3>Cerrar novedad</h3>
             <button type="button" class="modal-close" aria-label="Cerrar" (click)="showCloseModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
-            <p class="modal-desc">
-              Confirma que el trabajo y las evidencias cumplen lo exigido. La novedad quedará cerrada.
-            </p>
+            @if (closeBlocker(); as blocker) {
+              <div class="alert-box error">
+                <span class="alert-icon"><app-icon name="alert" /></span>
+                <div>{{ blocker }}. Resuélvelo antes de cerrar.</div>
+              </div>
+            } @else {
+              <p class="modal-desc">
+                Confirma que el trabajo quedó terminado. La novedad quedará cerrada y se avisará a quien la reportó.
+              </p>
+            }
 
             <label class="field">
               <span>Observaciones (opcional)</span>
@@ -839,7 +805,7 @@
                 [(ngModel)]="closureObservations"
                 rows="4"
                
-                placeholder="Ingrese sus observaciones de verificación, visto bueno técnico o felicitaciones..."
+                placeholder="Describe el trabajo final realizado o las recomendaciones..."
               ></textarea>
             </label>
           </div>
@@ -847,48 +813,10 @@
             <button type="button" class="btn-secondary" (click)="showCloseModal.set(false)">Cancelar</button>
             <button
               type="button" class="btn-primary btn-success"
-              [disabled]="actionLoading()"
+              [disabled]="actionLoading() || closeBlocker() !== null"
               (click)="submitClose()"
             >
-              @if (!(actionLoading())) { <app-icon name="check-circle" /> } {{ actionLoading() ? 'Verificando y cerrando...' : 'Aprobar cierre' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    }
-
-    <!-- MODAL 10: Devolver con Observaciones -->
-    @if (showReturnModal()) {
-      <div class="modal-backdrop" role="presentation">
-        <div class="modal-card" role="dialog" aria-modal="true">
-          <div class="modal-header">
-            <h3>Devolver solicitud</h3>
-            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showReturnModal.set(false)"><app-icon name="x" /></button>
-          </div>
-          <div class="modal-body">
-            <p class="modal-desc">
-              La novedad vuelve a <strong>en atención</strong> y el responsable verá lo que debe corregir.
-            </p>
-
-            <label class="field">
-              <span>Qué debe corregirse *</span>
-              <textarea
-                [(ngModel)]="returnReason"
-                rows="4"
-               
-                placeholder="Detalle de forma precisa qué falta por subsanar, qué evidencia corregir o qué trabajo requiere revisión..."
-                required
-              ></textarea>
-            </label>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn-secondary" (click)="showReturnModal.set(false)">Cancelar</button>
-            <button
-              type="button" class="btn-primary btn-warning"
-              [disabled]="actionLoading() || !returnReason.trim()"
-              (click)="submitReturn()"
-            >
-              {{ actionLoading() ? 'Devolviendo...' : 'Devolver' }}
+              @if (!(actionLoading())) { <app-icon name="check-circle" /> } {{ actionLoading() ? 'Cerrando...' : 'Cerrar novedad' }}
             </button>
           </div>
         </div>

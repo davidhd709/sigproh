@@ -135,18 +135,12 @@
           class="priority-option"
           data-tone="danger"
           [class.selected]="priority === 'CRITICA'"
-          [class.disabled]="authService.isAuxiliar()"
-          [attr.title]="authService.isAuxiliar() ? 'No disponible para Auxiliar de Gerencia' : null"
         >
-          <input type="radio" [(ngModel)]="priority" name="priority" value="CRITICA" [disabled]="authService.isAuxiliar()" />
+          <input type="radio" [(ngModel)]="priority" name="priority" value="CRITICA" />
           <strong><app-icon name="alert-octagon" /> Crítica</strong>
           <small>Riesgo inminente</small>
         </label>
       </div>
-
-      @if (authService.isAuxiliar()) {
-        <p class="field-hint">Tu rol no puede registrar novedades críticas mientras la Dirección no lo autorice.</p>
-      }
 
       @if (priority === 'CRITICA') {
         <div class="critical-box">

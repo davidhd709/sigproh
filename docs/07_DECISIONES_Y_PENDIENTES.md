@@ -43,7 +43,7 @@ Estas propuestas aparecen desarrolladas en las reglas de negocio acumuladas, per
 |---|---|---|
 | PEN-01 | ¿Puede el director aprobar un informe que elaboró él mismo? | Flujo de revisión sin criterio en autorrevisión. |
 | PEN-02 | ¿Qué sucede si el director no está disponible? ¿Se puede designar otro usuario que tenga formalmente ese mismo rol? | Informes y cierres detenidos. |
-| PEN-03 | ¿Puede Auxiliar de Gerencia registrar novedades y marcarlas críticas? | Diferencia de permisos con Gerencia. |
+| PEN-03 | ~~¿Puede Auxiliar de Gerencia registrar novedades y marcarlas críticas?~~ **Resuelto 2026-10-26:** sí, con el mismo alcance que Gerencia. | — |
 | PEN-04 | ¿Puede distribuirse externamente un informe interno o consolidado, y a qué destinatarios? | Posible difusión indebida. |
 | PEN-05 | ¿Quién revisa las configuraciones publicadas por el director cuando afectan identidad de una propiedad? | Cambios no deseados en informes. |
 | PEN-06 | ¿Cuáles son límites por prioridad y cuándo una alerta crítica escala? | Avisos inefectivos o métricas imprecisas. |

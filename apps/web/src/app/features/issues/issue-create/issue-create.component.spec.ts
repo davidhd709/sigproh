@@ -51,18 +51,21 @@ describe('IssueCreateComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('PEN-03: Bloquea la creación de cualquier novedad para Auxiliar de Gerencia', () => {
+  it('PEN-03: el Auxiliar de Gerencia puede registrar novedades', () => {
+    mockAuthService.isAuxiliar.mockReturnValue(true);
+    mockAuthService.isAdmin.mockReturnValue(false);
+    mockIssuesService.createIssue.mockReturnValue(of({ id: 'new-issue-aux' }));
+
     component.title = 'Novedad de prueba';
     component.description = 'Detalle de prueba';
+    component.scope = 'PROPIEDAD';
     component.categoryId = 'cat-1';
     component.propertyId = 'prop-1';
     component.priority = 'MEDIA';
 
     component.onSubmit();
 
-    expect(mockIssuesService.createIssue).not.toHaveBeenCalled();
-    expect(component.errorMessage()).toContain('PEN-03');
-    expect(component.errorMessage()).toContain('Auxiliar de Gerencia');
+    expect(mockIssuesService.createIssue).toHaveBeenCalled();
   });
 
   it('RN-001: Bloquea la creación de novedades para Administrador de Sistema', () => {

@@ -10,7 +10,7 @@
         </span>
         <h1 class="report-title">{{ rep.title }}</h1>
         <div class="report-pills">
-          <span class="pill" [attr.data-tone]="statusTone(rep.status)">{{ statusLabel(rep.status) }}</span>
+          <span class="pill" [attr.data-tone]="statusTone(rep.status)">{{ reportStatusLabel(rep.status) }}</span>
           <span class="report-period">
             <app-icon name="calendar" />
             {{ rep.periodStart | date: 'd MMM' }} – {{ rep.periodEnd | date: 'd MMM y' }}
@@ -42,7 +42,7 @@
         @switch (rep.status) {
           @case ('BORRADOR') {
             <strong>Borrador en edición</strong>
-            <span>Revisa los textos y las evidencias. Cuando esté listo, envíalo a la Dirección.</span>
+            <span>Solo tú y la Dirección lo ven. Revisa los textos, elige las fotos y finalízalo para publicarlo.</span>
           }
           @case ('EN_REVISION') {
             <strong>En revisión</strong>
@@ -53,9 +53,9 @@
             <span>{{ rep.approvalNotes || 'Atiende las observaciones antes de enviarlo de nuevo.' }}</span>
           }
           @case ('APROBADO') {
-            <strong>Aprobado</strong>
+            <strong>Finalizado</strong>
             <span>
-              Por {{ rep.approvedByName || 'Dirección Operativa' }}
+              Por {{ rep.approvedByName || rep.createdByName }}
               @if (rep.approvedAt) {
                 el {{ rep.approvedAt | date: 'd MMM y' }}
               }
@@ -68,9 +68,9 @@
       </div>
 
       <div class="status-actions">
-        @if (canSendToReview()) {
-          <button type="button" class="btn-primary" (click)="sendToReview()" [disabled]="isSubmittingAction()">
-            <app-icon name="send" /> Enviar a revisión
+        @if (canFinalize()) {
+          <button type="button" class="btn-primary btn-success" (click)="finalize()" [disabled]="isSubmittingAction()">
+            <app-icon name="check-circle" /> Finalizar informe
           </button>
         }
         @if (canReview()) {
@@ -133,7 +133,7 @@
           </div>
           <div class="doc-code">
             <strong>{{ rep.code }}</strong>
-            <span>v{{ rep.version }} · {{ statusLabel(rep.status) }}</span>
+            <span>v{{ rep.version }} · {{ reportStatusLabel(rep.status) }}</span>
           </div>
         </header>
 
@@ -328,7 +328,13 @@
     <!-- Evidencias -->
     @if (activeTab === 'EVIDENCES') {
       <section class="section">
-        <p class="section-hint">Marca las evidencias que deben aparecer en el documento. Los archivos originales no se modifican.</p>
+        <p class="section-hint">
+          @if (canEdit()) {
+            Todas las fotos de las novedades vienen marcadas; desmarca las que no quieras en el informe. Los archivos originales no se modifican.
+          } @else {
+            Fotos y evidencias incluidas en el informe.
+          }
+        </p>
         @if (rep.operationalData?.availableEvidences; as evidences) {
           @if (evidences.length === 0) {
             <p class="panel-empty">No hay evidencias en las novedades de este período.</p>
@@ -336,7 +342,7 @@
             <div class="evidence-grid">
               @for (ev of evidences; track ev.id) {
                 <label class="evidence-option" [class.selected]="isEvidenceSelected(ev.id)">
-                  <input type="checkbox" [checked]="isEvidenceSelected(ev.id)" (change)="toggleEvidence(ev.id)" />
+                  <input type="checkbox" [checked]="isEvidenceSelected(ev.id)" [disabled]="!canEdit()" (change)="toggleEvidence(ev.id)" />
                   <span class="evidence-check"><app-icon name="check" /></span>
                   <span class="evidence-info">
                     <strong>{{ ev.fileName }}</strong>
@@ -348,20 +354,22 @@
             </div>
           }
         }
-        <div class="form-actions">
-          <button type="button" class="btn-primary" (click)="saveDraft()" [disabled]="isSaving()">
-            <app-icon name="save" /> Guardar selección
-          </button>
-        </div>
+        @if (canEdit()) {
+          <div class="form-actions">
+            <button type="button" class="btn-primary" (click)="saveDraft()" [disabled]="isSaving()">
+              <app-icon name="save" /> Guardar selección
+            </button>
+          </div>
+        }
       </section>
     }
 
     <!-- Versiones -->
     @if (activeTab === 'VERSIONS') {
       <section class="section">
-        <p class="section-hint">Cada versión aprobada queda sellada y no se puede modificar.</p>
+        <p class="section-hint">Cada versión finalizada queda sellada y no se puede modificar.</p>
         @if (rep.status !== 'APROBADO' && (!rep.versions || rep.versions.length === 0)) {
-          <p class="panel-empty">Aún no hay versiones aprobadas. Este documento está {{ statusLabel(rep.status).toLowerCase() }}.</p>
+          <p class="panel-empty">Aún no hay versiones finalizadas. Este documento está {{ reportStatusLabel(rep.status).toLowerCase() }}.</p>
         } @else {
           <ul class="row-list">
             @if (rep.status === 'APROBADO') {

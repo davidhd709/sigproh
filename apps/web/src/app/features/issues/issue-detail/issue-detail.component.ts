@@ -30,16 +30,15 @@ import {
 } from '../../../core/models/issue.model';
 
 type DetailAction =
-  | 'approve-closure'
+  | 'close'
   | 'confirm-responsible'
-  | 'request-closure'
+  | 'attach-final'
   | 'reopen'
   | 'urgent-measure'
   | 'new-activity'
   | 'reassign'
   | 'change-priority'
   | 'attach'
-  | 'return'
   | 'discard';
 
 interface ActionItem {
@@ -52,10 +51,9 @@ interface ActionItem {
 
 /** Etapas visibles del flujo; cada estado del backend se ubica en una de ellas. */
 const FLOW_STEPS: { label: string; statuses: string[] }[] = [
-  { label: 'Reportada', statuses: ['REGISTRADA', 'EN_REVISION'] },
-  { label: 'Asignada', statuses: ['ASIGNADA'] },
-  { label: 'En atención', statuses: ['EN_ATENCION', 'EN_PROCESO', 'DEVUELTA', 'REABIERTA', 'ATENDIDA'] },
-  { label: 'Por cerrar', statuses: ['PENDIENTE_CIERRE', 'VERIFICADA'] },
+  { label: 'Por asignar', statuses: ['REGISTRADA', 'EN_REVISION'] },
+  // ASIGNADA y PENDIENTE_CIERRE ya no se usan; se ubican en proceso por compatibilidad
+  { label: 'En proceso', statuses: ['EN_ATENCION', 'ASIGNADA', 'PENDIENTE_CIERRE'] },
   { label: 'Cerrada', statuses: ['CERRADA'] },
 ];
 
@@ -120,46 +118,46 @@ export class IssueDetailComponent {
     const list: ActionItem[] = [];
     const isCritical = current.priority === 'CRITICA' || current.initialPriority === 'CRITICA';
 
-    if (this.canClose() && current.status === 'PENDIENTE_CIERRE') {
-      list.push({ key: 'approve-closure', label: 'Aprobar cierre', icon: 'check-circle', tone: 'success' });
+    const isOpen = current.status !== 'CERRADA' && current.status !== 'DESCARTADA';
+    const canAssign = this.authService.canAssignIssues();
+    const needsFinalPhoto = this.canClose() && this.hasMissingFinalEvidence();
+
+    // Primero lo que destraba el flujo: asignar, atender lo urgente, subir la foto final, cerrar
+    if (canAssign && isOpen && !current.assignedUserId) {
+      list.push({ key: 'confirm-responsible', label: 'Asignar responsable', icon: 'user' });
     }
-    if (director && !current.assignedUserId) {
-      list.push({ key: 'confirm-responsible', label: 'Confirmar responsable', icon: 'user' });
-    }
-    if (isCritical && !current.urgentMeasures && current.status !== 'CERRADA' && current.status !== 'DESCARTADA') {
+    if (isCritical && !current.urgentMeasures && isOpen) {
       list.push({ key: 'urgent-measure', label: 'Registrar medida urgente', icon: 'alert-octagon', tone: 'danger' });
     }
-    if (this.canRequestClosure()) {
-      list.push({
-        key: 'request-closure',
-        label: 'Solicitar cierre',
-        icon: 'flag',
-        hint: this.hasMissingFinalEvidence() ? 'Falta una evidencia de etapa final' : undefined,
-      });
+    if (needsFinalPhoto) {
+      list.push({ key: 'attach-final', label: 'Subir foto final', icon: 'camera', hint: 'Se necesita para cerrar' });
     }
-    if (this.canClose() && current.status !== 'PENDIENTE_CIERRE') {
-      list.push({ key: 'approve-closure', label: 'Cerrar novedad', icon: 'check-circle', tone: 'success' });
+    if (this.canClose()) {
+      list.push({
+        key: 'close',
+        label: 'Cerrar novedad',
+        icon: 'check-circle',
+        tone: 'success',
+        hint: this.closeBlocker() ?? undefined,
+      });
     }
     if (this.canReopen()) {
       list.push({ key: 'reopen', label: 'Reabrir', icon: 'refresh' });
     }
-    if (this.canCreateActivity() && current.status !== 'CERRADA' && current.status !== 'DESCARTADA') {
-      list.push({ key: 'new-activity', label: 'Nueva actividad', icon: 'plus' });
-    }
-    if (current.status !== 'CERRADA' && current.status !== 'DESCARTADA' && !this.authService.isAdmin()) {
+    if (isOpen && !needsFinalPhoto && !this.authService.isAdmin()) {
       list.push({ key: 'attach', label: 'Adjuntar foto o archivo', icon: 'camera' });
     }
-    if (isCritical && current.urgentMeasures && current.status !== 'CERRADA' && current.status !== 'DESCARTADA') {
+    if (isCritical && current.urgentMeasures && isOpen) {
       list.push({ key: 'urgent-measure', label: 'Agregar medida urgente', icon: 'alert-octagon' });
     }
-    if (director && current.assignedUserId) {
-      list.push({ key: 'reassign', label: 'Reasignar responsable', icon: 'user' });
+    if (this.canCreateActivity()) {
+      list.push({ key: 'new-activity', label: 'Dividir en actividades', icon: 'plus' });
     }
-    if (director) {
+    if (canAssign && isOpen && current.assignedUserId) {
+      list.push({ key: 'reassign', label: 'Cambiar responsable', icon: 'user' });
+    }
+    if (director && isOpen) {
       list.push({ key: 'change-priority', label: 'Cambiar prioridad', icon: 'zap' });
-    }
-    if (this.canReturn()) {
-      list.push({ key: 'return', label: 'Devolver solicitud', icon: 'undo', tone: 'warning' });
     }
     if (this.canDiscard()) {
       list.push({ key: 'discard', label: 'Descartar', icon: 'ban', tone: 'danger' });
@@ -167,18 +165,47 @@ export class IssueDetailComponent {
     return list;
   });
   readonly primaryAction = computed(() => this.actions()[0] ?? null);
+
+  /** Explicación en una línea de qué sigue y quién lo hace, pensada para alguien nuevo. */
+  readonly nextStepHint = computed<string | null>(() => {
+    const current = this.issue();
+    const user = this.authService.currentUser();
+    if (!current || !user) return null;
+    const isResponsible = current.assignedUserId === user.id;
+
+    switch (current.status) {
+      case 'REGISTRADA':
+      case 'EN_REVISION':
+        return this.authService.canAssignIssues()
+          ? 'Nadie la tiene a cargo todavía. Asígnala a un coordinador para que la atienda.'
+          : 'Está esperando que Gerencia o la Dirección le asignen un responsable.';
+      case 'CERRADA':
+        return 'Esta novedad ya se resolvió.';
+      case 'DESCARTADA':
+        return 'Esta novedad se descartó y no requiere atención.';
+      default:
+        if (isResponsible) {
+          return this.hasMissingFinalEvidence()
+            ? 'Está a tu cargo. Cuando termines, sube la foto final y ciérrala.'
+            : 'Está a tu cargo. Cuando termines el trabajo, ciérrala.';
+        }
+        return current.assignedUser
+          ? `La está atendiendo ${current.assignedUser.firstName} ${current.assignedUser.lastName}.`
+          : 'Está en proceso.';
+    }
+  });
   readonly moreActions = computed(() => this.actions().slice(1));
 
   runAction(key: DetailAction): void {
     this.showMoreActions.set(false);
     switch (key) {
-      case 'approve-closure':
+      case 'close':
         return this.openCloseModal();
       case 'confirm-responsible':
       case 'reassign':
         return this.openAssignModal();
-      case 'request-closure':
-        return this.openRequestClosureModal();
+      case 'attach-final':
+        return this.openUploadEvidenceModal('FINAL');
       case 'reopen':
         return this.openReopenModal();
       case 'urgent-measure':
@@ -189,8 +216,6 @@ export class IssueDetailComponent {
         return this.showPriorityModal.set(true);
       case 'attach':
         return this.openUploadEvidenceModal();
-      case 'return':
-        return this.openReturnModal();
       case 'discard':
         return this.openDiscardModal();
     }
@@ -430,7 +455,7 @@ export class IssueDetailComponent {
 
   // --- F4: Pestañas, Actividades y Comentarios ---
 
-  readonly activeTab = signal<'actividades' | 'comentarios' | 'evidencias' | 'historial'>('actividades');
+  readonly activeTab = signal<'actividades' | 'comentarios' | 'evidencias' | 'historial'>('comentarios');
 
   selectTab(tab: 'actividades' | 'comentarios' | 'evidencias' | 'historial'): void {
     this.activeTab.set(tab);
@@ -466,6 +491,7 @@ export class IssueDetailComponent {
     const current = this.issue();
     const user = this.authService.currentUser();
     if (!current || !user) return false;
+    if (current.status === 'CERRADA' || current.status === 'DESCARTADA') return false;
     return this.authService.isDirector() || current.assignedUserId === user.id;
   }
 
@@ -681,53 +707,42 @@ export class IssueDetailComponent {
   selectedEvidenceStage: EvidenceStage = 'SOPORTE';
   selectedEvidenceActivityId = '';
 
-  // --- F5 / RF-012, RF-023 a RF-028: Gestión de Cierre Operativo ---
-  readonly showRequestClosureModal = signal<boolean>(false);
+  // --- F5 / RF-012, RF-023 a RF-028: Atención y cierre directo ---
   readonly showCloseModal = signal<boolean>(false);
-  readonly showReturnModal = signal<boolean>(false);
   readonly showReopenModal = signal<boolean>(false);
   readonly showDiscardModal = signal<boolean>(false);
 
-  closureNotes = '';
   closureObservations = '';
-  returnReason = '';
   reopenReason = '';
   discardReason = '';
 
-  canRequestClosure(): boolean {
+  /** Cerrar y reabrir: Director o coordinador responsable de la novedad. */
+  canChangeState(): boolean {
     const current = this.issue();
     const user = this.authService.currentUser();
     if (!current || !user) return false;
-    if (current.status !== 'ASIGNADA' && current.status !== 'EN_ATENCION') return false;
-    return this.authService.isDirector() || current.assignedUserId === user.id;
-  }
-
-  canClose(): boolean {
-    const current = this.issue();
-    if (!current || !this.authService.isDirector()) return false;
     return (
-      current.status === 'PENDIENTE_CIERRE' ||
-      current.status === 'EN_ATENCION' ||
-      current.status === 'ASIGNADA'
+      this.authService.isDirector() ||
+      (this.authService.isCoordinator() && current.assignedUserId === user.id)
     );
   }
 
-  canReturn(): boolean {
-    const current = this.issue();
-    if (!current || !this.authService.isDirector()) return false;
-    return current.status === 'PENDIENTE_CIERRE' || current.status === 'EN_REVISION';
+  canClose(): boolean {
+    const status = this.issue()?.status;
+    return (
+      this.canChangeState() &&
+      (status === 'ASIGNADA' || status === 'EN_ATENCION' || status === 'PENDIENTE_CIERRE')
+    );
   }
 
   canReopen(): boolean {
-    const current = this.issue();
-    if (!current || !this.authService.isDirector()) return false;
-    return current.status === 'CERRADA';
+    return this.canChangeState() && this.issue()?.status === 'CERRADA';
   }
 
   canDiscard(): boolean {
     const current = this.issue();
     if (!current || !this.authService.isDirector()) return false;
-    return current.status === 'REGISTRADA' || current.status === 'EN_REVISION';
+    return current.status !== 'CERRADA' && current.status !== 'DESCARTADA';
   }
 
   hasMissingFinalEvidence(): boolean {
@@ -737,11 +752,25 @@ export class IssueDetailComponent {
     return !attachments.some((att) => att.stage === 'FINAL');
   }
 
-  openUploadEvidenceModal(): void {
+  /** Motivo por el que aún no se puede cerrar, o null si cumple los requisitos. */
+  closeBlocker(): string | null {
+    const pending = (this.issue()?.activities || []).filter(
+      (a) => a.status === 'PENDIENTE' || a.status === 'EN_CURSO' || a.status === 'BLOQUEADA',
+    ).length;
+    if (pending > 0) {
+      return pending === 1
+        ? 'Hay 1 actividad sin terminar'
+        : `Hay ${pending} actividades sin terminar`;
+    }
+    if (this.hasMissingFinalEvidence()) return 'Falta una evidencia de etapa final';
+    return null;
+  }
+
+  openUploadEvidenceModal(stage: EvidenceStage = 'SOPORTE'): void {
     const current = this.issue();
     if (!current) return;
     this.selectedFile = null;
-    this.selectedEvidenceStage = 'SOPORTE';
+    this.selectedEvidenceStage = stage;
     this.selectedEvidenceActivityId = '';
     this.showUploadEvidenceModal.set(true);
   }
@@ -814,39 +843,6 @@ export class IssueDetailComponent {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  openRequestClosureModal(): void {
-    this.closureNotes = '';
-    this.showRequestClosureModal.set(true);
-  }
-
-  submitRequestClosure(): void {
-    const current = this.issue();
-    if (!current) return;
-
-    this.actionLoading.set(true);
-    this.errorMessage.set(null);
-
-    this.issuesService
-      .requestClosure(current.id, { notes: this.closureNotes.trim() || undefined })
-      .subscribe({
-        next: (updated) => {
-          this.actionLoading.set(false);
-          this.issue.set(updated);
-          this.showRequestClosureModal.set(false);
-          this.closureNotes = '';
-          this.successMessage.set(
-            'Solicitud de cierre enviada a la Dirección Operativa para verificación.',
-          );
-          this.loadIssue(current.id);
-        },
-        error: (err) => {
-          this.actionLoading.set(false);
-          const msg = err.error?.message || 'Error al solicitar cierre.';
-          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
-        },
-      });
-  }
-
   openCloseModal(): void {
     this.closureObservations = '';
     this.showCloseModal.set(true);
@@ -869,52 +865,12 @@ export class IssueDetailComponent {
           this.issue.set(updated);
           this.showCloseModal.set(false);
           this.closureObservations = '';
-          this.successMessage.set(
-            'Novedad cerrada definitivamente y verificada a conformidad.',
-          );
+          this.successMessage.set('Novedad cerrada.');
           this.loadIssue(current.id);
         },
         error: (err) => {
           this.actionLoading.set(false);
           const msg = err.error?.message || 'Error al cerrar novedad.';
-          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
-        },
-      });
-  }
-
-  openReturnModal(): void {
-    this.returnReason = '';
-    this.showReturnModal.set(true);
-  }
-
-  submitReturn(): void {
-    const current = this.issue();
-    if (!current) return;
-
-    if (!this.returnReason.trim()) {
-      this.errorMessage.set('El motivo de devolución es obligatorio.');
-      return;
-    }
-
-    this.actionLoading.set(true);
-    this.errorMessage.set(null);
-
-    this.issuesService
-      .returnIssue(current.id, { reason: this.returnReason.trim() })
-      .subscribe({
-        next: (updated) => {
-          this.actionLoading.set(false);
-          this.issue.set(updated);
-          this.showReturnModal.set(false);
-          this.returnReason = '';
-          this.successMessage.set(
-            'Solicitud devuelta al responsable para subsanación.',
-          );
-          this.loadIssue(current.id);
-        },
-        error: (err) => {
-          this.actionLoading.set(false);
-          const msg = err.error?.message || 'Error al devolver caso.';
           this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
         },
       });

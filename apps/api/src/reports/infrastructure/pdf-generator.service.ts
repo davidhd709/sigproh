@@ -16,6 +16,8 @@ export class PdfGeneratorService {
       secondaryColor?: string;
       footerText?: string;
       contactInfo?: string;
+      /** Contenido de las fotos seleccionadas (JPEG/PNG) indexado por id de evidencia. */
+      evidenceImages?: Map<string, Buffer>;
     },
   ): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
@@ -139,7 +141,7 @@ export class PdfGeneratorService {
           .fillColor(primaryColor)
           .text(`CÓDIGO: ${report.code}`, 55, metaBoxY + 8)
           .text(`VERSIÓN: v${report.version}`, 200, metaBoxY + 8)
-          .text(`ESTADO: ${report.status}`, 340, metaBoxY + 8);
+          .text(`ESTADO: ${report.status === 'APROBADO' ? 'FINALIZADO' : report.status}`, 340, metaBoxY + 8);
 
         let locationLabel = `ÁMBITO: ${report.scope}`;
         if (report.propertyName) {
@@ -406,7 +408,7 @@ export class PdfGeneratorService {
             .font('Helvetica-Bold')
             .fillColor(primaryColor)
             .text(
-              `5. EVIDENCIAS AUTORIZADAS SELECCIONADAS (${report.selectedAttachmentIds.length})`,
+              `5. FOTOS Y EVIDENCIAS (${report.selectedAttachmentIds.length})`,
               45,
               doc.y,
             );
@@ -416,7 +418,46 @@ export class PdfGeneratorService {
             report.selectedAttachmentIds.includes(e.id),
           );
 
-          for (const ev of selectedEvs) {
+          // Fotos en dos columnas; cada una con su referencia debajo
+          const photos = selectedEvs.filter((e) => options?.evidenceImages?.has(e.id));
+          const photoGap = 10;
+          const photoWidth = (pageWidth - photoGap) / 2;
+          const photoHeight = 170;
+          const captionHeight = 22;
+
+          for (let i = 0; i < photos.length; i += 2) {
+            checkPageBreak(photoHeight + captionHeight + 10);
+            const rowY = doc.y;
+
+            photos.slice(i, i + 2).forEach((ev, col) => {
+              const x = 45 + col * (photoWidth + photoGap);
+              try {
+                doc.image(options!.evidenceImages!.get(ev.id)!, x, rowY, {
+                  fit: [photoWidth, photoHeight],
+                  align: 'center',
+                  valign: 'center',
+                });
+              } catch {
+                doc.rect(x, rowY, photoWidth, photoHeight).stroke(borderColor);
+              }
+              doc.fontSize(7.5).font('Helvetica-Bold').fillColor(darkText);
+              doc.text(`[${ev.issueCode}] ${ev.fileName}`, x, rowY + photoHeight + 4, {
+                width: photoWidth,
+                ellipsis: true,
+                height: 10,
+              });
+              doc.font('Helvetica').fillColor(mutedText);
+              doc.text(`Etapa: ${ev.stage} | Subido: ${ev.createdAt.split('T')[0]}`, x, rowY + photoHeight + 13, {
+                width: photoWidth,
+                height: 10,
+              });
+            });
+
+            doc.y = rowY + photoHeight + captionHeight + 8;
+          }
+
+          // Documentos u otros formatos se listan como referencia
+          for (const ev of selectedEvs.filter((e) => !options?.evidenceImages?.has(e.id))) {
             checkPageBreak(30);
             doc
               .roundedRect(45, doc.y, pageWidth, 26, 3)
@@ -515,8 +556,8 @@ export class PdfGeneratorService {
           );
 
         const approvalText = report.approvedByName
-          ? `Aprobado por: ${report.approvedByName} el ${report.approvedAt ? report.approvedAt.split('T')[0] : 'N/A'}${report.pdfSha256 ? ` | Integridad SHA-256: ${report.pdfSha256.substring(0, 16)}...` : ''}`
-          : 'Documento en estado Borrador / Revisión preliminar (No constituye aprobación oficial definitiva)';
+          ? `Finalizado por: ${report.approvedByName} el ${report.approvedAt ? report.approvedAt.split('T')[0] : 'N/A'}${report.pdfSha256 ? ` | Integridad SHA-256: ${report.pdfSha256.substring(0, 16)}...` : ''}`
+          : 'Documento en borrador (no constituye un informe finalizado)';
 
         doc
           .font('Helvetica')
@@ -529,6 +570,8 @@ export class PdfGeneratorService {
         const range = doc.bufferedPageRange();
         for (let i = range.start; i < range.start + range.count; i++) {
           doc.switchToPage(i);
+          // El pie está bajo el margen inferior; sin anularlo, pdfkit crea una página en blanco por cada pie
+          doc.page.margins.bottom = 0;
           doc
             .strokeColor(borderColor)
             .lineWidth(0.5)

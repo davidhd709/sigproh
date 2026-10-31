@@ -130,16 +130,16 @@ export class ReportsController {
   }
 
   // =========================================================================
-  // REVISIÓN Y APROBACIÓN FORMAL (RF-037 a RF-039, CP-21 a CP-24)
+  // FINALIZACIÓN Y REVISIÓN (RF-037 a RF-039, CP-21 a CP-24)
   // =========================================================================
 
-  @Post(':id/send-review')
+  @Post(':id/finalize')
   @HttpCode(200)
-  async sendToReview(
+  async finalize(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
   ): Promise<ReportResponseDto> {
-    return this.reportsService.sendToReview(user, id);
+    return this.reportsService.finalize(user, id);
   }
 
   @Post(':id/review')

@@ -261,10 +261,27 @@ export class App {
     });
   }
 
+  /** Un toque entra con la cuenta de prueba: en el celular el botón de ingresar queda fuera de la vista. */
   fillDevCredentials(acc: AvailableAccount): void {
-    if (!acc.password) return;
+    if (!acc.password || this.loginSubmitting()) return;
     this.loginEmail = acc.email;
     this.loginPassword = acc.password;
+    this.onLoginSubmit();
+  }
+
+  /** Ícono, rol corto y nombre de pila: caben en dos columnas incluso a 320 px. */
+  devAccountView(acc: AvailableAccount): { icon: IconName; role: string; person: string | null } {
+    const views: Record<string, { icon: IconName; role: string }> = {
+      DIRECTOR_OPERATIVO: { icon: 'briefcase', role: 'Director' },
+      COORDINADOR_OPERATIVO: { icon: 'clipboard', role: 'Coordinador' },
+      GERENTE: { icon: 'building', role: 'Gerente' },
+      AUXILIAR_GERENCIA: { icon: 'file-text', role: 'Auxiliar' },
+      ADMINISTRADOR: { icon: 'settings', role: 'Administrador' },
+    };
+    const view = views[acc.role] ?? { icon: 'user' as IconName, role: roleLabel(acc.role) };
+    const firstName = acc.name.split(' ')[0];
+    // El administrador no tiene nombre de persona; no se repite el rol
+    return { ...view, person: firstName === view.role ? null : firstName };
   }
 
   onLogout(): void {

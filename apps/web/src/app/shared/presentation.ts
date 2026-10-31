@@ -6,12 +6,13 @@
 export type Tone = 'neutral' | 'info' | 'progress' | 'warning' | 'success' | 'danger' | 'muted';
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
-  REGISTRADA: { label: 'Registrada', tone: 'neutral' },
-  EN_REVISION: { label: 'En revisión', tone: 'warning' },
-  ASIGNADA: { label: 'Asignada', tone: 'info' },
-  EN_ATENCION: { label: 'En atención', tone: 'progress' },
+  // Novedades: el usuario solo ve tres estados (Por asignar, En proceso, Cerrada)
+  REGISTRADA: { label: 'Por asignar', tone: 'warning' },
+  EN_REVISION: { label: 'Por asignar', tone: 'warning' },
+  ASIGNADA: { label: 'En proceso', tone: 'progress' },
+  EN_ATENCION: { label: 'En proceso', tone: 'progress' },
   EN_PROCESO: { label: 'En proceso', tone: 'progress' },
-  PENDIENTE_CIERRE: { label: 'Pendiente de cierre', tone: 'warning' },
+  PENDIENTE_CIERRE: { label: 'En proceso', tone: 'progress' },
   ATENDIDA: { label: 'Atendida', tone: 'success' },
   VERIFICADA: { label: 'Verificada', tone: 'success' },
   CERRADA: { label: 'Cerrada', tone: 'success' },
@@ -27,7 +28,7 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   // Informes
   BORRADOR: { label: 'Borrador', tone: 'neutral' },
   DEVUELTO: { label: 'Devuelto', tone: 'danger' },
-  APROBADO: { label: 'Aprobado', tone: 'success' },
+  APROBADO: { label: 'Finalizado', tone: 'success' },
 };
 
 const PRIORITY: Record<string, { label: string; tone: Tone }> = {
@@ -41,6 +42,10 @@ const humanize = (code: string) => code.charAt(0) + code.slice(1).toLowerCase().
 
 export const statusLabel = (status: string): string => STATUS[status]?.label ?? humanize(status);
 export const statusTone = (status: string): Tone => STATUS[status]?.tone ?? 'neutral';
+
+/** Los informes comparten códigos con las novedades (EN_REVISION) pero se leen distinto. */
+const REPORT_STATUS: Record<string, string> = { EN_REVISION: 'En revisión' };
+export const reportStatusLabel = (status: string): string => REPORT_STATUS[status] ?? statusLabel(status);
 export const priorityLabel = (priority: string): string => PRIORITY[priority]?.label ?? humanize(priority);
 export const priorityTone = (priority: string): Tone => PRIORITY[priority]?.tone ?? 'neutral';
 

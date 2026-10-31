@@ -4,15 +4,12 @@ import { Tone } from '../../shared/presentation';
 /** Bandejas por rol (RF-027, sección 11.4 de los documentos). */
 export type InboxView =
   | 'ALL'
-  | 'TO_REVIEW'
   | 'UNASSIGNED'
   | 'CRITICAL'
   | 'TO_CLOSE'
   | 'OVERDUE'
-  | 'BLOCKED'
   | 'MINE'
   | 'MY_ACTIVITIES'
-  | 'RETURNED'
   | 'STALE';
 
 export interface InboxViewDef {
@@ -29,17 +26,10 @@ const isOpen = (i: Issue) => i.status !== 'CERRADA' && i.status !== 'DESCARTADA'
 
 export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
   ALL: { key: 'ALL', label: 'Todas', hint: 'Todas las novedades', tone: 'neutral', match: () => true },
-  TO_REVIEW: {
-    key: 'TO_REVIEW',
-    label: 'Por revisar',
-    hint: 'Recién reportadas, esperan tu revisión',
-    tone: 'warning',
-    match: (i) => i.status === 'REGISTRADA' || i.status === 'EN_REVISION',
-  },
   UNASSIGNED: {
     key: 'UNASSIGNED',
-    label: 'Sin responsable',
-    hint: 'Sin responsable confirmado',
+    label: 'Por asignar',
+    hint: 'Nadie las tiene a cargo todavía',
     tone: 'warning',
     match: (i) => isOpen(i) && !i.assignedUserId,
   },
@@ -52,10 +42,10 @@ export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
   },
   TO_CLOSE: {
     key: 'TO_CLOSE',
-    label: 'Por cerrar',
-    hint: 'Solicitaron cierre y esperan aprobación',
+    label: 'Listas para cerrar',
+    hint: 'En atención y sin actividades pendientes',
     tone: 'success',
-    match: (i) => i.status === 'PENDIENTE_CIERRE',
+    match: (i) => i.status === 'EN_ATENCION' && (i.inbox?.openActivities ?? 0) === 0,
   },
   OVERDUE: {
     key: 'OVERDUE',
@@ -64,17 +54,10 @@ export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
     tone: 'danger',
     match: (i) => isOpen(i) && (i.inbox?.overdueActivities ?? 0) > 0,
   },
-  BLOCKED: {
-    key: 'BLOCKED',
-    label: 'Con bloqueos',
-    hint: 'Con actividades bloqueadas',
-    tone: 'danger',
-    match: (i) => isOpen(i) && (i.inbox?.blockedActivities ?? 0) > 0,
-  },
   MINE: {
     key: 'MINE',
-    label: 'Asignadas a mí',
-    hint: 'Eres el responsable principal',
+    label: 'A mi cargo',
+    hint: 'Novedades que debes atender',
     tone: 'info',
     match: (i, userId) => isOpen(i) && i.assignedUserId === userId,
   },
@@ -84,13 +67,6 @@ export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
     hint: 'Tienes actividades por hacer',
     tone: 'info',
     match: (i) => isOpen(i) && (i.inbox?.myOpenActivities ?? 0) > 0,
-  },
-  RETURNED: {
-    key: 'RETURNED',
-    label: 'Devueltas',
-    hint: 'La Dirección pidió correcciones',
-    tone: 'warning',
-    match: (i) => isOpen(i) && !!i.inbox?.returned,
   },
   STALE: {
     key: 'STALE',
@@ -108,11 +84,14 @@ export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
 export function viewsForRole(role?: string | null): InboxView[] {
   switch (role) {
     case 'DIRECTOR_OPERATIVO':
-      return ['ALL', 'TO_REVIEW', 'UNASSIGNED', 'CRITICAL', 'TO_CLOSE', 'OVERDUE', 'BLOCKED'];
+      return ['ALL', 'UNASSIGNED', 'CRITICAL', 'TO_CLOSE', 'OVERDUE'];
     case 'COORDINADOR_OPERATIVO':
-      return ['ALL', 'MINE', 'MY_ACTIVITIES', 'OVERDUE', 'RETURNED', 'BLOCKED'];
+      return ['ALL', 'MINE', 'TO_CLOSE', 'MY_ACTIVITIES', 'OVERDUE'];
+    case 'GERENTE':
+    case 'AUXILIAR_GERENCIA':
+      return ['ALL', 'UNASSIGNED', 'CRITICAL', 'STALE'];
     default:
-      return ['ALL', 'CRITICAL', 'STALE', 'TO_CLOSE'];
+      return ['ALL', 'CRITICAL', 'STALE'];
   }
 }
 

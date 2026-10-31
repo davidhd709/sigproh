@@ -7,6 +7,7 @@ import {
 import {
   IssuePriority,
   IssueScope,
+  IssueStatus,
   Role,
 } from '../../generated/prisma/client';
 import { IssuesService } from './issues.service';
@@ -52,21 +53,6 @@ describe('IssuesService', () => {
         title: 'Fuga de agua',
         description: 'En sótano',
         priority: IssuePriority.MEDIA,
-        categoryId: 'cat-1',
-        propertyId: 'prop-1',
-      }),
-    ).rejects.toThrow(ForbiddenException);
-  });
-
-  it('PEN-03: debe rechazar creación de novedad crítica por parte del Auxiliar de Gerencia', async () => {
-    const service = new IssuesService({} as any, {} as any);
-
-    await expect(
-      service.create(auxiliarUser, {
-        scope: IssueScope.PROPIEDAD,
-        title: 'Inundación masiva',
-        description: 'Urgente',
-        priority: IssuePriority.CRITICA,
         categoryId: 'cat-1',
         propertyId: 'prop-1',
       }),
@@ -135,61 +121,108 @@ describe('IssuesService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('debe generar código correlativo atómico e incluir sugerencia automática de responsable líder', async () => {
-    const mockScopeAuth = {
-      validatePropertyAccess: vi.fn().mockResolvedValue(true),
+  describe('Asignación automática al reportar', () => {
+    const gerente: AuthenticatedUser = {
+      id: 'user-ger',
+      organizationId,
+      email: 'gerente@sigproh.local',
+      role: Role.GERENTE,
     };
 
-    const mockPrisma = {
-      category: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: 'cat-1',
-          organizationId,
-          scope: IssueScope.PROPIEDAD,
-          isActive: true,
-        }),
-      },
-      propertyAssignment: {
-        findFirst: vi.fn().mockResolvedValue({
-          userId: 'user-coord1',
-          isLead: true,
-        }),
-      },
-      $transaction: vi.fn().mockImplementation(async (callback) => {
-        const tx = {
-          issueSequence: {
-            findUnique: vi.fn().mockResolvedValue(null),
-            create: vi.fn().mockResolvedValue({ lastValue: 6 }),
-          },
-          $queryRaw: vi.fn().mockResolvedValue([{ lastValue: 6 }]),
-          issue: {
-            count: vi.fn().mockResolvedValue(5),
-            create: vi.fn().mockImplementation((args) => args.data),
-          },
-          issueEvent: {
-            create: vi.fn().mockResolvedValue({}),
-          },
-        };
-        return callback(tx);
-      }),
-    };
-
-    const service = new IssuesService(mockPrisma as any, mockScopeAuth as any);
-
-    const issue = await service.create(coordinadorUser, {
+    const dto = {
       scope: IssueScope.PROPIEDAD,
       title: 'Ascensor detenido',
       description: 'Piso 4',
       priority: IssuePriority.ALTA,
       categoryId: 'cat-1',
       propertyId: 'prop-1',
+    };
+
+    const build = (leadUserId: string | null) => {
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ lastValue: 6 }]),
+        issue: { create: vi.fn().mockImplementation((args) => args.data) },
+        issueEvent: { create: vi.fn().mockResolvedValue({}) },
+        issueAssignment: { create: vi.fn().mockResolvedValue({}) },
+        // Director responsable de la propiedad
+        propertyAssignment: { findMany: vi.fn().mockResolvedValue([{ userId: 'user-dir-torre' }]) },
+        // Gerencia y Auxiliar
+        user: { findMany: vi.fn().mockResolvedValue([{ id: 'user-ger' }, { id: 'user-aux' }]) },
+        notification: { create: vi.fn().mockResolvedValue({}) },
+      };
+      const prisma = {
+        category: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: 'cat-1',
+            organizationId,
+            scope: IssueScope.PROPIEDAD,
+            isActive: true,
+          }),
+        },
+        propertyAssignment: {
+          findFirst: vi.fn().mockResolvedValue(leadUserId ? { userId: leadUserId, isLead: true } : null),
+        },
+        $transaction: vi.fn().mockImplementation(async (cb) => cb(tx)),
+      };
+      const scopeAuth = { validatePropertyAccess: vi.fn().mockResolvedValue(true) };
+      return { tx, service: new IssuesService(prisma as any, scopeAuth as any, {} as any) };
+    };
+
+    const recipients = (tx: any) =>
+      tx.notification.create.mock.calls.map((c: any) => c[0].data.recipientId);
+
+    it('si reporta un coordinador, queda a su cargo y en proceso sin avisar a quienes asignan', async () => {
+      const { tx, service } = build('user-coord-lead');
+
+      const issue = await service.create(coordinadorUser, dto);
+
+      expect(issue.code).toBe(`NOV-${new Date().getFullYear()}-0006`);
+      expect(issue.assignedUserId).toBe(coordinadorUser.id);
+      expect(issue.status).toBe(IssueStatus.EN_ATENCION);
+      expect(tx.issueAssignment.create).toHaveBeenCalledOnce();
+      expect(tx.notification.create).not.toHaveBeenCalled();
     });
 
-    expect(issue.code).toBe(`NOV-${new Date().getFullYear()}-0006`);
-    expect(issue.suggestedUserId).toBe('user-coord1');
+    it('si reporta Gerencia, pasa al coordinador principal y se le avisa', async () => {
+      const { tx, service } = build('user-coord-lead');
+
+      const issue = await service.create(gerente, dto);
+
+      expect(issue.assignedUserId).toBe('user-coord-lead');
+      expect(issue.status).toBe(IssueStatus.EN_ATENCION);
+      expect(recipients(tx)).toEqual(['user-coord-lead']);
+    });
+
+    it('sin coordinador principal queda por asignar y avisa al director responsable y a Gerencia', async () => {
+      const { tx, service } = build(null);
+
+      const issue = await service.create(gerente, dto);
+
+      expect(issue.assignedUserId).toBeNull();
+      expect(issue.status).toBe(IssueStatus.EN_REVISION);
+      expect(tx.issueAssignment.create).not.toHaveBeenCalled();
+      expect(tx.user.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            role: { in: [Role.GERENTE, Role.AUXILIAR_GERENCIA] },
+          }),
+        }),
+      );
+      // Gerencia reportó: no se avisa a sí misma
+      expect(recipients(tx)).toEqual(['user-dir-torre', 'user-aux']);
+    });
+
+    it('una novedad crítica alerta a Dirección y Gerencia aunque ya tenga responsable', async () => {
+      const { tx, service } = build(null);
+
+      await service.create(coordinadorUser, { ...dto, priority: IssuePriority.CRITICA });
+
+      expect(recipients(tx)).toEqual(['user-dir-torre', 'user-ger', 'user-aux']);
+      expect(tx.notification.create.mock.calls[0][0].data.title).toContain('ALERTA');
+    });
   });
 
-  it('CP-06: Asignación principal solo permitida para el Director Operativo', async () => {
+  it('CP-06: el Coordinador no puede asignar el responsable principal', async () => {
     const service = new IssuesService({} as any, {} as any);
 
     await expect(
@@ -208,6 +241,7 @@ describe('IssuesService', () => {
           scope: IssueScope.PROPIEDAD,
           propertyId: 'prop-1',
           assignedUserId: null,
+          status: IssueStatus.EN_REVISION,
         }),
       },
       user: {
@@ -221,6 +255,7 @@ describe('IssuesService', () => {
     };
 
     const mockScopeAuth = {
+      validatePropertyAccess: vi.fn().mockResolvedValue(true),
       hasPropertyAccess: vi.fn().mockResolvedValue(false), // Sin asignación
     };
 
@@ -243,6 +278,7 @@ describe('IssuesService', () => {
           scope: IssueScope.PROPIEDAD,
           propertyId: 'prop-1',
           assignedUserId: 'user-coord1', // Ya tenía asignado
+          status: IssueStatus.EN_ATENCION,
         }),
       },
       user: {
@@ -256,6 +292,7 @@ describe('IssuesService', () => {
     };
 
     const mockScopeAuth = {
+      validatePropertyAccess: vi.fn().mockResolvedValue(true),
       hasPropertyAccess: vi.fn().mockResolvedValue(true),
     };
 
@@ -618,5 +655,257 @@ describe('IssuesService', () => {
     // completedAt no debe estar presente en updateData (no se sobrescribe)
     expect(capturedUpdateData.completedAt).toBeUndefined();
   });
-});
 
+  describe('Flujo simplificado: asignación, cierre y descarte', () => {
+    const gerenteUser: AuthenticatedUser = {
+      id: 'user-ger',
+      organizationId,
+      email: 'gerente@sigproh.local',
+      role: Role.GERENTE,
+    };
+
+    const baseIssue = {
+      id: 'issue-9',
+      organizationId,
+      code: 'NOV-2026-0009',
+      title: 'Bomba de agua',
+      scope: IssueScope.PROPIEDAD,
+      propertyId: 'prop-1',
+      internalAreaId: null,
+      assignedUserId: 'user-coord1',
+      createdById: 'user-ger',
+      categoryId: 'cat-1',
+      closedAt: null,
+    };
+
+    const scopeAuth = {
+      validatePropertyAccess: vi.fn().mockResolvedValue(true),
+      hasPropertyAccess: vi.fn().mockResolvedValue(true),
+    };
+
+    const buildTx = (updateCount = 1): any => ({
+      issue: {
+        updateMany: vi.fn().mockResolvedValue({ count: updateCount }),
+        update: vi.fn().mockImplementation((args) => ({ ...baseIssue, ...args.data })),
+        findUniqueOrThrow: vi.fn().mockResolvedValue(baseIssue),
+      },
+      issueAssignment: {
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn().mockResolvedValue({}),
+      },
+      issueEvent: { create: vi.fn().mockResolvedValue({}) },
+      user: { findMany: vi.fn().mockResolvedValue([{ id: 'user-dir' }]) },
+      propertyAssignment: { findMany: vi.fn().mockResolvedValue([{ userId: 'user-dir' }]) },
+      notification: { create: vi.fn().mockResolvedValue({}) },
+    });
+
+    const buildPrisma = (issue: any, tx: any, extra: any = {}) => ({
+      issue: { findUnique: vi.fn().mockResolvedValue(issue) },
+      issueActivity: { count: vi.fn().mockResolvedValue(0) },
+      category: { findUnique: vi.fn().mockResolvedValue({ requiresEvidence: false }) },
+      issueAttachment: { count: vi.fn().mockResolvedValue(0) },
+      $transaction: vi.fn().mockImplementation(async (cb) => cb(tx)),
+      ...extra,
+    });
+
+    const coordinatorRecord = (id: string) => ({
+      user: {
+        findUnique: vi.fn().mockResolvedValue({
+          id,
+          organizationId,
+          firstName: 'Ana',
+          lastName: 'Ruiz',
+          email: `${id}@sigproh.local`,
+          role: Role.COORDINADOR_OPERATIVO,
+          isActive: true,
+        }),
+      },
+    });
+
+    it('la Gerencia asigna el responsable y la novedad pasa a en proceso', async () => {
+      const tx = buildTx();
+      const prisma = buildPrisma(
+        { ...baseIssue, assignedUserId: null, status: IssueStatus.EN_REVISION },
+        tx,
+        coordinatorRecord('user-coord1'),
+      );
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await service.assignPrincipal(gerenteUser, baseIssue.id, { assignedUserId: 'user-coord1' });
+
+      expect(tx.issue.updateMany).toHaveBeenCalledWith({
+        where: { id: baseIssue.id, status: { in: [IssueStatus.EN_REVISION] } },
+        data: { status: IssueStatus.EN_ATENCION },
+      });
+    });
+
+    it('reasignar una novedad en atención conserva su estado', async () => {
+      const tx = buildTx();
+      const prisma = buildPrisma(
+        { ...baseIssue, status: IssueStatus.EN_ATENCION },
+        tx,
+        coordinatorRecord('user-coord2'),
+      );
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await service.assignPrincipal(directorUser, baseIssue.id, {
+        assignedUserId: 'user-coord2',
+        reason: 'Cambio de turno',
+      });
+
+      expect(tx.issue.updateMany).toHaveBeenCalledWith({
+        where: { id: baseIssue.id, status: { in: [IssueStatus.EN_ATENCION] } },
+        data: { status: IssueStatus.EN_ATENCION },
+      });
+    });
+
+    it('no permite asignar a la Gerencia como responsable principal', async () => {
+      const prisma = buildPrisma(
+        { ...baseIssue, assignedUserId: null, status: IssueStatus.EN_REVISION },
+        buildTx(),
+        {
+          user: {
+            findUnique: vi.fn().mockResolvedValue({
+              id: 'user-ger',
+              organizationId,
+              role: Role.GERENTE,
+              isActive: true,
+            }),
+          },
+        },
+      );
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(
+        service.assignPrincipal(directorUser, baseIssue.id, { assignedUserId: 'user-ger' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('no permite asignar responsable a una novedad cerrada', async () => {
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.CERRADA }, buildTx());
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(
+        service.assignPrincipal(directorUser, baseIssue.id, { assignedUserId: 'user-coord2' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('el coordinador responsable cierra directamente y se avisa al Director', async () => {
+      const tx = buildTx();
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, tx);
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await service.close(coordinadorUser, baseIssue.id, {});
+
+      expect(tx.issue.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: IssueStatus.CERRADA }),
+        }),
+      );
+      const recipients = tx.notification.create.mock.calls.map((c: any) => c[0].data.recipientId);
+      expect(recipients).toEqual(expect.arrayContaining(['user-ger', 'user-dir']));
+      expect(recipients).not.toContain('user-coord1');
+    });
+
+    it('un coordinador que no es el responsable no puede cerrar', async () => {
+      const otherCoordinator: AuthenticatedUser = { ...coordinadorUser, id: 'user-coord2' };
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, buildTx());
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(service.close(otherCoordinator, baseIssue.id, {})).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('la Gerencia no puede cerrar novedades', async () => {
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, buildTx());
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(service.close(gerenteUser, baseIssue.id, {})).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('no permite cerrar con actividades pendientes', async () => {
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, buildTx(), {
+        issueActivity: { count: vi.fn().mockResolvedValue(2) },
+      });
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(service.close(directorUser, baseIssue.id, {})).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('no permite cerrar sin evidencia FINAL cuando la categoría la exige', async () => {
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, buildTx(), {
+        category: { findUnique: vi.fn().mockResolvedValue({ requiresEvidence: true }) },
+      });
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(service.close(directorUser, baseIssue.id, {})).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('responde 409 si el estado cambió durante el cierre', async () => {
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, buildTx(0));
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(service.close(directorUser, baseIssue.id, {})).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('no permite crear actividades en una novedad descartada', async () => {
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.DESCARTADA }, buildTx());
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(
+        service.createActivity(directorUser, baseIssue.id, {
+          title: 'Revisar',
+          description: 'Detalle',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('el Director puede descartar una novedad en proceso (por ejemplo, duplicada)', async () => {
+      const tx = buildTx();
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, tx);
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await service.discard(directorUser, baseIssue.id, { reason: 'Duplicada de NOV-2026-0001' });
+
+      expect(tx.issue.updateMany).toHaveBeenCalledWith({
+        where: { id: baseIssue.id, status: { in: [IssueStatus.EN_ATENCION] } },
+        data: { status: IssueStatus.DESCARTADA },
+      });
+    });
+
+    it('no se puede cerrar una novedad que aún no tiene responsable', async () => {
+      const prisma = buildPrisma(
+        { ...baseIssue, assignedUserId: null, status: IssueStatus.EN_REVISION },
+        buildTx(),
+      );
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(service.close(directorUser, baseIssue.id, {})).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('el Auxiliar de Gerencia puede asignar responsable', async () => {
+      const tx = buildTx();
+      const prisma = buildPrisma(
+        { ...baseIssue, assignedUserId: null, status: IssueStatus.EN_REVISION },
+        tx,
+        coordinatorRecord('user-coord1'),
+      );
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(
+        service.assignPrincipal(auxiliarUser, baseIssue.id, { assignedUserId: 'user-coord1' }),
+      ).resolves.toBeDefined();
+    });
+  });
+});

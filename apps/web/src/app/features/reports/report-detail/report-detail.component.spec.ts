@@ -102,7 +102,7 @@ describe('ReportDetailComponent', () => {
       refreshSourceData: vi.fn().mockReturnValue(of(mockReportDetail)),
       downloadPdf: vi.fn().mockReturnValue(of(new Blob(['fake pdf'], { type: 'application/pdf' }))),
       downloadExcel: vi.fn().mockReturnValue(of(new Blob(['fake xlsx'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))),
-      sendToReview: vi.fn().mockReturnValue(of({ ...mockReportDetail, status: 'EN_REVISION' })),
+      finalize: vi.fn().mockReturnValue(of({ ...mockReportDetail, status: 'APROBADO' })),
       reviewReport: vi.fn().mockImplementation((id: string, dto: any) =>
         of({ ...mockReportDetail, status: dto.decision, approvalNotes: dto.notes })
       ),
@@ -194,19 +194,32 @@ describe('ReportDetailComponent', () => {
   });
 
   describe('Gobernanza y Ciclo de Vida (Fase 8: RF-037 a RF-042, CP-21 a CP-28)', () => {
-    it('debe enviar a revisión cuando el usuario confirma la acción (RF-037, CP-21)', () => {
+    it('debe finalizar el informe cuando el autor confirma la acción (RF-037, CP-21)', () => {
       vi.spyOn(window, 'confirm').mockReturnValue(true);
-      component.sendToReview();
+      expect(component.canFinalize()).toBe(true);
+      component.finalize();
 
-      expect(mockReportService.sendToReview).toHaveBeenCalledWith('rep-uuid-1');
-      expect(component.report()?.status).toBe('EN_REVISION');
+      expect(mockReportService.finalize).toHaveBeenCalledWith('rep-uuid-1');
+      expect(component.report()?.status).toBe('APROBADO');
     });
 
-    it('no debe enviar a revisión si el usuario cancela la confirmación', () => {
+    it('no debe finalizar si el usuario cancela la confirmación', () => {
       vi.spyOn(window, 'confirm').mockReturnValue(false);
-      component.sendToReview();
+      component.finalize();
 
-      expect(mockReportService.sendToReview).not.toHaveBeenCalled();
+      expect(mockReportService.finalize).not.toHaveBeenCalled();
+    });
+
+    it('un coordinador que no es el autor no puede editar ni finalizar el borrador', () => {
+      mockAuthService.currentUser.set({
+        id: 'user-otro',
+        email: 'coord2@sigproh.local',
+        role: 'COORDINADOR_OPERATIVO',
+        organizationId: 'org-1',
+      });
+
+      expect(component.canEdit()).toBe(false);
+      expect(component.canFinalize()).toBe(false);
     });
 
     it('debe abrir modal de aprobación y aprobar formalmente el informe (RF-038, CP-24)', () => {

@@ -16,14 +16,7 @@ export const environment: AppEnvironment = {
       password: 'Cambiar123!',
       name: 'Juan Coordinador Norte',
       role: 'COORDINADOR_OPERATIVO',
-      label: '👷 Coordinador 1 (Juan - Torres del Parque)',
-    },
-    {
-      email: 'coordinador2@sigproh.local',
-      password: 'Cambiar123!',
-      name: 'Pedro Coordinador Sur',
-      role: 'COORDINADOR_OPERATIVO',
-      label: '👷 Coordinador 2 (Pedro - Reserva de la Plaza)',
+      label: '👷 Coordinador (Juan - Torre Norte y Torre Sur)',
     },
     {
       email: 'gerencia@sigproh.local',
@@ -37,7 +30,7 @@ export const environment: AppEnvironment = {
       password: 'Cambiar123!',
       name: 'Ana Auxiliar Gerencia',
       role: 'AUXILIAR_GERENCIA',
-      label: '📑 Auxiliar de Gerencia (Ana - PEN-03)',
+      label: '📑 Auxiliar de Gerencia (Ana)',
     },
     {
       email: 'admin@sigproh.local',

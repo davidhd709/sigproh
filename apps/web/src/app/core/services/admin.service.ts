@@ -47,7 +47,14 @@ export class AdminService {
     });
   }
 
-  createProperty(payload: { name: string; code: string; address?: string; nit?: string }): Observable<ManagedProperty> {
+  createProperty(payload: {
+    name: string;
+    code: string;
+    address?: string;
+    nit?: string;
+    coordinatorId: string;
+    directorId: string;
+  }): Observable<ManagedProperty> {
     return this.http.post<ManagedProperty>(`${this.apiUrl}/properties`, payload, { headers: this.headers() });
   }
 

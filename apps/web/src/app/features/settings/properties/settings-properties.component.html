@@ -2,7 +2,7 @@
   <header class="page-head">
     <div>
       <h1 class="page-title">Configuración</h1>
-      <p class="page-subtitle">Propiedades, sus zonas y coordinadores</p>
+      <p class="page-subtitle">Propiedades, su director, sus coordinadores y zonas</p>
     </div>
     @if (canManage()) {
       <button type="button" class="btn-primary" (click)="openNew()">
@@ -60,12 +60,19 @@
               </span>
               <span class="entity-sub">{{ p.address || 'Sin dirección registrada' }}</span>
               <span class="entity-tags">
+                @if (directorName(p); as dir) {
+                  <span class="tag">Director: {{ dir }}</span>
+                } @else {
+                  <span class="pill pill-soft" data-tone="warning">Sin director</span>
+                }
                 @if (leadName(p); as lead) {
-                  <span class="tag lead">Principal: {{ lead }}</span>
+                  <span class="tag lead">Coordinador principal: {{ lead }}</span>
                 } @else {
                   <span class="pill pill-soft" data-tone="warning">Sin coordinador principal</span>
                 }
-                <span class="tag">{{ p.assignments.length }} {{ p.assignments.length === 1 ? 'coordinador' : 'coordinadores' }}</span>
+                @if (coordinatorsOf(p).length > 1) {
+                  <span class="tag">{{ coordinatorsOf(p).length }} coordinadores</span>
+                }
                 <span class="tag">{{ p.zones.length }} {{ p.zones.length === 1 ? 'zona' : 'zonas' }}</span>
               </span>
             </div>
@@ -116,6 +123,32 @@
           </div>
           @if (!editing()) {
             <small class="field-hint">El código identifica la propiedad en novedades e informes y no se puede cambiar después.</small>
+            <div class="inline-form">
+              <label class="field">
+                <span>Coordinador principal *</span>
+                <select [(ngModel)]="form.coordinatorId">
+                  <option value="">Selecciona…</option>
+                  @for (u of coordinatorUsers(); track u.id) {
+                    <option [value]="u.id">{{ u.firstName }} {{ u.lastName }}</option>
+                  }
+                </select>
+              </label>
+              <label class="field">
+                <span>Director operativo *</span>
+                <select [(ngModel)]="form.directorId">
+                  <option value="">Selecciona…</option>
+                  @for (u of directorUsers(); track u.id) {
+                    <option [value]="u.id">{{ u.firstName }} {{ u.lastName }}</option>
+                  }
+                </select>
+              </label>
+            </div>
+            <small class="field-hint">
+              El coordinador principal recibe las novedades que reporten Gerencia o la Dirección; el director recibe los avisos de la propiedad.
+              @if (coordinatorUsers().length === 0 || directorUsers().length === 0) {
+                Primero crea en Usuarios al menos un coordinador y un director activos.
+              }
+            </small>
           }
           <div>
             <button type="button" class="btn-primary" (click)="saveData()" [disabled]="saving()">
@@ -124,14 +157,40 @@
           </div>
 
           @if (editing(); as p) {
+            <!-- Director responsable -->
+            <div class="sub-section">
+              <h4>Director operativo</h4>
+              @if (directorName(p); as dir) {
+                <p class="row-empty">{{ dir }} recibe los avisos de esta propiedad.</p>
+              } @else {
+                <p class="row-empty">Sin director. Elige uno para que reciba los avisos de esta propiedad.</p>
+              }
+              @if (directorCandidatesFor(p).length > 0) {
+                <div class="inline-form">
+                  <label class="field">
+                    <span>{{ directorOf(p) ? 'Cambiar director' : 'Asignar director' }}</span>
+                    <select [(ngModel)]="newDirectorId">
+                      <option value="">Selecciona…</option>
+                      @for (u of directorCandidatesFor(p); track u.id) {
+                        <option [value]="u.id">{{ u.firstName }} {{ u.lastName }}</option>
+                      }
+                    </select>
+                  </label>
+                  <button type="button" class="btn-secondary" (click)="changeDirector(p)" [disabled]="!newDirectorId || saving()">
+                    {{ directorOf(p) ? 'Cambiar' : 'Asignar' }}
+                  </button>
+                </div>
+              }
+            </div>
+
             <!-- Coordinadores -->
             <div class="sub-section">
               <h4>Coordinadores</h4>
-              @if (p.assignments.length === 0) {
-                <p class="row-empty">Sin coordinadores. Las novedades de esta propiedad no tendrán responsable sugerido.</p>
+              @if (coordinatorsOf(p).length === 0) {
+                <p class="row-empty">Sin coordinadores. Las novedades que reporten Gerencia o la Dirección quedarán por asignar.</p>
               } @else {
                 <ul class="row-items">
-                  @for (a of p.assignments; track a.id) {
+                  @for (a of coordinatorsOf(p); track a.id) {
                     <li>
                       <span>
                         {{ a.user.firstName }} {{ a.user.lastName }}
@@ -142,9 +201,12 @@
                       @if (!a.isLead) {
                         <button type="button" class="small-btn" (click)="makeLead(p, a.user.id)">Hacer principal</button>
                       }
-                      <button type="button" class="small-btn danger" (click)="unassign(p, a.user.id, a.user.firstName + ' ' + a.user.lastName)" [attr.aria-label]="'Retirar a ' + a.user.firstName">
-                        <app-icon name="x" />
-                      </button>
+                      <!-- La propiedad no puede quedarse sin coordinador -->
+                      @if (coordinatorsOf(p).length > 1) {
+                        <button type="button" class="small-btn danger" (click)="unassign(p, a.user.id, a.user.firstName + ' ' + a.user.lastName)" [attr.aria-label]="'Retirar a ' + a.user.firstName">
+                          <app-icon name="x" />
+                        </button>
+                      }
                     </li>
                   }
                 </ul>

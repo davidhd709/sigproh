@@ -9,9 +9,7 @@ import {
   IssueAttachment,
   IssuePriority,
   IssueScope,
-  RequestClosurePayload,
   CloseIssuePayload,
-  ReturnIssuePayload,
   ReopenIssuePayload,
   DiscardIssuePayload,
 } from '../models/issue.model';
@@ -239,34 +237,12 @@ export class IssuesService {
 
   // --- F5 / RF-012, RF-023, RF-024, RF-025, RF-026: Ciclo Operativo de Cierre ---
 
-  requestClosure(
-    issueId: string,
-    payload: RequestClosurePayload,
-  ): Observable<Issue> {
-    return this.http.post<Issue>(
-      `${this.apiUrl}/issues/${issueId}/request-closure`,
-      payload,
-      { headers: this.getAuthHeaders() },
-    );
-  }
-
   closeIssue(
     issueId: string,
     payload: CloseIssuePayload,
   ): Observable<Issue> {
     return this.http.post<Issue>(
       `${this.apiUrl}/issues/${issueId}/close`,
-      payload,
-      { headers: this.getAuthHeaders() },
-    );
-  }
-
-  returnIssue(
-    issueId: string,
-    payload: ReturnIssuePayload,
-  ): Observable<Issue> {
-    return this.http.post<Issue>(
-      `${this.apiUrl}/issues/${issueId}/return`,
       payload,
       { headers: this.getAuthHeaders() },
     );

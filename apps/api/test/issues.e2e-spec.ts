@@ -103,7 +103,7 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
     await app.close();
   });
 
-  it('CP-01: Coordinador crea novedad en su propiedad asignada con sugerencia automática de responsable', async () => {
+  it('CP-01: Coordinador crea novedad en su propiedad y queda a su cargo, en proceso', async () => {
     const res = await request(app.getHttpServer())
       .post('/issues')
       .set('Authorization', `Bearer ${coordinator1Token}`)
@@ -119,9 +119,8 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
 
     expect(res.body.code).toMatch(/^NOV-\d{4}-\d{4}$/);
     expect(res.body.scope).toBe('PROPIEDAD');
-    expect(res.body.status).toBe('EN_REVISION');
-    expect(res.body.suggestedUserId).toBe(coordinator1Id); // Propuesto como líder
-    expect(res.body.assignedUserId).toBeNull(); // Aún no confirmado por el Director
+    expect(res.body.status).toBe('EN_ATENCION');
+    expect(res.body.assignedUserId).toBe(coordinator1Id); // Asignación automática a quien reporta
 
     createdIssueId = res.body.id;
   });
@@ -157,7 +156,7 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
       .expect(400);
   });
 
-  it('CP-04: No hay responsable sugerible en el ámbito -> queda sin responsable asignado ni aleatorio (RN-031)', async () => {
+  it('CP-04: Sin coordinador principal en el ámbito -> queda por asignar, sin responsable aleatorio (RN-031)', async () => {
     // Si se crea una novedad donde no hay responsable líder activo definido, queda sin asignar
     const uniqueCode = `AT_${Date.now().toString().slice(-6)}`;
     const unassignedArea = await prisma.internalArea.create({
@@ -199,19 +198,19 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
     }
   });
 
-  it('PEN-03: Auxiliar de Gerencia no puede marcar novedades inicialmente críticas', async () => {
+  it('PEN-03: el Auxiliar de Gerencia registra novedades, incluso críticas', async () => {
     await request(app.getHttpServer())
       .post('/issues')
       .set('Authorization', `Bearer ${auxiliarToken}`)
       .send({
         scope: 'PROPIEDAD',
-        title: 'Fallo crítico intentado por Auxiliar',
-        description: 'No permitido según PEN-03',
+        title: 'Fallo crítico reportado por Auxiliar',
+        description: 'Permitido tras resolver PEN-03',
         priority: 'CRITICA',
         categoryId: categoryPropiedadId,
         propertyId: torresDelParqueId,
       })
-      .expect(403);
+      .expect(201);
   });
 
   it('Aislamiento del Administrador: no puede registrar ni consultar novedades operativas', async () => {
@@ -313,7 +312,7 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
     expect(res.body.message).toContain('RF-011');
   });
 
-  it('CP-05: Director Operativo confirma la asignación del responsable principal autorizado', async () => {
+  it('CP-05: Confirmar al mismo responsable no cambia el estado de una novedad en proceso', async () => {
     const res = await request(app.getHttpServer())
       .patch(`/issues/${createdIssueId}/assignment`)
       .set('Authorization', `Bearer ${directorToken}`)
@@ -322,7 +321,7 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
       })
       .expect(200);
 
-    expect(res.body.status).toBe('ASIGNADA');
+    expect(res.body.status).toBe('EN_ATENCION');
     expect(res.body.assignedUserId).toBe(coordinator1Id);
   });
 
@@ -835,12 +834,12 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
     });
   });
 
-  describe('F5: Evidencias de cierre, atención crítica, verificación, devoluciones, reapertura y notificaciones (CP-12 a CP-16)', () => {
+  describe('F5: Evidencias de cierre, cierre directo, reapertura, descarte y notificaciones (CP-12 a CP-16)', () => {
     let attachmentId: string;
     let finalAttachmentId: string;
     let sampleNotificationId: string;
 
-    it('CP-12: Categoría exige evidencia final y se solicita cierre sin ella -> Solicitud impedida con mensaje claro (400 Bad Request)', async () => {
+    it('CP-12: Categoría exige evidencia final y se intenta cerrar sin ella -> Cierre impedido con mensaje claro (400 Bad Request)', async () => {
       // 0. Director reasigna formalmente al Coordinador 1 para que sea el responsable principal
       await request(app.getHttpServer())
         .patch(`/issues/${createdIssueId}/assignment`)
@@ -851,11 +850,11 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
         })
         .expect(200);
 
-      // 1. Coordinador 1 intenta solicitar cierre sin haber adjuntado evidencia FINAL
+      // 1. Coordinador 1 intenta cerrar sin haber adjuntado evidencia FINAL
       const res = await request(app.getHttpServer())
-        .post(`/issues/${createdIssueId}/request-closure`)
+        .post(`/issues/${createdIssueId}/close`)
         .set('Authorization', `Bearer ${coordinator1Token}`)
-        .send({ notes: 'Listo para cierre técnico' })
+        .send({ closureObservations: 'Listo para cierre técnico' })
         .expect(400);
 
       expect(res.body.message).toContain('exige evidencia en etapa FINAL');
@@ -912,101 +911,30 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
       finalAttachmentId = finalAttachRes.body.id;
     });
 
-    it('CP-13: Responsable solicita cierre con evidencias suficientes -> Pasa a PENDIENTE_CIERRE y notifica al Director', async () => {
-      const closureRes = await request(app.getHttpServer())
-        .post(`/issues/${createdIssueId}/request-closure`)
-        .set('Authorization', `Bearer ${coordinator1Token}`)
-        .send({ notes: 'Se culminó la reparación y se adjuntó la foto final del contactor nuevo.' })
-        .expect(201);
-
-      expect(closureRes.body.status).toBe('PENDIENTE_CIERRE');
-
-      // Comprobar evento de auditoría
-      const closureEvent = await prisma.issueEvent.findFirst({
-        where: {
-          issueId: createdIssueId,
-          eventType: 'SOLICITUD_CIERRE',
-        },
-      });
-      expect(closureEvent).toBeDefined();
-
-      // Comprobar notificación al Director Operativo
-      const directorNotification = await prisma.notification.findFirst({
-        where: {
-          issueId: createdIssueId,
-          recipientId: directorId,
-          title: { contains: 'Solicitud de cierre' },
-        },
-      });
-      expect(directorNotification).toBeDefined();
-    });
-
-    it('CP-14: Coordinador intenta cerrar definitivamente -> Acceso denegado (403 Forbidden)', async () => {
+    it('CP-14: Quien no es el coordinador responsable ni el Director no puede cerrar (403 Forbidden)', async () => {
       await request(app.getHttpServer())
         .post(`/issues/${createdIssueId}/close`)
-        .set('Authorization', `Bearer ${coordinator1Token}`)
+        .set('Authorization', `Bearer ${auxiliarToken}`)
+        .send({ closureObservations: 'Intento de cierre no autorizado' })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .post(`/issues/${createdIssueId}/close`)
+        .set('Authorization', `Bearer ${coordinator2Token}`)
         .send({ closureObservations: 'Intento de cierre no autorizado' })
         .expect(403);
     });
 
-    it('CP-15: Director devuelve la solicitud de cierre con motivo -> Regresa a EN_ATENCION y audita devolución', async () => {
-      // 1. Intento de devolver sin motivo -> 400 Bad Request
-      await request(app.getHttpServer())
-        .post(`/issues/${createdIssueId}/return`)
-        .set('Authorization', `Bearer ${directorToken}`)
-        .send({})
-        .expect(400);
-
-      // 2. Director devuelve con motivo formal
-      const returnRes = await request(app.getHttpServer())
-        .post(`/issues/${createdIssueId}/return`)
-        .set('Authorization', `Bearer ${directorToken}`)
-        .send({ reason: 'Falta acta de entrega firmada por la administración del conjunto' })
-        .expect(201);
-
-      expect(returnRes.body.status).toBe('EN_ATENCION');
-
-      // 3. Comprobar evento de auditoría
-      const returnEvent = await prisma.issueEvent.findFirst({
-        where: {
-          issueId: createdIssueId,
-          eventType: 'DEVOLUCION',
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-      expect(returnEvent).toBeDefined();
-      expect((returnEvent?.details as any).reason).toContain('Falta acta de entrega');
-
-      // 4. Comprobar notificación para el Coordinador 1
-      const returnNotification = await prisma.notification.findFirst({
-        where: {
-          issueId: createdIssueId,
-          recipientId: coordinator1Id,
-          title: { contains: 'Devolución' },
-        },
-      });
-      expect(returnNotification).toBeDefined();
-    });
-
-    it('Ciclo de Cierre Definitivo (RF-025): Aprobación exclusiva por el Director Operativo con fecha inmutable y auditoría', async () => {
-      // 1. Coordinador 1 vuelve a solicitar cierre tras subsanar observaciones
-      await request(app.getHttpServer())
-        .post(`/issues/${createdIssueId}/request-closure`)
-        .set('Authorization', `Bearer ${coordinator1Token}`)
-        .send({ notes: 'Se anexó acta de entrega firmada' })
-        .expect(201);
-
-      // 2. Director confirma y cierra definitivamente
+    it('CP-13 (RF-025): El coordinador responsable cierra directamente con evidencias suficientes y se notifica al Director', async () => {
       const closeRes = await request(app.getHttpServer())
         .post(`/issues/${createdIssueId}/close`)
-        .set('Authorization', `Bearer ${directorToken}`)
-        .send({ closureObservations: 'Verificado trabajo técnico y acta de entrega conforme.' })
+        .set('Authorization', `Bearer ${coordinator1Token}`)
+        .send({ closureObservations: 'Se culminó la reparación y se adjuntó la foto final del contactor nuevo.' })
         .expect(201);
 
       expect(closeRes.body.status).toBe('CERRADA');
       expect(closeRes.body.closedAt).toBeDefined();
 
-      // 3. Auditoría de cierre definitivo
       const closeEvent = await prisma.issueEvent.findFirst({
         where: {
           issueId: createdIssueId,
@@ -1014,28 +942,36 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
         },
       });
       expect(closeEvent).toBeDefined();
-      expect((closeEvent?.details as any).observations).toContain('Verificado trabajo técnico');
+      expect((closeEvent?.details as any).observations).toContain('foto final');
+
+      const directorNotification = await prisma.notification.findFirst({
+        where: {
+          issueId: createdIssueId,
+          recipientId: directorId,
+          title: { contains: 'Novedad cerrada' },
+        },
+      });
+      expect(directorNotification).toBeDefined();
     });
 
-    it('CP-16: Director reabre el caso cerrado con motivo -> Pasa a EN_ATENCION preservando auditoría previa', async () => {
-      // 1. Intento de reabrir por coordinador -> 403 Forbidden
+    it('CP-16: El coordinador responsable reabre con motivo -> EN_ATENCION; el Director vuelve a cerrar', async () => {
+      // 1. Un coordinador sin la novedad asignada no puede reabrir -> 403 Forbidden
       await request(app.getHttpServer())
         .post(`/issues/${createdIssueId}/reopen`)
-        .set('Authorization', `Bearer ${coordinator1Token}`)
+        .set('Authorization', `Bearer ${coordinator2Token}`)
         .send({ reason: 'Falla recurrente detectada' })
         .expect(403);
 
-      // 2. Director reabre con motivo obligatorio
+      // 2. El coordinador responsable reabre con motivo obligatorio
       const reopenRes = await request(app.getHttpServer())
         .post(`/issues/${createdIssueId}/reopen`)
-        .set('Authorization', `Bearer ${directorToken}`)
+        .set('Authorization', `Bearer ${coordinator1Token}`)
         .send({ reason: 'El equipo volvió a fallar en la noche según reporte del vigilante' })
         .expect(201);
 
       expect(reopenRes.body.status).toBe('EN_ATENCION');
       expect(reopenRes.body.closedAt).toBeNull();
 
-      // 3. Auditoría de reapertura
       const reopenEvent = await prisma.issueEvent.findFirst({
         where: {
           issueId: createdIssueId,
@@ -1044,9 +980,18 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
       });
       expect(reopenEvent).toBeDefined();
       expect((reopenEvent?.details as any).reason).toContain('volvió a fallar');
+
+      // 3. El Director también puede cerrar
+      const closeRes = await request(app.getHttpServer())
+        .post(`/issues/${createdIssueId}/close`)
+        .set('Authorization', `Bearer ${directorToken}`)
+        .send({ closureObservations: 'Verificado trabajo técnico tras la reapertura.' })
+        .expect(201);
+
+      expect(closeRes.body.status).toBe('CERRADA');
     });
 
-    it('Descarte de novedad (RF-012 / PEN-13): Solo por Director y restringido a novedades no avanzadas', async () => {
+    it('Descarte de novedad (RF-012 / PEN-13): Solo por Director, en cualquier novedad abierta', async () => {
       // 1. Crear una nueva novedad ordinaria para prueba de descarte
       const createRes = await request(app.getHttpServer())
         .post('/issues')
