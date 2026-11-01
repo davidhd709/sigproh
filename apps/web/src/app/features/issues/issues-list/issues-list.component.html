@@ -92,9 +92,9 @@
         <span class="filter-label">Estado</span>
         <select [ngModel]="selectedStatus()" (ngModelChange)="selectedStatus.set($event)">
           <option value="ALL">Todos</option>
-          <option value="EN_REVISION">Por asignar</option>
+          <option value="ASIGNADA">Pendiente</option>
           <option value="EN_ATENCION">En proceso</option>
-          <option value="CERRADA">Cerrada</option>
+          <option value="CERRADA">Finalizada</option>
           <option value="DESCARTADA">Descartada</option>
         </select>
       </label>
@@ -165,9 +165,6 @@
                 }
                 @if (issue.priority === 'CRITICA' && !issue.urgentMeasures) {
                   <span class="pill pill-soft" data-tone="danger"><app-icon name="alert" /> Sin medida urgente</span>
-                }
-                @for (f of followUps(issue); track f.label) {
-                  <span class="pill pill-soft" [attr.data-tone]="f.tone">{{ f.label }}</span>
                 }
               </div>
             </div>

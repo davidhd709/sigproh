@@ -163,21 +163,12 @@
       <div class="kpi">
         <span class="kpi-icon tone-success"><app-icon name="check-circle" /></span>
         <span class="kpi-value">{{ data.kpis.totalClosedInPeriod }}</span>
-        <span class="kpi-label">Cerradas</span>
+        <span class="kpi-label">Finalizadas</span>
       </div>
       <div class="kpi">
         <span class="kpi-icon tone-neutral"><app-icon name="clock" /></span>
         <span class="kpi-value">{{ data.kpis.averageResolutionDays }}<small> días</small></span>
-        <span class="kpi-label">Tiempo medio de cierre</span>
-      </div>
-      <div class="kpi kpi-wide">
-        <span class="kpi-icon tone-success"><app-icon name="clipboard" /></span>
-        <div class="kpi-wide-text">
-          <span class="kpi-label">Actividades cumplidas</span>
-          <span class="kpi-sub">{{ data.activities.completed }} de {{ data.activities.totalActivities }}</span>
-        </div>
-        <span class="meter"><span [style.width.%]="data.activities.completionRatePercent"></span></span>
-        <span class="kpi-value">{{ data.activities.completionRatePercent }}<small>%</small></span>
+        <span class="kpi-label">Tiempo medio para finalizar</span>
       </div>
     </section>
 
@@ -188,7 +179,7 @@
           <h2>Requieren atención</h2>
           <span class="count-badge">{{ data.attentionRequiredCases.length }}</span>
         </header>
-        <p class="section-hint">Críticas sin cerrar, con actividades bloqueadas o abiertas hace más de 7 días.</p>
+        <p class="section-hint">Críticas sin finalizar o abiertas hace más de 7 días.</p>
         <ul class="attention-list">
           @for (item of data.attentionRequiredCases; track item.id) {
             <li>
@@ -199,9 +190,6 @@
                   <span class="attention-tags">
                     <span class="pill" [attr.data-tone]="priorityTone(item.priority)">{{ priorityLabel(item.priority) }}</span>
                     <span class="pill pill-soft" [attr.data-tone]="statusTone(item.status)">{{ statusLabel(item.status) }}</span>
-                    @if (item.hasBlockedActivities) {
-                      <span class="pill pill-soft badge-blocked" data-tone="danger"><app-icon name="alert" /> Actividad bloqueada</span>
-                    }
                   </span>
                 </div>
                 <div class="attention-side">
@@ -257,13 +245,6 @@
             </li>
           }
         </ul>
-
-        <div class="activity-stats">
-          <div><span class="as-value">{{ data.activities.inProgress }}</span><span class="as-label">En curso</span></div>
-          <div><span class="as-value">{{ data.activities.pending }}</span><span class="as-label">Pendientes</span></div>
-          <div [class.as-alert]="data.activities.blocked > 0"><span class="as-value">{{ data.activities.blocked }}</span><span class="as-label">Bloqueadas</span></div>
-          <div><span class="as-value">{{ data.activities.canceled }}</span><span class="as-label">Canceladas</span></div>
-        </div>
       </section>
     </div>
 
@@ -289,7 +270,7 @@
                 <span class="loc-stats">
                   <span title="Registradas en el período"><strong>{{ loc.totalRegistered }}</strong> reg.</span>
                   <span title="Abiertas al corte"><strong>{{ loc.openAtCutoff }}</strong> abiertas</span>
-                  <span title="Cerradas en el período"><strong>{{ loc.closedInPeriod }}</strong> cerradas</span>
+                  <span title="Finalizadas en el período"><strong>{{ loc.closedInPeriod }}</strong> finalizadas</span>
                   @if (loc.criticalCount > 0) {
                     <span class="pill" data-tone="danger">{{ loc.criticalCount }} {{ loc.criticalCount === 1 ? 'crítica' : 'críticas' }}</span>
                   }

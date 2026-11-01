@@ -2,15 +2,7 @@ import { Issue } from '../../core/models/issue.model';
 import { Tone } from '../../shared/presentation';
 
 /** Bandejas por rol (RF-027, sección 11.4 de los documentos). */
-export type InboxView =
-  | 'ALL'
-  | 'UNASSIGNED'
-  | 'CRITICAL'
-  | 'TO_CLOSE'
-  | 'OVERDUE'
-  | 'MINE'
-  | 'MY_ACTIVITIES'
-  | 'STALE';
+export type InboxView = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'UNASSIGNED' | 'CRITICAL' | 'MINE' | 'STALE';
 
 export interface InboxViewDef {
   key: InboxView;
@@ -23,36 +15,38 @@ export interface InboxViewDef {
 
 const STALE_DAYS = 7;
 const isOpen = (i: Issue) => i.status !== 'CERRADA' && i.status !== 'DESCARTADA';
+const isPending = (i: Issue) => i.status === 'ASIGNADA' || i.status === 'EN_REVISION' || i.status === 'REGISTRADA';
+const isInProgress = (i: Issue) => i.status === 'EN_ATENCION' || i.status === 'PENDIENTE_CIERRE';
 
 export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
   ALL: { key: 'ALL', label: 'Todas', hint: 'Todas las novedades', tone: 'neutral', match: () => true },
+  PENDING: {
+    key: 'PENDING',
+    label: 'Pendientes',
+    hint: 'Esperan que se inicie el trabajo',
+    tone: 'warning',
+    match: (i) => isPending(i),
+  },
+  IN_PROGRESS: {
+    key: 'IN_PROGRESS',
+    label: 'En proceso',
+    hint: 'En trabajo; se finalizan con la foto final',
+    tone: 'progress',
+    match: (i) => isInProgress(i),
+  },
   UNASSIGNED: {
     key: 'UNASSIGNED',
-    label: 'Por asignar',
-    hint: 'Nadie las tiene a cargo todavía',
-    tone: 'warning',
+    label: 'Sin responsable',
+    hint: 'El ámbito no tiene coordinador ni director responsable',
+    tone: 'danger',
     match: (i) => isOpen(i) && !i.assignedUserId,
   },
   CRITICAL: {
     key: 'CRITICAL',
     label: 'Críticas',
-    hint: 'Críticas sin cerrar',
+    hint: 'Críticas sin finalizar',
     tone: 'danger',
     match: (i) => isOpen(i) && i.priority === 'CRITICA',
-  },
-  TO_CLOSE: {
-    key: 'TO_CLOSE',
-    label: 'Listas para cerrar',
-    hint: 'En atención y sin actividades pendientes',
-    tone: 'success',
-    match: (i) => i.status === 'EN_ATENCION' && (i.inbox?.openActivities ?? 0) === 0,
-  },
-  OVERDUE: {
-    key: 'OVERDUE',
-    label: 'Vencidas',
-    hint: 'Con actividades vencidas',
-    tone: 'danger',
-    match: (i) => isOpen(i) && (i.inbox?.overdueActivities ?? 0) > 0,
   },
   MINE: {
     key: 'MINE',
@@ -60,13 +54,6 @@ export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
     hint: 'Novedades que debes atender',
     tone: 'info',
     match: (i, userId) => isOpen(i) && i.assignedUserId === userId,
-  },
-  MY_ACTIVITIES: {
-    key: 'MY_ACTIVITIES',
-    label: 'Mis actividades',
-    hint: 'Tienes actividades por hacer',
-    tone: 'info',
-    match: (i) => isOpen(i) && (i.inbox?.myOpenActivities ?? 0) > 0,
   },
   STALE: {
     key: 'STALE',
@@ -84,12 +71,12 @@ export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
 export function viewsForRole(role?: string | null): InboxView[] {
   switch (role) {
     case 'DIRECTOR_OPERATIVO':
-      return ['ALL', 'UNASSIGNED', 'CRITICAL', 'TO_CLOSE', 'OVERDUE'];
+      return ['ALL', 'PENDING', 'IN_PROGRESS', 'CRITICAL', 'UNASSIGNED'];
     case 'COORDINADOR_OPERATIVO':
-      return ['ALL', 'MINE', 'TO_CLOSE', 'MY_ACTIVITIES', 'OVERDUE'];
+      return ['ALL', 'MINE', 'PENDING', 'IN_PROGRESS'];
     case 'GERENTE':
     case 'AUXILIAR_GERENCIA':
-      return ['ALL', 'UNASSIGNED', 'CRITICAL', 'STALE'];
+      return ['ALL', 'PENDING', 'IN_PROGRESS', 'CRITICAL', 'UNASSIGNED', 'STALE'];
     default:
       return ['ALL', 'CRITICAL', 'STALE'];
   }

@@ -103,7 +103,7 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
     await app.close();
   });
 
-  it('CP-01: Coordinador crea novedad en su propiedad y queda a su cargo, en proceso', async () => {
+  it('CP-01: Coordinador crea novedad en su propiedad y queda a su cargo, pendiente', async () => {
     const res = await request(app.getHttpServer())
       .post('/issues')
       .set('Authorization', `Bearer ${coordinator1Token}`)
@@ -119,7 +119,7 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
 
     expect(res.body.code).toMatch(/^NOV-\d{4}-\d{4}$/);
     expect(res.body.scope).toBe('PROPIEDAD');
-    expect(res.body.status).toBe('EN_ATENCION');
+    expect(res.body.status).toBe('ASIGNADA');
     expect(res.body.assignedUserId).toBe(coordinator1Id); // Asignación automática a quien reporta
 
     createdIssueId = res.body.id;
@@ -312,7 +312,7 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
     expect(res.body.message).toContain('RF-011');
   });
 
-  it('CP-05: Confirmar al mismo responsable no cambia el estado de una novedad en proceso', async () => {
+  it('CP-05: Confirmar al mismo responsable no cambia el estado de una novedad pendiente', async () => {
     const res = await request(app.getHttpServer())
       .patch(`/issues/${createdIssueId}/assignment`)
       .set('Authorization', `Bearer ${directorToken}`)
@@ -321,7 +321,7 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
       })
       .expect(200);
 
-    expect(res.body.status).toBe('EN_ATENCION');
+    expect(res.body.status).toBe('ASIGNADA');
     expect(res.body.assignedUserId).toBe(coordinator1Id);
   });
 
@@ -850,14 +850,28 @@ describe('Ciclo Operativo de Novedades F3 (e2e)', () => {
         })
         .expect(200);
 
-      // 1. Coordinador 1 intenta cerrar sin haber adjuntado evidencia FINAL
+      // 1. Sin iniciar el trabajo no se puede finalizar; el responsable lo inicia
+      const pendingRes = await request(app.getHttpServer())
+        .post(`/issues/${createdIssueId}/close`)
+        .set('Authorization', `Bearer ${coordinator1Token}`)
+        .send({})
+        .expect(400);
+      expect(pendingRes.body.message).toContain('Inicie el trabajo');
+
+      const startRes = await request(app.getHttpServer())
+        .post(`/issues/${createdIssueId}/start`)
+        .set('Authorization', `Bearer ${coordinator1Token}`)
+        .expect(201);
+      expect(startRes.body.status).toBe('EN_ATENCION');
+
+      // 2. Coordinador 1 intenta cerrar sin haber adjuntado evidencia FINAL
       const res = await request(app.getHttpServer())
         .post(`/issues/${createdIssueId}/close`)
         .set('Authorization', `Bearer ${coordinator1Token}`)
         .send({ closureObservations: 'Listo para cierre técnico' })
         .expect(400);
 
-      expect(res.body.message).toContain('exige evidencia en etapa FINAL');
+      expect(res.body.message).toContain('foto final');
     });
 
     it('RF-021 / RF-022 / PEN-07: Adjuntar y descargar evidencias con clasificación de etapas, hash de integridad y aislamiento de ámbito', async () => {

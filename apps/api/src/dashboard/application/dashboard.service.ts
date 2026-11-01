@@ -374,20 +374,24 @@ export class DashboardService {
     startDate: Date,
     endDate: Date,
   ): StatusCountItem[] {
+    // Se agrupa en los estados que ve el usuario: Pendiente, En proceso, Finalizada y Descartada
     const counts: Record<string, number> = {
-      [IssueStatus.REGISTRADA]: 0,
-      [IssueStatus.EN_REVISION]: 0,
       [IssueStatus.ASIGNADA]: 0,
       [IssueStatus.EN_ATENCION]: 0,
-      [IssueStatus.PENDIENTE_CIERRE]: 0,
       [IssueStatus.CERRADA]: 0,
       [IssueStatus.DESCARTADA]: 0,
+    };
+    const visibleStatus: Record<string, IssueStatus> = {
+      [IssueStatus.REGISTRADA]: IssueStatus.ASIGNADA,
+      [IssueStatus.EN_REVISION]: IssueStatus.ASIGNADA,
+      [IssueStatus.PENDIENTE_CIERRE]: IssueStatus.EN_ATENCION,
     };
 
     // Casos activos o registrados en el periodo
     for (const issue of issues) {
-      if (counts[issue.status] !== undefined) {
-        counts[issue.status]++;
+      const status = visibleStatus[issue.status] ?? issue.status;
+      if (counts[status] !== undefined) {
+        counts[status]++;
       }
     }
 

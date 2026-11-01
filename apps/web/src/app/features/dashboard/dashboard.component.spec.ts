@@ -140,7 +140,7 @@ describe('DashboardComponent', () => {
 
     // KPI values
     const kpiValues = compiled.querySelectorAll('.kpi-value');
-    expect(kpiValues.length).toBe(6);
+    expect(kpiValues.length).toBe(5);
     expect(compiled.textContent).toContain('15'); // totalRegisteredInPeriod
     expect(compiled.textContent).toContain('10'); // totalClosedInPeriod
     expect(compiled.textContent).toContain('5'); // totalOpenAtCutoff
@@ -153,7 +153,8 @@ describe('DashboardComponent', () => {
     expect(compiled.querySelector('.attention-box')).toBeTruthy();
     expect(compiled.textContent).toContain('NOV-2026-0010');
     expect(compiled.textContent).toContain('Fuga de agua en motobomba');
-    expect(compiled.querySelector('.badge-blocked')?.textContent).toContain('Actividad bloqueada');
+    // Las actividades ya no forman parte del flujo
+    expect(compiled.querySelector('.badge-blocked')).toBeNull();
   });
 
   it('aplica preajustes de período correctamente (LAST_30_DAYS, THIS_YEAR)', () => {
@@ -183,12 +184,12 @@ describe('DashboardComponent', () => {
     expect(component.errorMessage()).toContain('Acceso denegado (403)');
   });
 
-  it('Tus pendientes: el director ve por asignar, por cerrar e informes en revisión', () => {
+  it('Tus pendientes: el director ve pendientes, en proceso, sin responsable e informes en revisión', () => {
     fixture.detectChanges();
     const pending = component.pending() ?? [];
     const byKey = Object.fromEntries(pending.map((p) => [p.def.key, p.count]));
 
-    expect(byKey).toEqual(expect.objectContaining({ UNASSIGNED: 1, TO_CLOSE: 1 }));
+    expect(byKey).toEqual(expect.objectContaining({ PENDING: 1, IN_PROGRESS: 1, UNASSIGNED: 1 }));
     // La crítica ya cerrada no cuenta como pendiente
     expect(byKey['CRITICAL']).toBeUndefined();
     expect(mockReportService.getReports).toHaveBeenCalledWith({ status: 'EN_REVISION' });

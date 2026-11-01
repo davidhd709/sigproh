@@ -5,6 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import {
+  IssueEventType,
   IssuePriority,
   IssueScope,
   IssueStatus,
@@ -138,7 +139,7 @@ describe('IssuesService', () => {
       propertyId: 'prop-1',
     };
 
-    const build = (leadUserId: string | null) => {
+    const build = (leadUserId: string | null, directorUserId: string | null = null) => {
       const tx = {
         $queryRaw: vi.fn().mockResolvedValue([{ lastValue: 6 }]),
         issue: { create: vi.fn().mockImplementation((args) => args.data) },
@@ -160,7 +161,11 @@ describe('IssuesService', () => {
           }),
         },
         propertyAssignment: {
-          findFirst: vi.fn().mockResolvedValue(leadUserId ? { userId: leadUserId, isLead: true } : null),
+          findFirst: vi
+            .fn()
+            // Primero el coordinador principal; luego, de respaldo, el director responsable
+            .mockResolvedValueOnce(leadUserId ? { userId: leadUserId, isLead: true } : null)
+            .mockResolvedValueOnce(directorUserId ? { userId: directorUserId, isLead: true } : null),
         },
         $transaction: vi.fn().mockImplementation(async (cb) => cb(tx)),
       };
@@ -171,14 +176,14 @@ describe('IssuesService', () => {
     const recipients = (tx: any) =>
       tx.notification.create.mock.calls.map((c: any) => c[0].data.recipientId);
 
-    it('si reporta un coordinador, queda a su cargo y en proceso sin avisar a quienes asignan', async () => {
+    it('si reporta un coordinador, queda a su cargo y pendiente sin avisar a quienes asignan', async () => {
       const { tx, service } = build('user-coord-lead');
 
       const issue = await service.create(coordinadorUser, dto);
 
       expect(issue.code).toBe(`NOV-${new Date().getFullYear()}-0006`);
       expect(issue.assignedUserId).toBe(coordinadorUser.id);
-      expect(issue.status).toBe(IssueStatus.EN_ATENCION);
+      expect(issue.status).toBe(IssueStatus.ASIGNADA);
       expect(tx.issueAssignment.create).toHaveBeenCalledOnce();
       expect(tx.notification.create).not.toHaveBeenCalled();
     });
@@ -189,11 +194,21 @@ describe('IssuesService', () => {
       const issue = await service.create(gerente, dto);
 
       expect(issue.assignedUserId).toBe('user-coord-lead');
-      expect(issue.status).toBe(IssueStatus.EN_ATENCION);
+      expect(issue.status).toBe(IssueStatus.ASIGNADA);
       expect(recipients(tx)).toEqual(['user-coord-lead']);
     });
 
-    it('sin coordinador principal queda por asignar y avisa al director responsable y a Gerencia', async () => {
+    it('sin coordinador principal pasa al director responsable y queda pendiente', async () => {
+      const { tx, service } = build(null, 'user-dir-torre');
+
+      const issue = await service.create(gerente, dto);
+
+      expect(issue.assignedUserId).toBe('user-dir-torre');
+      expect(issue.status).toBe(IssueStatus.ASIGNADA);
+      expect(recipients(tx)).toEqual(['user-dir-torre']);
+    });
+
+    it('sin coordinador ni director responsable queda sin asignar y avisa al director responsable y a Gerencia', async () => {
       const { tx, service } = build(null);
 
       const issue = await service.create(gerente, dto);
@@ -722,7 +737,7 @@ describe('IssuesService', () => {
       },
     });
 
-    it('la Gerencia asigna el responsable y la novedad pasa a en proceso', async () => {
+    it('la Gerencia asigna el responsable y la novedad queda pendiente', async () => {
       const tx = buildTx();
       const prisma = buildPrisma(
         { ...baseIssue, assignedUserId: null, status: IssueStatus.EN_REVISION },
@@ -735,7 +750,7 @@ describe('IssuesService', () => {
 
       expect(tx.issue.updateMany).toHaveBeenCalledWith({
         where: { id: baseIssue.id, status: { in: [IssueStatus.EN_REVISION] } },
-        data: { status: IssueStatus.EN_ATENCION },
+        data: { status: IssueStatus.ASIGNADA },
       });
     });
 
@@ -826,14 +841,43 @@ describe('IssuesService', () => {
       );
     });
 
-    it('no permite cerrar con actividades pendientes', async () => {
-      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, buildTx(), {
-        issueActivity: { count: vi.fn().mockResolvedValue(2) },
+    it('el responsable inicia el trabajo: pendiente pasa a en proceso y se avisa a quien reportó', async () => {
+      const tx = buildTx();
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.ASIGNADA }, tx);
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await service.startWork(coordinadorUser, baseIssue.id);
+
+      expect(tx.issue.updateMany).toHaveBeenCalledWith({
+        where: { id: baseIssue.id, status: { in: [IssueStatus.ASIGNADA] } },
+        data: { status: IssueStatus.EN_ATENCION },
       });
+      expect(tx.issueEvent.create.mock.calls[0][0].data.eventType).toBe(IssueEventType.INICIO_TRABAJO);
+      expect(tx.notification.create.mock.calls.map((c: any) => c[0].data.recipientId)).toEqual(['user-ger']);
+    });
+
+    it('solo el responsable o el Director pueden iniciar el trabajo', async () => {
+      const otherCoordinator: AuthenticatedUser = { ...coordinadorUser, id: 'user-coord2' };
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.ASIGNADA }, buildTx());
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(service.startWork(otherCoordinator, baseIssue.id)).rejects.toThrow(ForbiddenException);
+      await expect(service.startWork(gerenteUser, baseIssue.id)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('no permite iniciar el trabajo de una novedad que ya está en proceso', async () => {
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.EN_ATENCION }, buildTx());
+      const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
+
+      await expect(service.startWork(directorUser, baseIssue.id)).rejects.toThrow(BadRequestException);
+    });
+
+    it('no permite finalizar una novedad pendiente sin haber iniciado el trabajo', async () => {
+      const prisma = buildPrisma({ ...baseIssue, status: IssueStatus.ASIGNADA }, buildTx());
       const service = new IssuesService(prisma as any, scopeAuth as any, {} as any);
 
       await expect(service.close(directorUser, baseIssue.id, {})).rejects.toThrow(
-        BadRequestException,
+        'Inicie el trabajo antes de finalizar la novedad',
       );
     });
 

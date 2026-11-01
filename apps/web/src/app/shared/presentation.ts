@@ -6,16 +6,16 @@
 export type Tone = 'neutral' | 'info' | 'progress' | 'warning' | 'success' | 'danger' | 'muted';
 
 const STATUS: Record<string, { label: string; tone: Tone }> = {
-  // Novedades: el usuario solo ve tres estados (Por asignar, En proceso, Cerrada)
-  REGISTRADA: { label: 'Por asignar', tone: 'warning' },
-  EN_REVISION: { label: 'Por asignar', tone: 'warning' },
-  ASIGNADA: { label: 'En proceso', tone: 'progress' },
+  // Novedades: el usuario solo ve tres estados (Pendiente, En proceso, Finalizada)
+  REGISTRADA: { label: 'Pendiente', tone: 'warning' },
+  EN_REVISION: { label: 'Pendiente', tone: 'warning' },
+  ASIGNADA: { label: 'Pendiente', tone: 'warning' },
   EN_ATENCION: { label: 'En proceso', tone: 'progress' },
   EN_PROCESO: { label: 'En proceso', tone: 'progress' },
   PENDIENTE_CIERRE: { label: 'En proceso', tone: 'progress' },
   ATENDIDA: { label: 'Atendida', tone: 'success' },
   VERIFICADA: { label: 'Verificada', tone: 'success' },
-  CERRADA: { label: 'Cerrada', tone: 'success' },
+  CERRADA: { label: 'Finalizada', tone: 'success' },
   DEVUELTA: { label: 'Devuelta', tone: 'danger' },
   REABIERTA: { label: 'Reabierta', tone: 'warning' },
   DESCARTADA: { label: 'Descartada', tone: 'muted' },
@@ -82,6 +82,7 @@ const EVENTS: Record<string, string> = {
   CREACION: 'Registro',
   SUGERENCIA_RESPONSABLE: 'Responsable sugerido',
   CONFIRMACION_ASIGNACION: 'Responsable confirmado',
+  INICIO_TRABAJO: 'Trabajo iniciado',
   REASIGNACION: 'Reasignación',
   CAMBIO_PRIORIDAD: 'Cambio de prioridad',
   MEDIDA_URGENTE: 'Medida urgente',
@@ -94,7 +95,7 @@ const EVENTS: Record<string, string> = {
   EVIDENCIA_ADJUNTADA: 'Evidencia adjunta',
   DEVOLUCION: 'Devolución',
   SOLICITUD_CIERRE: 'Solicitud de cierre',
-  CIERRE_DEFINITIVO: 'Cierre definitivo',
+  CIERRE_DEFINITIVO: 'Finalizada',
   CIERRE: 'Cierre',
   REAPERTURA: 'Reapertura',
   DESCARTE: 'Descarte',

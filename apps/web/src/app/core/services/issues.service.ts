@@ -237,6 +237,10 @@ export class IssuesService {
 
   // --- F5 / RF-012, RF-023, RF-024, RF-025, RF-026: Ciclo Operativo de Cierre ---
 
+  startWork(issueId: string): Observable<Issue> {
+    return this.http.post<Issue>(`${this.apiUrl}/issues/${issueId}/start`, {});
+  }
+
   closeIssue(
     issueId: string,
     payload: CloseIssuePayload,
