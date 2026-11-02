@@ -138,7 +138,7 @@ export class IssuesService {
     // 4. Asignación automática del responsable principal:
     //    - Si reporta un Coordinador, la novedad queda a su cargo.
     //    - Si reporta Gerencia, Auxiliar o Director, pasa al coordinador principal del ámbito.
-    //    - Si no hay a quién asignarla, queda "por asignar" (EN_REVISION).
+    //    - Si no hay a quién asignarla, queda pendiente sin responsable (EN_REVISION).
     let assignedUserId: string | null = null;
 
     if (user.role === Role.COORDINADOR_OPERATIVO) {
@@ -163,6 +163,11 @@ export class IssuesService {
         },
       });
       assignedUserId = leadAreaAssignment?.userId ?? null;
+    }
+
+    //    - Sin coordinador principal, la recibe el director responsable del ámbito.
+    if (!assignedUserId) {
+      assignedUserId = await this.responsibleDirectorFor(dto.propertyId ?? null, dto.internalAreaId ?? null);
     }
 
     const currentYear = new Date().getFullYear();
@@ -198,8 +203,8 @@ export class IssuesService {
           description: dto.description.trim(),
           priority: dto.priority,
           initialPriority: dto.priority,
-          // Con responsable pasa directo a "en proceso"; sin él, queda "por asignar"
-          status: assignedUserId ? IssueStatus.EN_ATENCION : IssueStatus.EN_REVISION,
+          // Queda "pendiente" hasta que el responsable inicie el trabajo
+          status: assignedUserId ? IssueStatus.ASIGNADA : IssueStatus.EN_REVISION,
           propertyId: dto.propertyId ?? null,
           propertyZoneId: dto.propertyZoneId ?? null,
           internalAreaId: dto.internalAreaId ?? null,
@@ -253,7 +258,7 @@ export class IssuesService {
             summary:
               assignedUserId === user.id
                 ? 'Asignada automáticamente a quien la reportó'
-                : 'Asignada automáticamente al coordinador principal del ámbito',
+                : 'Asignada automáticamente al responsable del ámbito',
             details: { assignedUserId, automatic: true },
           },
         });
@@ -320,7 +325,7 @@ export class IssuesService {
 
   /**
    * Asigna o reasigna el responsable principal de la novedad (Director Operativo, Gerente o Auxiliar de Gerencia).
-   * Una novedad por asignar pasa a "en proceso" (EN_ATENCION); una reasignación conserva el estado en curso.
+   * Una novedad sin responsable pasa a "pendiente" (ASIGNADA); una reasignación conserva el estado en curso.
    */
   async assignPrincipal(
     user: AuthenticatedUser,
@@ -436,7 +441,7 @@ export class IssuesService {
         tx,
         issue.id,
         [issue.status],
-        isFirstAssignment ? IssueStatus.EN_ATENCION : issue.status,
+        isFirstAssignment ? IssueStatus.ASIGNADA : issue.status,
       );
 
       // Inactivar asignaciones previas
@@ -1028,6 +1033,32 @@ export class IssuesService {
       select: { id: true },
     });
     return directors.map((d) => d.id);
+  }
+
+  /**
+   * Responsable de respaldo cuando el ámbito no tiene coordinador principal:
+   * el director responsable de la propiedad o el director asignado al área interna.
+   */
+  private async responsibleDirectorFor(
+    propertyId: string | null,
+    internalAreaId: string | null,
+  ): Promise<string | null> {
+    const director = { isActive: true, role: Role.DIRECTOR_OPERATIVO };
+    if (propertyId) {
+      const assignment = await this.prisma.propertyAssignment.findFirst({
+        where: { propertyId, isActive: true, user: director },
+        orderBy: { isLead: 'desc' },
+      });
+      return assignment?.userId ?? null;
+    }
+    if (internalAreaId) {
+      const assignment = await this.prisma.areaAssignment.findFirst({
+        where: { internalAreaId, isActive: true, user: director },
+        orderBy: { isLead: 'desc' },
+      });
+      return assignment?.userId ?? null;
+    }
+    return null;
   }
 
   /**
@@ -2139,37 +2170,73 @@ export class IssuesService {
   }
 
   /**
-   * Cierre directo por el Director o el coordinador responsable (RF-023 / RF-025).
-   * Las actividades son opcionales; si existen deben estar terminadas. Se exige la evidencia FINAL que pida la categoría.
+   * El responsable manda a hacer el trabajo: la novedad pasa de "pendiente" a "en proceso".
+   */
+  async startWork(user: AuthenticatedUser, issueId: string) {
+    const issue = await this.findIssueForTransition(user, issueId);
+    this.assertCanChangeState(user, issue);
+
+    if (!issue.assignedUserId) {
+      throw new BadRequestException('La novedad aún no tiene responsable; asígnela antes de iniciar el trabajo');
+    }
+    if (issue.status !== IssueStatus.ASIGNADA) {
+      throw new BadRequestException(
+        `Solo es posible iniciar el trabajo de una novedad pendiente (estado actual: ${issue.status})`,
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.transitionStatus(tx, issue.id, [IssueStatus.ASIGNADA], IssueStatus.EN_ATENCION);
+
+      await tx.issueEvent.create({
+        data: {
+          issueId: issue.id,
+          userId: user.id,
+          eventType: IssueEventType.INICIO_TRABAJO,
+          summary: `Trabajo iniciado por ${user.email}`,
+          details: { previousStatus: issue.status },
+        },
+      });
+
+      // Quien reportó se entera de que ya la están atendiendo
+      if (issue.createdById !== user.id) {
+        await tx.notification.create({
+          data: {
+            organizationId: user.organizationId,
+            recipientId: issue.createdById,
+            issueId: issue.id,
+            title: `Novedad en proceso: ${issue.code}`,
+            message: `Se inició el trabajo de la novedad ${issue.code}.`,
+          },
+        });
+      }
+
+      return tx.issue.findUniqueOrThrow({ where: { id: issue.id } });
+    });
+  }
+
+  /**
+   * Finaliza la novedad (Director o coordinador responsable - RF-023 / RF-025).
+   * Solo desde "en proceso" y con la evidencia FINAL que pida la categoría.
    */
   async close(user: AuthenticatedUser, issueId: string, dto: CloseIssueDto) {
     const issue = await this.findIssueForTransition(user, issueId);
     this.assertCanChangeState(user, issue);
 
-    // ASIGNADA y PENDIENTE_CIERRE se conservan solo por compatibilidad con datos anteriores
-    const closableStatuses: IssueStatus[] = [
-      IssueStatus.EN_ATENCION,
-      IssueStatus.ASIGNADA,
-      IssueStatus.PENDIENTE_CIERRE,
-    ];
+    // PENDIENTE_CIERRE se conserva solo por compatibilidad con datos anteriores
+    const closableStatuses: IssueStatus[] = [IssueStatus.EN_ATENCION, IssueStatus.PENDIENTE_CIERRE];
 
     if (!closableStatuses.includes(issue.status)) {
       throw new BadRequestException(
-        issue.assignedUserId
-          ? `No es posible cerrar una novedad en estado ${issue.status}`
-          : 'La novedad aún no tiene responsable; asígnela antes de cerrarla',
+        !issue.assignedUserId
+          ? 'La novedad aún no tiene responsable; asígnela antes de finalizarla'
+          : issue.status === IssueStatus.ASIGNADA
+            ? 'Inicie el trabajo antes de finalizar la novedad'
+            : `No es posible finalizar una novedad en estado ${issue.status}`,
       );
     }
 
-    const [pendingActivities, category, finalEvidenceCount] = await Promise.all([
-      this.prisma.issueActivity.count({
-        where: {
-          issueId: issue.id,
-          status: {
-            in: [ActivityStatus.PENDIENTE, ActivityStatus.EN_CURSO, ActivityStatus.BLOQUEADA],
-          },
-        },
-      }),
+    const [category, finalEvidenceCount] = await Promise.all([
       this.prisma.category.findUnique({
         where: { id: issue.categoryId },
         select: { requiresEvidence: true },
@@ -2179,15 +2246,9 @@ export class IssuesService {
       }),
     ]);
 
-    if (pendingActivities > 0) {
-      throw new BadRequestException(
-        `Todas las actividades de la novedad deben estar completadas o canceladas antes del cierre (${pendingActivities} actividad(es) pendiente(s)) (RF-018)`,
-      );
-    }
-
     if (category?.requiresEvidence && finalEvidenceCount === 0) {
       throw new BadRequestException(
-        'La categoría exige evidencia en etapa FINAL antes del cierre (CP-12 / RF-023)',
+        'Agregue la foto final antes de finalizar la novedad (CP-12 / RF-023)',
       );
     }
 
@@ -2203,7 +2264,7 @@ export class IssuesService {
           issueId: issue.id,
           userId: user.id,
           eventType: IssueEventType.CIERRE_DEFINITIVO,
-          summary: `Novedad cerrada por ${user.email}`,
+          summary: `Novedad finalizada por ${user.email}`,
           details: {
             observations: dto.closureObservations || null,
             previousStatus: issue.status,
@@ -2231,8 +2292,8 @@ export class IssuesService {
             organizationId: user.organizationId,
             recipientId,
             issueId: issue.id,
-            title: `Novedad cerrada: ${issue.code}`,
-            message: `La novedad ${issue.code} ha sido cerrada por ${user.email}.`,
+            title: `Novedad finalizada: ${issue.code}`,
+            message: `La novedad ${issue.code} fue finalizada por ${user.email}.`,
           },
         });
       }

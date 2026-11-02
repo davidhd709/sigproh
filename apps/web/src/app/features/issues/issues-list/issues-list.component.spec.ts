@@ -142,17 +142,22 @@ describe('IssuesListComponent', () => {
       expect(component.view()).toBe('ALL');
     });
 
-    it('el coordinador ve sus vistas: a su cargo, por cerrar, actividades y vencidas', async () => {
+    it('el coordinador ve sus vistas: a su cargo, pendientes y en proceso', async () => {
       currentUserSignal.set({ id: 'coord-1', email: 'c@x', role: 'COORDINADOR_OPERATIVO' });
       fixture.detectChanges();
       component.issues.set(sample as any);
 
-      expect(component.views().map((v) => v.key)).toEqual(['ALL', 'MINE', 'TO_CLOSE', 'MY_ACTIVITIES', 'OVERDUE']);
+      expect(component.views().map((v) => v.key)).toEqual(['ALL', 'MINE', 'PENDING', 'IN_PROGRESS']);
       const counts = component.viewCounts();
       // La novedad cerrada no cuenta como asignada pendiente
       expect(counts.MINE).toBe(1);
-      expect(counts.OVERDUE).toBe(1);
-      expect(component.followUps(sample[1] as any).map((f) => f.label)).toEqual(['1 vencida', '1 para ti']);
+      expect(counts.PENDING).toBe(1);
+      expect(counts.IN_PROGRESS).toBe(1);
+    });
+
+    it('el filtro "Pendiente" incluye también las que no tienen responsable', () => {
+      component.selectedStatus.set('ASIGNADA');
+      expect(component.filteredIssues().map((i) => i.id)).toEqual(['a']);
     });
   });
 });

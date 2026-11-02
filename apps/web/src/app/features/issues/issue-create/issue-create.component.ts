@@ -197,12 +197,12 @@ export class IssueCreateComponent implements OnInit, OnDestroy {
   /** Le dice a quien reporta quién se encargará, para que no tenga que adivinar el siguiente paso. */
   private assignmentNote(created: Issue): string {
     if (created.assignedUserId && created.assignedUserId === this.authService.currentUser()?.id) {
-      return 'Quedó a tu cargo.';
+      return 'Quedó pendiente a tu cargo.';
     }
     if (created.assignedUser) {
-      return `Quedó a cargo de ${created.assignedUser.firstName} ${created.assignedUser.lastName}.`;
+      return `Quedó pendiente a cargo de ${created.assignedUser.firstName} ${created.assignedUser.lastName}.`;
     }
-    return 'Quedó por asignar: Gerencia o la Dirección elegirán un responsable.';
+    return 'El ámbito no tiene coordinador ni director responsable: Gerencia o la Dirección asignarán a alguien.';
   }
 
   onSubmit(): void {

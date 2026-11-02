@@ -114,7 +114,8 @@ export class IssuesListComponent {
       list = list.filter((i) => i.priority === priority);
     }
     if (status !== 'ALL') {
-      list = list.filter((i) => i.status === status);
+      // Varios códigos se muestran como un mismo estado (p. ej. Pendiente)
+      list = list.filter((i) => statusLabel(i.status) === statusLabel(status));
     }
     if (query) {
       list = list.filter(
@@ -175,17 +176,6 @@ export class IssuesListComponent {
     this.selectedPriority.set('ALL');
     this.selectedStatus.set('ALL');
     this.searchQuery.set('');
-  }
-
-  /** Avisos breves de seguimiento para la tarjeta de cada novedad. */
-  followUps(issue: Issue): { label: string; tone: 'danger' | 'warning' | 'info' }[] {
-    const s = issue.inbox;
-    if (!s) return [];
-    const out: { label: string; tone: 'danger' | 'warning' | 'info' }[] = [];
-    if (s.overdueActivities) out.push({ label: `${s.overdueActivities} ${s.overdueActivities === 1 ? 'vencida' : 'vencidas'}`, tone: 'danger' });
-    if (s.blockedActivities) out.push({ label: s.blockedActivities === 1 ? 'Bloqueada' : `${s.blockedActivities} bloqueadas`, tone: 'danger' });
-    if (s.myOpenActivities) out.push({ label: `${s.myOpenActivities} para ti`, tone: 'info' });
-    return out;
   }
 
   private byLocation(list: Issue[]): Issue[] {

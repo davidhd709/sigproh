@@ -19,13 +19,11 @@ describe('IssueDetailComponent', () => {
       assignPrincipal: vi.fn(),
       updatePriority: vi.fn(),
       addUrgentMeasure: vi.fn(),
-      createActivity: vi.fn(),
-      updateActivity: vi.fn(),
-      assignActivity: vi.fn(),
       createComment: vi.fn(),
       uploadAttachment: vi.fn(),
       listAttachments: vi.fn().mockReturnValue(of([])),
       downloadAttachment: vi.fn(),
+      startWork: vi.fn(),
       closeIssue: vi.fn(),
       reopenIssue: vi.fn(),
       discardIssue: vi.fn(),
@@ -129,71 +127,6 @@ describe('IssueDetailComponent', () => {
     expect(component.candidates()[0].isLead).toBe(true);
   });
 
-  it('F4: permite crear actividad y refresca la novedad', () => {
-    const mockIssue: any = {
-      id: 'issue-100',
-      code: 'NOV-2026-0050',
-      title: 'Falla eléctrica',
-      activities: [],
-    };
-    component.issue.set(mockIssue);
-
-    mockIssuesService.createActivity.mockReturnValue(
-      of({
-        id: 'act-1',
-        title: 'Inspeccionar tablero',
-        version: 1,
-        status: 'PENDIENTE',
-      }),
-    );
-    mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
-
-    component.newActivityTitle = 'Inspeccionar tablero';
-    component.newActivityDescription = 'Revisar disyuntores';
-    component.submitCreateActivity();
-
-    expect(mockIssuesService.createActivity).toHaveBeenCalledWith('issue-100', {
-      title: 'Inspeccionar tablero',
-      description: 'Revisar disyuntores',
-      assignedUserId: undefined,
-      dueDate: undefined,
-    });
-    expect(component.successMessage()).toContain('Actividad creada exitosamente');
-  });
-
-  it('F4 Concurrencia (409): muestra mensaje explicativo y recarga la novedad ante colisión', () => {
-    const mockIssue: any = {
-      id: 'issue-100',
-      code: 'NOV-2026-0050',
-      title: 'Falla eléctrica',
-      activities: [],
-    };
-    component.issue.set(mockIssue);
-
-    const activity: any = {
-      id: 'act-1',
-      title: 'Inspeccionar tablero',
-      version: 1,
-      status: 'PENDIENTE',
-    };
-    component.selectedActivity.set(activity);
-    component.targetActivityStatus = 'BLOQUEADA';
-    component.activityStatusReason = 'Falta repuesto';
-
-    const error409 = new HttpErrorResponse({
-      status: 409,
-      statusText: 'Conflict',
-      error: { message: 'Conflicto de concurrencia (409)' },
-    });
-    mockIssuesService.updateActivity.mockReturnValue(throwError(() => error409));
-    mockIssuesService.getIssueById.mockReturnValue(of(mockIssue));
-
-    component.submitUpdateStatus();
-
-    expect(component.errorMessage()).toContain('Conflicto de concurrencia (409)');
-    expect(mockIssuesService.getIssueById).toHaveBeenCalledWith('issue-100');
-  });
-
   it('RF-020: debe cargar candidatos para Coordinador al consultar la novedad y permitir seleccionar menciones en Comentarios', () => {
     mockAuthService.isDirector.mockReturnValue(false);
     mockAuthService.isCoordinator.mockReturnValue(true);
@@ -286,7 +219,6 @@ describe('IssueDetailComponent', () => {
       const testFile = new File(['dummy content'], 'reporte.pdf', { type: 'application/pdf' });
       component.selectedFile = testFile;
       component.selectedEvidenceStage = 'FINAL';
-      component.selectedEvidenceActivityId = 'act-1';
 
       mockIssuesService.uploadAttachment.mockReturnValue(
         of({ id: 'att-1', fileName: 'reporte.pdf', stage: 'FINAL' }),
@@ -295,12 +227,7 @@ describe('IssueDetailComponent', () => {
 
       component.submitUploadEvidence();
 
-      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith(
-        'issue-400',
-        testFile,
-        'FINAL',
-        'act-1',
-      );
+      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith('issue-400', testFile, 'FINAL');
       expect(component.successMessage()).toContain('Evidencia adjuntada exitosamente');
       expect(component.selectedFile).toBeNull();
       expect(mockIssuesService.getIssueById).toHaveBeenCalledWith('issue-400');
@@ -327,7 +254,7 @@ describe('IssueDetailComponent', () => {
     });
   });
 
-  describe('F5: Cierre Operativo, Verificación, Devolución, Reapertura y Descarte', () => {
+  describe('F5: Inicio, finalización, reapertura y descarte', () => {
     it('hasMissingFinalEvidence retorna true si la categoría exige evidencia y no hay FINAL', () => {
       const mockIssue: any = {
         id: 'issue-500',
@@ -358,7 +285,7 @@ describe('IssueDetailComponent', () => {
       expect(component.hasMissingFinalEvidence()).toBe(false);
     });
 
-    it('el coordinador responsable puede cerrar; otro coordinador o la Gerencia no', () => {
+    it('el coordinador responsable puede finalizar; otro coordinador o la Gerencia no', () => {
       const issue: any = { id: 'issue-510', status: 'EN_ATENCION', assignedUserId: 'coord-1' };
       component.issue.set(issue);
 
@@ -376,25 +303,98 @@ describe('IssueDetailComponent', () => {
       expect(component.canClose()).toBe(false);
     });
 
-    it('closeBlocker informa actividades sin terminar antes de cerrar', () => {
-      component.issue.set({
-        id: 'issue-511',
-        status: 'EN_ATENCION',
-        category: { requiresEvidence: false },
-        activities: [{ status: 'EN_CURSO' }, { status: 'COMPLETADA' }],
-      } as any);
-      expect(component.closeBlocker()).toBe('Hay 1 actividad sin terminar');
+    it('una novedad pendiente se inicia, no se finaliza directamente', () => {
+      component.issue.set({ id: 'issue-512', status: 'ASIGNADA', assignedUserId: 'coord-1' } as any);
 
-      component.issue.set({
-        id: 'issue-511',
-        status: 'EN_ATENCION',
-        category: { requiresEvidence: false },
-        activities: [{ status: 'COMPLETADA' }],
-      } as any);
-      expect(component.closeBlocker()).toBeNull();
+      expect(component.canStart()).toBe(true);
+      expect(component.canClose()).toBe(false);
     });
 
-    it('cerrar como Director invoca closeIssue', () => {
+    it('iniciar el trabajo invoca startWork y recarga la novedad', () => {
+      const mockIssue: any = { id: 'issue-513', status: 'ASIGNADA', assignedUserId: 'coord-1' };
+      component.issue.set(mockIssue);
+      mockIssuesService.startWork.mockReturnValue(of({ ...mockIssue, status: 'EN_ATENCION' }));
+      mockIssuesService.getIssueById.mockReturnValue(of({ ...mockIssue, status: 'EN_ATENCION' }));
+
+      component.runAction('start');
+
+      expect(mockIssuesService.startWork).toHaveBeenCalledWith('issue-513');
+      expect(component.successMessage()).toContain('Trabajo iniciado');
+      expect(mockIssuesService.getIssueById).toHaveBeenCalledWith('issue-513');
+    });
+
+    it('finalizar sin foto cuando la categoría la exige no llama al servidor', () => {
+      component.issue.set({
+        id: 'issue-514',
+        status: 'EN_ATENCION',
+        category: { requiresEvidence: true },
+        attachments: [],
+      } as any);
+
+      component.submitClose();
+
+      expect(component.finalPhotoError()).toContain('foto final');
+      expect(mockIssuesService.uploadAttachment).not.toHaveBeenCalled();
+      expect(mockIssuesService.closeIssue).not.toHaveBeenCalled();
+    });
+
+    it('finalizar con foto la sube como FINAL y luego cierra, en un solo paso', () => {
+      const mockIssue: any = {
+        id: 'issue-515',
+        status: 'EN_ATENCION',
+        category: { requiresEvidence: true },
+        attachments: [],
+      };
+      component.issue.set(mockIssue);
+      window.URL.createObjectURL = vi.fn().mockReturnValue('blob:final');
+      window.URL.revokeObjectURL = vi.fn();
+      const photo = new File(['img'], 'final.jpg', { type: 'image/jpeg' });
+      component.setFinalPhoto(photo);
+      component.closureObservations = 'Se cambió el contactor';
+
+      mockIssuesService.uploadAttachment.mockReturnValue(of({ id: 'att-f', stage: 'FINAL' }));
+      mockIssuesService.closeIssue.mockReturnValue(of({ ...mockIssue, status: 'CERRADA' }));
+      mockIssuesService.getIssueById.mockReturnValue(of({ ...mockIssue, status: 'CERRADA' }));
+
+      component.submitClose();
+
+      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith('issue-515', photo, 'FINAL');
+      expect(mockIssuesService.closeIssue).toHaveBeenCalledWith('issue-515', {
+        closureObservations: 'Se cambió el contactor',
+      });
+      expect(component.successMessage()).toContain('Novedad finalizada');
+      expect(component.finalPhoto()).toBeNull();
+    });
+
+    it('si la foto subió pero el cierre falla, no se vuelve a subir al reintentar', () => {
+      const mockIssue: any = {
+        id: 'issue-516',
+        status: 'EN_ATENCION',
+        category: { requiresEvidence: true },
+        attachments: [],
+      };
+      component.issue.set(mockIssue);
+      window.URL.createObjectURL = vi.fn().mockReturnValue('blob:final');
+      window.URL.revokeObjectURL = vi.fn();
+      component.setFinalPhoto(new File(['img'], 'final.jpg', { type: 'image/jpeg' }));
+
+      mockIssuesService.uploadAttachment.mockReturnValue(of({ id: 'att-f', stage: 'FINAL' }));
+      mockIssuesService.closeIssue.mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { message: 'Conflicto' } })),
+      );
+      mockIssuesService.getIssueById.mockReturnValue(
+        of({ ...mockIssue, attachments: [{ id: 'att-f', stage: 'FINAL', mimeType: 'image/jpeg' }] }),
+      );
+      mockIssuesService.downloadAttachment.mockReturnValue(of(new Blob()));
+
+      component.submitClose();
+
+      expect(component.finalPhoto()).toBeNull();
+      expect(component.errorMessage()).toContain('Conflicto');
+      expect(component.finalPhotoRequired()).toBe(false);
+    });
+
+    it('finalizar como Director invoca closeIssue', () => {
       const mockIssue: any = { id: 'issue-503', status: 'EN_ATENCION' };
       component.issue.set(mockIssue);
       component.closureObservations = 'Verificado en campo a conformidad';
@@ -409,7 +409,7 @@ describe('IssueDetailComponent', () => {
       expect(mockIssuesService.closeIssue).toHaveBeenCalledWith('issue-503', {
         closureObservations: 'Verificado en campo a conformidad',
       });
-      expect(component.successMessage()).toContain('Novedad cerrada');
+      expect(component.successMessage()).toContain('Novedad finalizada');
     });
 
     it('reabrir novedad cerrada exige motivo obligatorio e invoca reopenIssue', () => {
@@ -468,32 +468,39 @@ describe('IssueDetailComponent', () => {
       attachments: [],
     };
 
-    it('para el Director con la novedad en atención, la acción principal es cerrarla', () => {
-      component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
+    it('pendiente: la acción principal es iniciar el trabajo', () => {
+      component.issue.set({ ...baseIssue, status: 'ASIGNADA' });
 
-      expect(component.primaryAction()?.key).toBe('close');
+      expect(component.primaryAction()?.key).toBe('start');
     });
 
-    it('si falta la foto final, la acción principal es subirla y el cierre queda después', () => {
+    it('en proceso: la acción principal es finalizar, avisando de la foto final si se exige', () => {
+      component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
+      expect(component.primaryAction()?.key).toBe('close');
+      expect(component.primaryAction()?.hint).toBeUndefined();
+
       component.issue.set({
         ...baseIssue,
         status: 'EN_ATENCION',
         category: { name: 'Equipos', requiresEvidence: true },
       });
-
-      expect(component.actions().map((a) => a.key).slice(0, 2)).toEqual(['attach-final', 'close']);
+      expect(component.primaryAction()?.key).toBe('close');
+      expect(component.primaryAction()?.hint).toContain('foto final');
     });
 
     it('explica en una línea qué sigue según el rol', () => {
       component.issue.set({ ...baseIssue, status: 'EN_REVISION', assignedUserId: null });
-      expect(component.nextStepHint()).toContain('Asígnala a un coordinador');
+      expect(component.nextStepHint()).toContain('Asígnala');
 
       mockAuthService.isDirector.mockReturnValue(false);
       mockAuthService.isCoordinator.mockReturnValue(true);
       mockAuthService.canAssignIssues.mockReturnValue(false);
       mockAuthService.currentUser.mockReturnValue({ id: 'coord-1', role: 'COORDINADOR_OPERATIVO' });
+      component.issue.set({ ...baseIssue, status: 'ASIGNADA' });
+      expect(component.nextStepHint()).toContain('márcala como iniciada');
+
       component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
-      expect(component.nextStepHint()).toContain('Está a tu cargo');
+      expect(component.nextStepHint()).toContain('finalízala');
     });
 
     it('para el Director sin responsable confirmado, la acción principal es confirmar responsable', () => {
@@ -512,6 +519,8 @@ describe('IssueDetailComponent', () => {
 
     it('ubica cada estado en su etapa del flujo', () => {
       component.issue.set({ ...baseIssue, status: 'EN_REVISION' });
+      expect(component.currentStep()).toBe(0);
+      component.issue.set({ ...baseIssue, status: 'ASIGNADA' });
       expect(component.currentStep()).toBe(0);
       component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
       expect(component.currentStep()).toBe(1);

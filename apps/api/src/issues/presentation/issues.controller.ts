@@ -216,7 +216,15 @@ export class IssuesController {
   }
 
   // --- Endpoints de Cierre, Reapertura y Descarte (F5 / RF-012, RF-023, RF-025, RF-026) ---
-  // Cerrar y reabrir: Director o coordinador responsable (validado en el servicio).
+  // Iniciar, finalizar y reabrir: Director o coordinador responsable (validado en el servicio).
+
+  @Post('issues/:id/start')
+  async startWork(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    return this.issuesService.startWork(user, id);
+  }
 
   @Post('issues/:id/close')
   async close(

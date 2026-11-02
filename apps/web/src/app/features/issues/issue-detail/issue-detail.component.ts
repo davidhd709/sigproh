@@ -13,29 +13,28 @@ import {
   statusTone,
   timeAgo,
 } from '../../../shared/presentation';
-import { ACCEPT_ANY, ALLOWED_FORMATS_LABEL, MAX_SIZE_LABEL } from '../../../shared/file-policy';
+import {
+  ACCEPT_ANY,
+  ACCEPT_IMAGES,
+  ALLOWED_FORMATS_LABEL,
+  FILE_POLICY,
+  MAX_SIZE_LABEL,
+  fileRejection,
+} from '../../../shared/file-policy';
 import { CommonModule } from '@angular/common';
 import { RouterModule, ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { IssuesService, CandidateUser } from '../../../core/services/issues.service';
 import { AuthService } from '../../../core/services/auth.service';
-import {
-  ActivityStatus,
-  EvidenceStage,
-  Issue,
-  IssueActivity,
-  IssueAttachment,
-  IssueComment,
-  IssuePriority,
-} from '../../../core/models/issue.model';
+import { Observable, of, switchMap } from 'rxjs';
+import { EvidenceStage, Issue, IssueAttachment, IssuePriority } from '../../../core/models/issue.model';
 
 type DetailAction =
+  | 'start'
   | 'close'
   | 'confirm-responsible'
-  | 'attach-final'
   | 'reopen'
   | 'urgent-measure'
-  | 'new-activity'
   | 'reassign'
   | 'change-priority'
   | 'attach'
@@ -51,10 +50,11 @@ interface ActionItem {
 
 /** Etapas visibles del flujo; cada estado del backend se ubica en una de ellas. */
 const FLOW_STEPS: { label: string; statuses: string[] }[] = [
-  { label: 'Por asignar', statuses: ['REGISTRADA', 'EN_REVISION'] },
-  // ASIGNADA y PENDIENTE_CIERRE ya no se usan; se ubican en proceso por compatibilidad
-  { label: 'En proceso', statuses: ['EN_ATENCION', 'ASIGNADA', 'PENDIENTE_CIERRE'] },
-  { label: 'Cerrada', statuses: ['CERRADA'] },
+  // REGISTRADA y EN_REVISION: sin responsable (el ámbito no tiene coordinador ni director)
+  { label: 'Pendiente', statuses: ['ASIGNADA', 'REGISTRADA', 'EN_REVISION'] },
+  // PENDIENTE_CIERRE ya no se usa; se ubica en proceso por compatibilidad
+  { label: 'En proceso', statuses: ['EN_ATENCION', 'PENDIENTE_CIERRE'] },
+  { label: 'Finalizada', statuses: ['CERRADA'] },
 ];
 
 @Component({
@@ -73,6 +73,7 @@ export class IssueDetailComponent {
 
   // Presentación
   readonly acceptFiles = ACCEPT_ANY;
+  readonly acceptImages = ACCEPT_IMAGES;
   readonly formatsLabel = ALLOWED_FORMATS_LABEL;
   readonly maxSizeLabel = MAX_SIZE_LABEL;
   readonly statusLabel = statusLabel;
@@ -120,38 +121,34 @@ export class IssueDetailComponent {
 
     const isOpen = current.status !== 'CERRADA' && current.status !== 'DESCARTADA';
     const canAssign = this.authService.canAssignIssues();
-    const needsFinalPhoto = this.canClose() && this.hasMissingFinalEvidence();
 
-    // Primero lo que destraba el flujo: asignar, atender lo urgente, subir la foto final, cerrar
+    // Primero lo que mueve el flujo: asignar, atender lo urgente, iniciar, finalizar
     if (canAssign && isOpen && !current.assignedUserId) {
       list.push({ key: 'confirm-responsible', label: 'Asignar responsable', icon: 'user' });
     }
     if (isCritical && !current.urgentMeasures && isOpen) {
       list.push({ key: 'urgent-measure', label: 'Registrar medida urgente', icon: 'alert-octagon', tone: 'danger' });
     }
-    if (needsFinalPhoto) {
-      list.push({ key: 'attach-final', label: 'Subir foto final', icon: 'camera', hint: 'Se necesita para cerrar' });
+    if (this.canStart()) {
+      list.push({ key: 'start', label: 'Iniciar trabajo', icon: 'zap', hint: 'Pasa la novedad a en proceso' });
     }
     if (this.canClose()) {
       list.push({
         key: 'close',
-        label: 'Cerrar novedad',
+        label: 'Finalizar',
         icon: 'check-circle',
         tone: 'success',
-        hint: this.closeBlocker() ?? undefined,
+        hint: this.hasMissingFinalEvidence() ? 'Con la foto final del trabajo' : undefined,
       });
     }
     if (this.canReopen()) {
       list.push({ key: 'reopen', label: 'Reabrir', icon: 'refresh' });
     }
-    if (isOpen && !needsFinalPhoto && !this.authService.isAdmin()) {
+    if (isOpen && !this.authService.isAdmin()) {
       list.push({ key: 'attach', label: 'Adjuntar foto o archivo', icon: 'camera' });
     }
     if (isCritical && current.urgentMeasures && isOpen) {
       list.push({ key: 'urgent-measure', label: 'Agregar medida urgente', icon: 'alert-octagon' });
-    }
-    if (this.canCreateActivity()) {
-      list.push({ key: 'new-activity', label: 'Dividir en actividades', icon: 'plus' });
     }
     if (canAssign && isOpen && current.assignedUserId) {
       list.push({ key: 'reassign', label: 'Cambiar responsable', icon: 'user' });
@@ -173,25 +170,34 @@ export class IssueDetailComponent {
     if (!current || !user) return null;
     const isResponsible = current.assignedUserId === user.id;
 
+    const responsible = current.assignedUser
+      ? `${current.assignedUser.firstName} ${current.assignedUser.lastName}`
+      : null;
+
     switch (current.status) {
       case 'REGISTRADA':
       case 'EN_REVISION':
         return this.authService.canAssignIssues()
-          ? 'Nadie la tiene a cargo todavía. Asígnala a un coordinador para que la atienda.'
+          ? 'No tiene responsable porque el ámbito no tiene coordinador ni director asignado. Asígnala.'
           : 'Está esperando que Gerencia o la Dirección le asignen un responsable.';
+      case 'ASIGNADA':
+        if (this.canStart()) {
+          return isResponsible
+            ? 'Está a tu cargo. Cuando mandes a hacer el trabajo, márcala como iniciada.'
+            : `Está a cargo de ${responsible}. Puedes iniciar el trabajo tú mismo.`;
+        }
+        return `Pendiente: ${responsible} debe iniciar el trabajo.`;
       case 'CERRADA':
-        return 'Esta novedad ya se resolvió.';
+        return 'Esta novedad ya se finalizó.';
       case 'DESCARTADA':
         return 'Esta novedad se descartó y no requiere atención.';
       default:
-        if (isResponsible) {
+        if (this.canClose()) {
           return this.hasMissingFinalEvidence()
-            ? 'Está a tu cargo. Cuando termines, sube la foto final y ciérrala.'
-            : 'Está a tu cargo. Cuando termines el trabajo, ciérrala.';
+            ? 'En proceso. Cuando termine el trabajo, agrega la foto final y finalízala.'
+            : 'En proceso. Cuando termine el trabajo, finalízala.';
         }
-        return current.assignedUser
-          ? `La está atendiendo ${current.assignedUser.firstName} ${current.assignedUser.lastName}.`
-          : 'Está en proceso.';
+        return responsible ? `La está atendiendo ${responsible}.` : 'Está en proceso.';
     }
   });
   readonly moreActions = computed(() => this.actions().slice(1));
@@ -199,19 +205,17 @@ export class IssueDetailComponent {
   runAction(key: DetailAction): void {
     this.showMoreActions.set(false);
     switch (key) {
+      case 'start':
+        return this.startWork();
       case 'close':
         return this.openCloseModal();
       case 'confirm-responsible':
       case 'reassign':
         return this.openAssignModal();
-      case 'attach-final':
-        return this.openUploadEvidenceModal('FINAL');
       case 'reopen':
         return this.openReopenModal();
       case 'urgent-measure':
         return this.showUrgentMeasureModal.set(true);
-      case 'new-activity':
-        return this.openCreateActivityModal();
       case 'change-priority':
         return this.showPriorityModal.set(true);
       case 'attach':
@@ -259,7 +263,10 @@ export class IssueDetailComponent {
         });
       }
     });
-    this.destroyRef.onDestroy(() => Object.values(this.photoUrls()).forEach((u) => URL.revokeObjectURL(u)));
+    this.destroyRef.onDestroy(() => {
+      Object.values(this.photoUrls()).forEach((u) => URL.revokeObjectURL(u));
+      this.setFinalPhoto(null);
+    });
 
     effect(() => {
       const user = this.authService.currentUser();
@@ -453,11 +460,11 @@ export class IssueDetailComponent {
       });
   }
 
-  // --- F4: Pestañas, Actividades y Comentarios ---
+  // --- F4: Pestañas y Comentarios ---
 
-  readonly activeTab = signal<'actividades' | 'comentarios' | 'evidencias' | 'historial'>('comentarios');
+  readonly activeTab = signal<'comentarios' | 'evidencias' | 'historial'>('comentarios');
 
-  selectTab(tab: 'actividades' | 'comentarios' | 'evidencias' | 'historial'): void {
+  selectTab(tab: 'comentarios' | 'evidencias' | 'historial'): void {
     this.activeTab.set(tab);
     if (tab === 'comentarios' && this.candidates().length === 0) {
       const current = this.issue();
@@ -467,202 +474,9 @@ export class IssueDetailComponent {
     }
   }
 
-  // Estado de actividades
-  readonly showCreateActivityModal = signal<boolean>(false);
-  newActivityTitle = '';
-  newActivityDescription = '';
-  newActivityAssignedUserId = '';
-  newActivityDueDate = '';
-
-  readonly showStatusModal = signal<boolean>(false);
-  readonly selectedActivity = signal<IssueActivity | null>(null);
-  targetActivityStatus: ActivityStatus = 'EN_CURSO';
-  activityStatusReason = '';
-
-  readonly showReassignActivityModal = signal<boolean>(false);
-  reassignActivityUserId = '';
-
   // Estado de comentarios
   newCommentContent = '';
-  newCommentActivityId = '';
   newCommentMentionId = '';
-
-  canCreateActivity(): boolean {
-    const current = this.issue();
-    const user = this.authService.currentUser();
-    if (!current || !user) return false;
-    if (current.status === 'CERRADA' || current.status === 'DESCARTADA') return false;
-    return this.authService.isDirector() || current.assignedUserId === user.id;
-  }
-
-  canModifyActivity(act: IssueActivity): boolean {
-    const current = this.issue();
-    const user = this.authService.currentUser();
-    if (!current || !user) return false;
-    return (
-      this.authService.isDirector() ||
-      current.assignedUserId === user.id ||
-      act.assignedUserId === user.id
-    );
-  }
-
-  canCancelOrEditDetails(): boolean {
-    const current = this.issue();
-    const user = this.authService.currentUser();
-    if (!current || !user) return false;
-    return this.authService.isDirector() || current.assignedUserId === user.id;
-  }
-
-  openCreateActivityModal(): void {
-    const current = this.issue();
-    if (!current) return;
-    this.newActivityTitle = '';
-    this.newActivityDescription = '';
-    this.newActivityAssignedUserId = '';
-    this.newActivityDueDate = '';
-    this.loadCandidates(current.id);
-    this.showCreateActivityModal.set(true);
-  }
-
-  submitCreateActivity(): void {
-    const current = this.issue();
-    if (!current) return;
-
-    if (!this.newActivityTitle.trim() || !this.newActivityDescription.trim()) {
-      this.errorMessage.set('El título y la descripción de la actividad son obligatorios.');
-      return;
-    }
-
-    this.actionLoading.set(true);
-    this.errorMessage.set(null);
-
-    this.issuesService
-      .createActivity(current.id, {
-        title: this.newActivityTitle.trim(),
-        description: this.newActivityDescription.trim(),
-        assignedUserId: this.newActivityAssignedUserId || undefined,
-        dueDate: this.newActivityDueDate || undefined,
-      })
-      .subscribe({
-        next: () => {
-          this.actionLoading.set(false);
-          this.showCreateActivityModal.set(false);
-          this.successMessage.set('Actividad creada exitosamente y notificada al responsable si aplica.');
-          this.loadIssue(current.id);
-        },
-        error: (err) => {
-          this.actionLoading.set(false);
-          const msg = err.error?.message || 'Error al crear la actividad.';
-          this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
-        },
-      });
-  }
-
-  openStatusModal(act: IssueActivity): void {
-    this.selectedActivity.set(act);
-    this.targetActivityStatus = act.status;
-    this.activityStatusReason = act.statusReason || '';
-    this.showStatusModal.set(true);
-  }
-
-  submitUpdateStatus(): void {
-    const current = this.issue();
-    const act = this.selectedActivity();
-    if (!current || !act) return;
-
-    if (
-      (this.targetActivityStatus === 'BLOQUEADA' || this.targetActivityStatus === 'CANCELADA') &&
-      !this.activityStatusReason.trim()
-    ) {
-      this.errorMessage.set(
-        'El motivo es obligatorio para marcar la actividad como BLOQUEADA o CANCELADA (CP-11 / RN-069 / RN-070).',
-      );
-      return;
-    }
-
-    this.actionLoading.set(true);
-    this.errorMessage.set(null);
-
-    this.issuesService
-      .updateActivity(current.id, act.id, {
-        status: this.targetActivityStatus,
-        statusReason: this.activityStatusReason ? this.activityStatusReason.trim() : undefined,
-        version: act.version,
-      })
-      .subscribe({
-        next: () => {
-          this.actionLoading.set(false);
-          this.showStatusModal.set(false);
-          this.selectedActivity.set(null);
-          this.successMessage.set('Estado de la actividad actualizado con trazabilidad.');
-          this.loadIssue(current.id);
-        },
-        error: (err) => {
-          this.actionLoading.set(false);
-          if (err.status === 409) {
-            this.showStatusModal.set(false);
-            this.loadIssue(current.id);
-            this.errorMessage.set(
-              'Conflicto de concurrencia (409): Otro usuario modificó esta actividad mientras usted la consultaba. La vista se ha recargado con los datos más recientes.',
-            );
-          } else {
-            const msg = err.error?.message || 'Error al actualizar el estado de la actividad.';
-            this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
-          }
-        },
-      });
-  }
-
-  openReassignActivityModal(act: IssueActivity): void {
-    const current = this.issue();
-    if (!current) return;
-    this.selectedActivity.set(act);
-    this.reassignActivityUserId = act.assignedUserId || '';
-    this.loadCandidates(current.id);
-    this.showReassignActivityModal.set(true);
-  }
-
-  submitReassignActivity(): void {
-    const current = this.issue();
-    const act = this.selectedActivity();
-    if (!current || !act) return;
-
-    if (!this.reassignActivityUserId) {
-      this.errorMessage.set('Debe seleccionar el usuario al que se reasignará la actividad.');
-      return;
-    }
-
-    this.actionLoading.set(true);
-    this.errorMessage.set(null);
-
-    this.issuesService
-      .assignActivity(current.id, act.id, {
-        assignedUserId: this.reassignActivityUserId,
-        version: act.version,
-      })
-      .subscribe({
-        next: () => {
-          this.actionLoading.set(false);
-          this.showReassignActivityModal.set(false);
-          this.selectedActivity.set(null);
-          this.successMessage.set('Actividad reasignada exitosamente y notificada al nuevo responsable.');
-          this.loadIssue(current.id);
-        },
-        error: (err) => {
-          this.actionLoading.set(false);
-          if (err.status === 409) {
-            this.showReassignActivityModal.set(false);
-            this.loadIssue(current.id);
-            this.errorMessage.set(
-              'Conflicto de concurrencia (409): La actividad fue modificada concurrentemente. Se ha recargado con los datos más recientes.',
-            );
-          } else {
-            const msg = err.error?.message || 'Error al reasignar actividad.';
-            this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
-          }
-        },
-      });
-  }
 
   submitComment(): void {
     const current = this.issue();
@@ -681,14 +495,12 @@ export class IssueDetailComponent {
     this.issuesService
       .createComment(current.id, {
         content: this.newCommentContent.trim(),
-        activityId: this.newCommentActivityId || undefined,
         mentions,
       })
       .subscribe({
         next: () => {
           this.actionLoading.set(false);
           this.newCommentContent = '';
-          this.newCommentActivityId = '';
           this.newCommentMentionId = '';
           this.successMessage.set('Comentario registrado con éxito.');
           this.loadIssue(current.id);
@@ -705,18 +517,21 @@ export class IssueDetailComponent {
   readonly showUploadEvidenceModal = signal<boolean>(false);
   selectedFile: File | null = null;
   selectedEvidenceStage: EvidenceStage = 'SOPORTE';
-  selectedEvidenceActivityId = '';
 
-  // --- F5 / RF-012, RF-023 a RF-028: Atención y cierre directo ---
+  // --- F5 / RF-012, RF-023 a RF-028: Inicio, finalización y reapertura ---
   readonly showCloseModal = signal<boolean>(false);
   readonly showReopenModal = signal<boolean>(false);
   readonly showDiscardModal = signal<boolean>(false);
 
   closureObservations = '';
+  /** Foto final elegida en el panel de finalizar; se sube justo antes de cerrar. */
+  readonly finalPhoto = signal<File | null>(null);
+  readonly finalPhotoPreview = signal<string | null>(null);
+  readonly finalPhotoError = signal<string | null>(null);
   reopenReason = '';
   discardReason = '';
 
-  /** Cerrar y reabrir: Director o coordinador responsable de la novedad. */
+  /** Iniciar, finalizar y reabrir: Director o coordinador responsable de la novedad. */
   canChangeState(): boolean {
     const current = this.issue();
     const user = this.authService.currentUser();
@@ -727,12 +542,14 @@ export class IssueDetailComponent {
     );
   }
 
+  canStart(): boolean {
+    const current = this.issue();
+    return this.canChangeState() && current?.status === 'ASIGNADA' && Boolean(current.assignedUserId);
+  }
+
   canClose(): boolean {
     const status = this.issue()?.status;
-    return (
-      this.canChangeState() &&
-      (status === 'ASIGNADA' || status === 'EN_ATENCION' || status === 'PENDIENTE_CIERRE')
-    );
+    return this.canChangeState() && (status === 'EN_ATENCION' || status === 'PENDIENTE_CIERRE');
   }
 
   canReopen(): boolean {
@@ -752,18 +569,8 @@ export class IssueDetailComponent {
     return !attachments.some((att) => att.stage === 'FINAL');
   }
 
-  /** Motivo por el que aún no se puede cerrar, o null si cumple los requisitos. */
-  closeBlocker(): string | null {
-    const pending = (this.issue()?.activities || []).filter(
-      (a) => a.status === 'PENDIENTE' || a.status === 'EN_CURSO' || a.status === 'BLOQUEADA',
-    ).length;
-    if (pending > 0) {
-      return pending === 1
-        ? 'Hay 1 actividad sin terminar'
-        : `Hay ${pending} actividades sin terminar`;
-    }
-    if (this.hasMissingFinalEvidence()) return 'Falta una evidencia de etapa final';
-    return null;
+  hasFinalEvidence(): boolean {
+    return (this.issue()?.attachments || []).some((att) => att.stage === 'FINAL');
   }
 
   openUploadEvidenceModal(stage: EvidenceStage = 'SOPORTE'): void {
@@ -771,7 +578,6 @@ export class IssueDetailComponent {
     if (!current) return;
     this.selectedFile = null;
     this.selectedEvidenceStage = stage;
-    this.selectedEvidenceActivityId = '';
     this.showUploadEvidenceModal.set(true);
   }
 
@@ -793,12 +599,7 @@ export class IssueDetailComponent {
     this.errorMessage.set(null);
 
     this.issuesService
-      .uploadAttachment(
-        current.id,
-        this.selectedFile,
-        this.selectedEvidenceStage,
-        this.selectedEvidenceActivityId || undefined,
-      )
+      .uploadAttachment(current.id, this.selectedFile, this.selectedEvidenceStage)
       .subscribe({
         next: () => {
           this.actionLoading.set(false);
@@ -843,34 +644,108 @@ export class IssueDetailComponent {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  openCloseModal(): void {
-    this.closureObservations = '';
-    this.showCloseModal.set(true);
-  }
-
-  submitClose(): void {
+  startWork(): void {
     const current = this.issue();
     if (!current) return;
 
     this.actionLoading.set(true);
     this.errorMessage.set(null);
 
-    this.issuesService
-      .closeIssue(current.id, {
-        closureObservations: this.closureObservations.trim() || undefined,
-      })
+    this.issuesService.startWork(current.id).subscribe({
+      next: () => {
+        this.actionLoading.set(false);
+        this.successMessage.set('Trabajo iniciado. La novedad quedó en proceso.');
+        this.loadIssue(current.id);
+      },
+      error: (err) => {
+        this.actionLoading.set(false);
+        const msg = err.error?.message || 'Error al iniciar el trabajo.';
+        this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
+      },
+    });
+  }
+
+  openCloseModal(): void {
+    this.closureObservations = '';
+    this.setFinalPhoto(null);
+    this.showCloseModal.set(true);
+  }
+
+  closeFinalizeModal(): void {
+    this.setFinalPhoto(null);
+    this.showCloseModal.set(false);
+  }
+
+  onFinalPhotoSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = ''; // permite volver a elegir la misma foto
+    if (!file) return;
+    const reason = fileRejection(file, FILE_POLICY.imageTypes);
+    if (reason) {
+      this.finalPhotoError.set(reason);
+      return;
+    }
+    this.setFinalPhoto(file);
+  }
+
+  setFinalPhoto(file: File | null): void {
+    const previous = this.finalPhotoPreview();
+    if (previous) URL.revokeObjectURL(previous);
+    this.finalPhoto.set(file);
+    this.finalPhotoPreview.set(file ? URL.createObjectURL(file) : null);
+    this.finalPhotoError.set(null);
+  }
+
+  /** La foto final es obligatoria si la categoría la exige y aún no se ha subido. */
+  finalPhotoRequired(): boolean {
+    return this.hasMissingFinalEvidence();
+  }
+
+  /** Sube la foto final (si se eligió) y finaliza la novedad en un solo paso para el usuario. */
+  submitClose(): void {
+    const current = this.issue();
+    if (!current) return;
+
+    const photo = this.finalPhoto();
+    if (!photo && this.finalPhotoRequired()) {
+      this.finalPhotoError.set('Agrega la foto final del trabajo terminado.');
+      return;
+    }
+
+    this.actionLoading.set(true);
+    this.errorMessage.set(null);
+
+    let photoUploaded = false;
+    const upload$: Observable<unknown> = photo
+      ? this.issuesService.uploadAttachment(current.id, photo, 'FINAL')
+      : of(null);
+
+    upload$
+      .pipe(
+        switchMap(() => {
+          photoUploaded = Boolean(photo);
+          return this.issuesService.closeIssue(current.id, {
+            closureObservations: this.closureObservations.trim() || undefined,
+          });
+        }),
+      )
       .subscribe({
-        next: (updated) => {
+        next: () => {
           this.actionLoading.set(false);
-          this.issue.set(updated);
-          this.showCloseModal.set(false);
+          this.closeFinalizeModal();
           this.closureObservations = '';
-          this.successMessage.set('Novedad cerrada.');
+          this.successMessage.set('Novedad finalizada. Se avisó a quien la reportó.');
           this.loadIssue(current.id);
         },
         error: (err) => {
           this.actionLoading.set(false);
-          const msg = err.error?.message || 'Error al cerrar novedad.';
+          // Si la foto ya subió pero el cierre falló, no se vuelve a subir al reintentar
+          if (photoUploaded) {
+            this.setFinalPhoto(null);
+            this.loadIssue(current.id);
+          }
+          const msg = err.error?.message || 'Error al finalizar la novedad.';
           this.errorMessage.set(Array.isArray(msg) ? msg.join(', ') : msg);
         },
       });

@@ -22,8 +22,8 @@
 2. Cada usuario tiene acceso solo a las propiedades y áreas autorizadas; Gerencia y Auxiliar de Gerencia tienen visibilidad general.
 3. Una actividad interna asignada a un coordinador no abre automáticamente todas las novedades del área interna.
 4. Cerrar o reabrir una novedad: Director o coordinador responsable. Descartar: solo Director, en cualquier novedad abierta.
-5. Toda propiedad tiene, desde su creación, un **coordinador principal** y un **director operativo responsable** (ambos obligatorios; no se puede retirar al último). El director responsable recibe los avisos de esa propiedad (críticas, por asignar, cierres del coordinador, medidas urgentes) y sigue viendo todas las propiedades; las novedades internas o de propiedades sin director avisan a todos los directores.
-6. Asignación automática al reportar: si reporta un coordinador, queda a su cargo; si reporta Gerencia, Auxiliar o Director, pasa al coordinador principal del ámbito; si no hay, queda por asignar. Asignar o cambiar responsable: Director, Gerencia o Auxiliar de Gerencia.
+5. Toda propiedad tiene, desde su creación, un **coordinador principal** y un **director operativo responsable** (ambos obligatorios; no se puede retirar al último). El director responsable recibe los avisos de esa propiedad (críticas, sin responsable, novedades finalizadas por el coordinador, medidas urgentes) y sigue viendo todas las propiedades; las novedades internas o de propiedades sin director avisan a todos los directores.
+6. Asignación automática al reportar: si reporta un coordinador, queda a su cargo; si reporta Gerencia, Auxiliar o Director, pasa al coordinador principal del ámbito; si no hay, pasa al director responsable (de la propiedad o asignado al área); solo si tampoco hay director queda sin responsable. Asignar o cambiar responsable: Director, Gerencia o Auxiliar de Gerencia.
 7. Director y responsable principal: creación y asignación de actividades a usuarios autorizados.
 8. El administrador de plantillas institucionales no puede alterar contenido histórico aprobado.
 9. El permiso para descargar un PDF no equivale a autorización para distribución oficial; fuera de la aplicación se requerirá una política interna de uso documental.
@@ -55,25 +55,27 @@
 La novedad tiene solo tres estados visibles:
 
 ```
-Por asignar ──asignar──► En proceso ──cerrar──► Cerrada
-     │          ▲ (automático al reportar si hay responsable)  │
-     │          └──────────────── reabrir ─────────────────────┘
-     └─descartar (Director, en cualquier estado abierto)──► Descartada
+Pendiente ──iniciar trabajo──► En proceso ──foto final + finalizar──► Finalizada
+    ▲ (asignación automática al reportar)  ▲                         │
+    │                                      └──────── reabrir ────────┘
+    └─descartar (Director, en cualquier estado abierto)──► Descartada
 
 Informe:  Borrador (solo autor y Director) ──finalizar──► Finalizado (visible para todos) ──nueva versión──► Borrador
 ```
 
 | Estado visible | Código interno | Qué significa |
 |---|---|---|
-| Por asignar | `EN_REVISION` | Nadie la tiene a cargo; Gerencia, Auxiliar o Director eligen un coordinador. |
-| En proceso | `EN_ATENCION` | Un responsable la está atendiendo. |
-| Cerrada | `CERRADA` | Trabajo terminado y verificado por el responsable o el Director. |
+| Pendiente | `ASIGNADA` | Tiene responsable, pero aún no se ha mandado a hacer el trabajo. |
+| Pendiente (sin responsable) | `EN_REVISION` | El ámbito no tiene coordinador ni director; Gerencia, Auxiliar o Director asignan a alguien. |
+| En proceso | `EN_ATENCION` | El responsable inició el trabajo ("Iniciar trabajo"). |
+| Finalizada | `CERRADA` | Trabajo terminado; el responsable o el Director la finalizaron con la foto final. |
 | Descartada | `DESCARTADA` | No requiere atención (duplicada, improcedente). |
 
-- La mayoría de novedades no pasa por "Por asignar": quedan a cargo de quien reporta (coordinador) o del coordinador principal del ámbito.
-- El cierre es directo. Las actividades son opcionales; si existen deben estar terminadas. Se exige la foto FINAL cuando la categoría la pide.
+- Iniciar trabajo, finalizar y reabrir: el coordinador responsable o el Director. Solo se finaliza desde "En proceso".
+- Finalizar es un solo paso: el panel pide la foto final (obligatoria cuando la categoría la exige) y observaciones opcionales; sube la foto como FINAL y cierra.
+- Las actividades ya no forman parte del flujo ni bloquean la finalización (se quitaron de la interfaz; los datos anteriores se conservan).
 - No hay devolución al reportante: si falta información se pide con un comentario con mención.
-- `REGISTRADA`, `ASIGNADA` y `PENDIENTE_CIERRE` quedan sin uso (la migración `20261026120000_simplified_issue_flow` movió los registros existentes).
+- `REGISTRADA` y `PENDIENTE_CIERRE` quedan sin uso. `ASIGNADA` vuelve a usarse como "Pendiente" desde la migración `20261101120000_issue_start_work`, que además agrega el evento `INICIO_TRABAJO`.
 - Cada ficha muestra en una línea qué sigue y una sola acción principal; lo demás está en "Más opciones".
 - Al crear el borrador de informe se incluyen todas las fotos de las novedades del periodo; el autor desmarca las que no quiera mientras esté en borrador. El PDF incluye las fotos seleccionadas (JPEG/PNG).
 
