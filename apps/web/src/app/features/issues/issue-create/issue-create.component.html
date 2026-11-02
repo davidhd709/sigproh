@@ -46,14 +46,19 @@
 
       <div class="form-grid">
         @if (scope === 'PROPIEDAD') {
-          <label class="field">
+          <label class="field" [class.invalid]="fieldError()?.field === 'propertyId'">
             <span>Propiedad *</span>
-            <select id="propertyId" [(ngModel)]="propertyId" name="propertyId" required>
+            <select id="propertyId" [(ngModel)]="propertyId" name="propertyId" required
+              [attr.aria-invalid]="fieldError()?.field === 'propertyId'" aria-describedby="propertyId-error"
+              (ngModelChange)="clearFieldError('propertyId')">
               <option value="" disabled>Selecciona una propiedad</option>
               @for (prop of properties(); track prop.id) {
                 <option [value]="prop.id">{{ prop.name }}</option>
               }
             </select>
+            @if (fieldError()?.field === 'propertyId') {
+              <span class="field-error" id="propertyId-error">{{ fieldError()?.message }}</span>
+            }
           </label>
           <label class="field">
             <span>Zona (opcional)</span>
@@ -67,25 +72,35 @@
         }
 
         @if (scope === 'INTERNA') {
-          <label class="field full">
+          <label class="field full" [class.invalid]="fieldError()?.field === 'internalAreaId'">
             <span>Área interna *</span>
-            <select id="internalAreaId" [(ngModel)]="internalAreaId" name="internalAreaId" required>
+            <select id="internalAreaId" [(ngModel)]="internalAreaId" name="internalAreaId" required
+              [attr.aria-invalid]="fieldError()?.field === 'internalAreaId'" aria-describedby="internalAreaId-error"
+              (ngModelChange)="clearFieldError('internalAreaId')">
               <option value="" disabled>Selecciona un área</option>
               @for (area of internalAreas(); track area.id) {
                 <option [value]="area.id">{{ area.name }}</option>
               }
             </select>
+            @if (fieldError()?.field === 'internalAreaId') {
+              <span class="field-error" id="internalAreaId-error">{{ fieldError()?.message }}</span>
+            }
           </label>
         }
 
-        <label class="field full">
+        <label class="field full" [class.invalid]="fieldError()?.field === 'categoryId'">
           <span>Categoría *</span>
-          <select id="categoryId" [(ngModel)]="categoryId" name="categoryId" required>
+          <select id="categoryId" [(ngModel)]="categoryId" name="categoryId" required
+            [attr.aria-invalid]="fieldError()?.field === 'categoryId'" aria-describedby="categoryId-error"
+            (ngModelChange)="clearFieldError('categoryId')">
             <option value="" disabled>Selecciona una categoría</option>
             @for (cat of categories(); track cat.id) {
               <option [value]="cat.id">{{ cat.name }}</option>
             }
           </select>
+          @if (fieldError()?.field === 'categoryId') {
+            <span class="field-error" id="categoryId-error">{{ fieldError()?.message }}</span>
+          }
         </label>
       </div>
     </section>
@@ -94,11 +109,16 @@
     <section class="section">
       <h2 class="step"><span>2</span> ¿Qué pasó?</h2>
       <div class="form-grid">
-        <label class="field full">
+        <label class="field full" [class.invalid]="fieldError()?.field === 'title'">
           <span>Título *</span>
-          <input type="text" id="title" [(ngModel)]="title" name="title" placeholder="Ej.: Fuga de agua en motobombas" maxlength="160" required />
+          <input type="text" id="title" [(ngModel)]="title" name="title" placeholder="Ej.: Fuga de agua en motobombas" maxlength="160" required
+            [attr.aria-invalid]="fieldError()?.field === 'title'" aria-describedby="title-error"
+            (ngModelChange)="clearFieldError('title')" />
+          @if (fieldError()?.field === 'title') {
+            <span class="field-error" id="title-error">{{ fieldError()?.message }}</span>
+          }
         </label>
-        <label class="field full">
+        <label class="field full" [class.invalid]="fieldError()?.field === 'description'">
           <span>Descripción *</span>
           <textarea
             id="description"
@@ -107,7 +127,13 @@
             rows="4"
             placeholder="Qué se detectó, qué personas o bienes se ven afectados y cualquier contexto útil"
             required
+            [attr.aria-invalid]="fieldError()?.field === 'description'"
+            aria-describedby="description-error"
+            (ngModelChange)="clearFieldError('description')"
           ></textarea>
+          @if (fieldError()?.field === 'description') {
+            <span class="field-error" id="description-error">{{ fieldError()?.message }}</span>
+          }
         </label>
       </div>
     </section>

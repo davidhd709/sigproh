@@ -1081,9 +1081,3 @@
 .final-photo-add:has(input:focus-visible) {
   box-shadow: var(--focus-ring);
 }
-
-.field-error {
-  color: var(--danger);
-  font-size: 0.8rem;
-  font-weight: 500;
-}

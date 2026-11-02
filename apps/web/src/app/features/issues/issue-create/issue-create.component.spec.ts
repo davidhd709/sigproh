@@ -83,6 +83,35 @@ describe('IssueCreateComponent', () => {
     expect(component.errorMessage()).toContain('Administrador del Sistema tiene aislamiento operativo');
   });
 
+  it('si falta un campo, lo marca, lleva el foco hasta él y no envía nada', async () => {
+    mockAuthService.isAdmin.mockReturnValue(false);
+    // jsdom no implementa scrollIntoView
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    fixture.detectChanges();
+
+    component.scope = 'PROPIEDAD';
+    component.propertyId = 'prop-1';
+    component.categoryId = 'cat-1';
+    component.title = '';
+    component.description = 'Fuga en la tubería';
+
+    component.onSubmit();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve));
+
+    expect(mockIssuesService.createIssue).not.toHaveBeenCalled();
+    expect(component.fieldError()).toEqual({ field: 'title', message: 'Escribe un título corto.' });
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('#title-error')?.textContent).toContain('Escribe un título corto.');
+    expect(document.activeElement?.id).toBe('title');
+    expect(scrollIntoView).toHaveBeenCalled();
+
+    // Al corregirlo, la marca desaparece
+    component.clearFieldError('title');
+    expect(component.fieldError()).toBeNull();
+  });
+
   it('permite registrar novedad CRÍTICA sin medidas urgentes previas para reportar de inmediato', () => {
     mockAuthService.isAuxiliar.mockReturnValue(false);
     mockAuthService.isAdmin.mockReturnValue(false);

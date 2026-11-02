@@ -24,6 +24,9 @@ import {
   IssueScope,
 } from '../../../core/models/issue.model';
 
+/** Campos obligatorios del formulario; coinciden con el id del control en la plantilla. */
+type RequiredField = 'propertyId' | 'internalAreaId' | 'categoryId' | 'title' | 'description';
+
 /** Archivo elegido en el formulario, pendiente de subir cuando exista la novedad. */
 interface PendingFile {
   id: string;
@@ -62,6 +65,8 @@ export class IssueCreateComponent implements OnInit, OnDestroy {
   readonly loading = signal<boolean>(false);
   readonly errorMessage = signal<string | null>(null);
   readonly successMessage = signal<string | null>(null);
+  /** Campo obligatorio que falta, para marcarlo y llevar al usuario hasta él. */
+  readonly fieldError = signal<{ field: RequiredField; message: string } | null>(null);
 
   // Fotos y cotizaciones opcionales (se suben después de crear la novedad)
   readonly acceptImages = ACCEPT_IMAGES;
@@ -107,8 +112,24 @@ export class IssueCreateComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Quita la marca de error cuando el usuario corrige el campo. */
+  clearFieldError(field: RequiredField): void {
+    if (this.fieldError()?.field === field) this.fieldError.set(null);
+  }
+
+  private showFieldError(field: RequiredField, message: string): void {
+    this.fieldError.set({ field, message });
+    // Espera a que se pinte la marca de error antes de llevar el foco al campo
+    setTimeout(() => {
+      const control = document.getElementById(field);
+      control?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      control?.focus({ preventScroll: true });
+    });
+  }
+
   onScopeChange(newScope: IssueScope): void {
     this.scope = newScope;
+    this.fieldError.set(null);
     this.categoryId = '';
     this.propertyId = '';
     this.propertyZoneId = '';
@@ -208,6 +229,7 @@ export class IssueCreateComponent implements OnInit, OnDestroy {
   onSubmit(): void {
     this.errorMessage.set(null);
     this.successMessage.set(null);
+    this.fieldError.set(null);
 
     // Aislamiento Administrador (RN-001)
     if (this.authService.isAdmin()) {
@@ -217,28 +239,21 @@ export class IssueCreateComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Validaciones locales de negocio
-    if (!this.title.trim()) {
-      this.errorMessage.set('El título de la novedad es obligatorio.');
-      return;
+    // Validaciones locales, en el mismo orden en que aparecen los campos
+    if (this.scope === 'PROPIEDAD' && !this.propertyId) {
+      return this.showFieldError('propertyId', 'Selecciona la propiedad.');
     }
-    if (!this.description.trim()) {
-      this.errorMessage.set('La descripción detallada es obligatoria.');
-      return;
+    if (this.scope === 'INTERNA' && !this.internalAreaId) {
+      return this.showFieldError('internalAreaId', 'Selecciona el área interna.');
     }
     if (!this.categoryId) {
-      this.errorMessage.set('Debe seleccionar una categoría válida para el ámbito.');
-      return;
+      return this.showFieldError('categoryId', 'Selecciona una categoría.');
     }
-
-    if (this.scope === 'PROPIEDAD' && !this.propertyId) {
-      this.errorMessage.set('Para una novedad de propiedad, debe seleccionar la propiedad horizontal.');
-      return;
+    if (!this.title.trim()) {
+      return this.showFieldError('title', 'Escribe un título corto.');
     }
-
-    if (this.scope === 'INTERNA' && !this.internalAreaId) {
-      this.errorMessage.set('Para una novedad interna, debe seleccionar el área interna de EG S.A.S.');
-      return;
+    if (!this.description.trim()) {
+      return this.showFieldError('description', 'Describe qué pasó.');
     }
 
     // Las medidas urgentes son opcionales para permitir reportar riesgos críticos recién detectados sin bloquear la alerta
