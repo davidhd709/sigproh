@@ -50,6 +50,7 @@ jobs:
       # cargar los módulos (p. ej. @nestjs/core y @nestjs/common en versiones distintas).
       - name: Arrancar API (prueba de humo)
         working-directory: apps/api
+        shell: bash
         env:
           NODE_ENV: production
           PORT: "3000"
