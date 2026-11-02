@@ -559,6 +559,22 @@ td.font-mono {
   color: var(--text-muted);
 }
 
+.field.invalid > span:first-child,
+.field-error {
+  color: var(--danger);
+}
+
+.field-error {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.field.invalid input,
+.field.invalid select,
+.field.invalid textarea {
+  border-color: var(--danger);
+}
+
 /* ---------- Navegación y avisos ---------- */
 .back-link {
   display: inline-flex;
