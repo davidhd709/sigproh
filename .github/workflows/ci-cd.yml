@@ -19,6 +19,19 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: node:24-bookworm
+    services:
+      # Base desechable para comprobar que el API arranca igual que en el VPS
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: sigproh_ci
+          POSTGRES_USER: sigproh_ci
+          POSTGRES_PASSWORD: sigproh_ci
+        options: >-
+          --health-cmd "pg_isready -U sigproh_ci -d sigproh_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Obtener código
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,6 +45,39 @@ jobs:
 
       - name: Compilar API
         run: npm run build:api
+
+      # La compilación no detecta incompatibilidades entre paquetes que solo fallan al
+      # cargar los módulos (p. ej. @nestjs/core y @nestjs/common en versiones distintas).
+      - name: Arrancar API (prueba de humo)
+        working-directory: apps/api
+        env:
+          NODE_ENV: production
+          PORT: "3000"
+          DATABASE_URL: postgresql://sigproh_ci:sigproh_ci@postgres:5432/sigproh_ci?schema=public
+          JWT_ACCESS_SECRET: ci-smoke-test-only
+          STORAGE_PATH: /tmp/sigproh-uploads
+        run: |
+          set -Eeuo pipefail
+          npx prisma migrate deploy --config prisma7.config.ts
+          node dist/main.js > /tmp/api-smoke.log 2>&1 &
+          API_PID=$!
+          for _ in $(seq 1 30); do
+            if node -e "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+              echo "El API arrancó y responde en /"
+              kill "$API_PID"
+              exit 0
+            fi
+            if ! kill -0 "$API_PID" 2>/dev/null; then
+              echo "::error::El API se detuvo al arrancar"
+              cat /tmp/api-smoke.log
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "::error::El API no respondió en 60 segundos"
+          cat /tmp/api-smoke.log
+          kill "$API_PID" || true
+          exit 1
 
       - name: Compilar frontend
         run: npm run build:web
