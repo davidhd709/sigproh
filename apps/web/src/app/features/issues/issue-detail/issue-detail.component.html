@@ -6,7 +6,9 @@
       <div class="skeleton sk-card"></div>
     </div>
   } @else if (issue(); as current) {
-    <a routerLink="/issues" class="back-link"><app-icon name="chevron-left" /> Novedades</a>
+    <a [routerLink]="backUrl.path" [queryParams]="backUrl.queryParams" class="back-link">
+      <app-icon name="chevron-left" /> Volver a Novedades
+    </a>
 
     <header class="detail-head">
       <div class="detail-meta">
@@ -40,6 +42,141 @@
       <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ successMessage() }}</span></div>
     }
 
+    <!-- Situación actual: estado, responsable y próxima acción -->
+    @if (attention(); as att) {
+      <section class="status-card" [attr.data-tone]="att.tone" aria-labelledby="status-message">
+        <p class="status-message" id="status-message">
+          <span class="status-dot" aria-hidden="true"></span>{{ att.message }}
+        </p>
+
+        <dl class="status-facts">
+          <div>
+            <dt>Estado</dt>
+            <dd>{{ statusLabel(current.status) }}</dd>
+          </div>
+          <div>
+            <dt>Responsable</dt>
+            <dd>
+              @if (att.responsible; as u) {
+                {{ fullName(u) }}
+              } @else if (att.suggested; as u) {
+                {{ fullName(u) }} <small class="fact-note">sugerido, falta confirmar</small>
+              } @else {
+                Sin asignar
+              }
+            </dd>
+          </div>
+          @if (nextStepHint(); as hint) {
+            <div class="status-next">
+              <dt>Próxima acción</dt>
+              <dd>{{ hint }}</dd>
+            </div>
+          }
+        </dl>
+
+        @if (mainActivity(); as act) {
+          <div class="status-activity">
+            <span class="status-activity-label">Actividad abierta</span>
+            <strong>{{ act.title }}</strong>
+            <span>
+              {{ act.assignedUser ? 'La atiende ' + fullName(act.assignedUser) : 'Sin persona asignada' }}
+              @if (act.dueDate) {
+                · prevista para el {{ humanDate(act.dueDate) }}
+              }
+            </span>
+            @if (openActs().length > 1) {
+              <button type="button" class="link-btn" (click)="selectTab('avances')">
+                y {{ openActs().length - 1 }} más en el seguimiento
+              </button>
+            }
+          </div>
+        }
+
+        @if (closure(); as done) {
+          <div class="closure">
+            <dl class="status-facts">
+              <div>
+                <dt>Fecha de cierre</dt>
+                <dd>{{ done.closedAt | date: "d 'de' MMMM 'de' y, h:mm a" : '-0500' }}</dd>
+              </div>
+              <div>
+                <dt>Cerró</dt>
+                <dd>{{ done.closedBy ? fullName(done.closedBy) : 'No registrado' }}</dd>
+              </div>
+            </dl>
+            <h3 class="closure-title">Solución</h3>
+            <p class="closure-text">{{ done.solution || 'No se registró una descripción de la solución.' }}</p>
+            @if (done.photos.length > 0) {
+              <div class="gallery closure-gallery" [class.single]="done.photos.length === 1">
+                @for (photo of done.photos; track photo.id) {
+                  <button type="button" class="gallery-item" (click)="lightbox.set(photo)" [attr.aria-label]="'Ver foto de cierre ' + photo.fileName">
+                    @if (photoUrls()[photo.id]; as url) {
+                      <img [src]="url" [alt]="'Foto de cierre: ' + photo.fileName" loading="lazy" />
+                    } @else {
+                      <span class="gallery-loading skeleton"></span>
+                    }
+                  </button>
+                }
+              </div>
+            } @else {
+              <p class="closure-empty"><app-icon name="camera" /> No se registró foto de cierre.</p>
+            }
+          </div>
+        }
+
+        @if (mainActions().length > 0) {
+          <div class="status-actions">
+            @for (main of mainActions(); track main.key + main.label; let first = $first) {
+              <button
+                type="button"
+                class="main-action"
+                [class.secondary]="!first"
+                [attr.data-tone]="first ? (main.tone ?? 'primary') : 'secondary'"
+                [disabled]="actionLoading()"
+                (click)="runAction(main.key)"
+              >
+                <app-icon [name]="main.icon" size="20px" />
+                <span>
+                  {{ main.label }}
+                  @if (main.hint) {
+                    <small>{{ main.hint }}</small>
+                  }
+                </span>
+              </button>
+            }
+          </div>
+        }
+        @if (moreActions().length > 0) {
+            <div class="more-wrap">
+              <button
+                type="button"
+                class="more-btn"
+                (click)="showMoreActions.set(!showMoreActions())"
+                [attr.aria-expanded]="showMoreActions()"
+                aria-haspopup="menu"
+              >
+                Más opciones <app-icon name="chevron-down" />
+              </button>
+              @if (showMoreActions()) {
+                <div class="more-backdrop" (click)="showMoreActions.set(false)"></div>
+                <div class="more-menu" role="menu">
+                  @for (a of moreActions(); track a.key + a.label) {
+                    <button type="button" role="menuitem" class="more-item" [attr.data-tone]="a.tone" (click)="runAction(a.key)">
+                      <app-icon [name]="a.icon" size="18px" /> {{ a.label }}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+        }
+        @if (mainActions().length === 0 && att.stage !== 'FINISHED' && att.stage !== 'DISCARDED') {
+          <p class="no-actions">
+            <app-icon name="eye" /> Puedes seguir el avance aquí y dejar un comentario abajo.
+          </p>
+        }
+      </section>
+    }
+
     <!-- Progreso del flujo -->
     @if (isDiscarded()) {
       <div class="flow flow-discarded"><app-icon name="ban" /> Esta novedad fue <strong>descartada</strong>.</div>
@@ -64,56 +201,6 @@
     }
 
     <div class="detail-grid">
-      <!-- Siguiente paso -->
-      <section class="section area-actions next-step">
-        @if (nextStepHint(); as hint) {
-          <p class="next-hint">{{ hint }}</p>
-        }
-        @if (primaryAction(); as main) {
-          <button
-            type="button"
-            class="main-action"
-            [attr.data-tone]="main.tone ?? 'primary'"
-            (click)="runAction(main.key)"
-          >
-            <app-icon [name]="main.icon" size="20px" />
-            <span>
-              {{ main.label }}
-              @if (main.hint) {
-                <small>{{ main.hint }}</small>
-              }
-            </span>
-          </button>
-          @if (moreActions().length > 0) {
-            <div class="more-wrap">
-              <button
-                type="button"
-                class="more-btn"
-                (click)="showMoreActions.set(!showMoreActions())"
-                [attr.aria-expanded]="showMoreActions()"
-                aria-haspopup="menu"
-              >
-                Más opciones <app-icon name="chevron-down" />
-              </button>
-              @if (showMoreActions()) {
-                <div class="more-backdrop" (click)="showMoreActions.set(false)"></div>
-                <div class="more-menu" role="menu">
-                  @for (a of moreActions(); track a.key + a.label) {
-                    <button type="button" role="menuitem" class="more-item" [attr.data-tone]="a.tone" (click)="runAction(a.key)">
-                      <app-icon [name]="a.icon" size="18px" /> {{ a.label }}
-                    </button>
-                  }
-                </div>
-              }
-            </div>
-          }
-        } @else {
-          <p class="no-actions">
-            <app-icon name="eye" /> No tienes nada pendiente en esta novedad. Puedes dejar un comentario abajo.
-          </p>
-        }
-      </section>
-
       <!-- Qué pasó -->
       <section class="section area-summary">
         <h2 class="block-title">Qué pasó</h2>
@@ -165,31 +252,10 @@
       <section class="section area-facts facts">
         <dl>
           <div class="fact-wide">
-            <dt>Responsable</dt>
-            <dd>
-              @if (current.assignedUser; as u) {
-                <span class="person">
-                  <span class="avatar">{{ initials(u.firstName, u.lastName) }}</span>
-                  <span>{{ u.firstName }} {{ u.lastName }}</span>
-                </span>
-              } @else if (current.suggestedUser; as u) {
-                <span class="person suggested">
-                  <span class="avatar">{{ initials(u.firstName, u.lastName) }}</span>
-                  <span>
-                    {{ u.firstName }} {{ u.lastName }}
-                    <small class="fact-note">Sugerido · falta confirmar</small>
-                  </span>
-                </span>
-              } @else {
-                <span class="muted">Sin asignar</span>
-              }
-            </dd>
-          </div>
-          <div class="fact-wide">
             <dt>Reportada por</dt>
             <dd>
               {{ current.createdBy?.firstName }} {{ current.createdBy?.lastName }}
-              <small class="fact-note">{{ current.createdAt | date: "d MMM y, h:mm a" }} · {{ timeAgo(current.createdAt) }}</small>
+              <small class="fact-note">{{ current.createdAt | date: "d MMM y, h:mm a" : '-0500' }} · {{ timeAgo(current.createdAt) }}</small>
             </dd>
           </div>
           @if (current.priority !== current.initialPriority) {
@@ -201,18 +267,15 @@
               </dd>
             </div>
           }
-          @if (current.closedAt) {
-            <div class="fact-wide">
-              <dt>Finalizada</dt>
-              <dd>{{ current.closedAt | date: "d MMM y, h:mm a" }}</dd>
-            </div>
-          }
         </dl>
       </section>
 
       <!-- Seguimiento -->
       <div class="area-tabs">
         <nav class="tabs" role="tablist" aria-label="Seguimiento">
+          <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'avances'" [attr.aria-selected]="activeTab() === 'avances'" (click)="selectTab('avances')">
+            Avances <span class="tab-count">{{ current.activities?.length || 0 }}</span>
+          </button>
           <button type="button" role="tab" class="tab-nav-btn" [class.active]="activeTab() === 'comentarios'" [attr.aria-selected]="activeTab() === 'comentarios'" (click)="selectTab('comentarios')">
             Comentarios <span class="tab-count">{{ current.comments?.length || 0 }}</span>
           </button>
@@ -224,6 +287,47 @@
           </button>
         </nav>
 
+        <!-- Avances: actividades y trabajo registrado -->
+        @if (activeTab() === 'avances') {
+          <section class="tab-panel">
+            @if (canRegisterProgress()) {
+              <button type="button" class="add-row" (click)="openProgressModal()">
+                <app-icon name="edit" /> Registrar avance
+              </button>
+            }
+            @if (activitiesByRecency().length === 0) {
+              <p class="panel-empty">Aún no hay avances registrados. Los comentarios sirven para conversar sobre el caso.</p>
+            } @else {
+              <ul class="progress-list">
+                @for (act of activitiesByRecency(); track act.id) {
+                  <li class="progress-item" [class.open]="act.status !== 'COMPLETADA' && act.status !== 'CANCELADA'">
+                    <div class="progress-head">
+                      <strong>{{ act.title }}</strong>
+                      <span class="pill pill-soft" [attr.data-tone]="statusTone(act.status)">{{ statusLabel(act.status) }}</span>
+                    </div>
+                    @if (act.description && act.description !== act.title) {
+                      <p class="progress-body">{{ act.description }}</p>
+                    }
+                    <span class="muted">
+                      {{ act.assignedUser ? fullName(act.assignedUser) : fullName(act.createdBy) }}
+                      · {{ act.createdAt | date: "d MMM, h:mm a" : '-0500' }}
+                      @if (act.dueDate && act.status !== 'COMPLETADA') {
+                        · prevista para el {{ humanDate(act.dueDate) }}
+                      }
+                      @if (act._count?.attachments) {
+                        · <app-icon name="camera" /> {{ act._count?.attachments }}
+                      }
+                    </span>
+                    @if (act.statusReason) {
+                      <p class="timeline-reason">«{{ act.statusReason }}»</p>
+                    }
+                  </li>
+                }
+              </ul>
+            }
+          </section>
+        }
+
         <!-- Comentarios -->
         @if (activeTab() === 'comentarios') {
           <section class="tab-panel">
@@ -232,7 +336,7 @@
                 [(ngModel)]="newCommentContent"
                 rows="3"
                 aria-label="Nuevo comentario"
-                placeholder="Escribe un comentario o una actualización…"
+                placeholder="Escribe un comentario o una pregunta sobre el caso…"
               ></textarea>
               <div class="composer-options">
                 <label class="field">
@@ -295,9 +399,11 @@
               }
             }
 
-            <button type="button" class="add-row" (click)="openUploadEvidenceModal()">
-              <app-icon name="camera" /> Adjuntar evidencia
-            </button>
+            @if (current.status !== 'CERRADA' && current.status !== 'DESCARTADA') {
+              <button type="button" class="add-row" (click)="openUploadEvidenceModal()">
+                <app-icon name="camera" /> Adjuntar evidencia
+              </button>
+            }
 
             @if (!current.attachments || current.attachments.length === 0) {
               <p class="panel-empty">Aún no hay evidencias adjuntas.</p>
@@ -333,7 +439,7 @@
                   <div class="timeline-content">
                     <div class="timeline-head">
                       <strong>{{ eventLabel(event.eventType) }}</strong>
-                      <span class="muted">{{ event.createdAt | date: "d MMM, h:mm a" }}</span>
+                      <span class="muted">{{ event.createdAt | date: "d MMM, h:mm a" : '-0500' }}</span>
                     </div>
                     <p class="timeline-summary">{{ event.summary }}</p>
                     @if (event.user) {
@@ -370,12 +476,15 @@
       <div class="modal-backdrop" role="presentation">
         <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>{{ current.assignedUserId ? 'Reasignar responsable' : 'Confirmar responsable' }}</h3>
+            <h3>{{ assignConfirmLabel() }}</h3>
             <button type="button" class="modal-close" aria-label="Cerrar" (click)="showAssignModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
+            @if (attention(); as att) {
+              <p class="modal-state" [attr.data-tone]="att.tone">{{ att.message }}</p>
+            }
             <p class="modal-desc">
-              Selecciona una persona autorizada para este ámbito.
+              Elige a una persona que trabaje en esta ubicación. Recibirá un aviso.
             </p>
 
             <label class="field">
@@ -409,7 +518,7 @@
           <div class="modal-footer">
             <button type="button" class="btn-secondary" (click)="showAssignModal.set(false)">Cancelar</button>
             <button type="button" class="btn-primary" [disabled]="actionLoading()" (click)="confirmOrReassign()">
-              {{ actionLoading() ? 'Procesando...' : 'Confirmar' }}
+              {{ actionLoading() ? 'Guardando…' : assignConfirmLabel() }}
             </button>
           </div>
         </div>
@@ -465,7 +574,7 @@
       <div class="modal-backdrop" role="presentation">
         <div class="modal-card" role="dialog" aria-modal="true">
           <div class="modal-header">
-            <h3>Registrar medida urgente</h3>
+            <h3>¿Qué se hizo de inmediato?</h3>
             <button type="button" class="modal-close" aria-label="Cerrar" (click)="showUrgentMeasureModal.set(false)"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
@@ -546,17 +655,61 @@
       </div>
     }
 
-    <!-- Finalizar: foto final + observaciones en un solo paso -->
+    <!-- Registrar avance -->
+    @if (showProgressModal()) {
+      <div class="modal-backdrop" role="presentation">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="progress-title">
+          <div class="modal-header">
+            <h3 id="progress-title">Registrar avance</h3>
+            <button type="button" class="modal-close" aria-label="Cerrar" (click)="showProgressModal.set(false)"><app-icon name="x" /></button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-desc">Cuenta lo que se hizo. Quien reportó lo verá en «Avances». Para conversar usa los comentarios.</p>
+            <label class="field" [class.invalid]="progressError() && !progressText.trim()">
+              <span>¿Qué se hizo? *</span>
+              <textarea id="progressText" [(ngModel)]="progressText" rows="4" placeholder="Ej.: Se cerró la llave y se pidió el repuesto"
+                aria-describedby="progress-error"></textarea>
+            </label>
+            <div class="field">
+              <span>Foto (opcional)</span>
+              @if (progressPhoto(); as photo) {
+                <span class="file-chosen-info">
+                  <app-icon name="camera" /> {{ photo.name }}
+                  <button type="button" class="link-btn" (click)="progressPhoto.set(null)">Quitar</button>
+                </span>
+              } @else {
+                <label class="final-photo-add">
+                  <input type="file" [accept]="acceptImages" (change)="onProgressPhotoSelected($event)" />
+                  <app-icon name="camera" size="24px" />
+                  <span>Tomar o elegir foto</span>
+                </label>
+              }
+            </div>
+            @if (progressError(); as err) {
+              <span class="field-error" id="progress-error" role="alert">{{ err }}</span>
+            }
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn-secondary" (click)="showProgressModal.set(false)">Cancelar</button>
+            <button type="button" class="btn-primary" [disabled]="actionLoading()" (click)="submitProgress()">
+              {{ actionLoading() ? 'Guardando…' : 'Guardar avance' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Cerrar: foto final + solución en un solo paso -->
     @if (showCloseModal()) {
       <div class="modal-backdrop" role="presentation">
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="finalize-title">
           <div class="modal-header">
-            <h3 id="finalize-title">Finalizar novedad</h3>
+            <h3 id="finalize-title">Cerrar novedad</h3>
             <button type="button" class="modal-close" aria-label="Cerrar" (click)="closeFinalizeModal()"><app-icon name="x" /></button>
           </div>
           <div class="modal-body">
             <p class="modal-desc">
-              Confirma que el trabajo quedó terminado. Se avisará a quien la reportó.
+              Confirma que el trabajo quedó terminado. Se avisará a quien la reportó y verá la solución.
             </p>
 
             <div class="field">
@@ -583,11 +736,11 @@
             </div>
 
             <label class="field">
-              <span>Observaciones (opcional)</span>
+              <span>¿Cómo se resolvió? (opcional)</span>
               <textarea
                 [(ngModel)]="closureObservations"
                 rows="3"
-                placeholder="Qué se hizo o recomendaciones"
+                placeholder="Ej.: Se cambió el tubo roto y se secó el área"
               ></textarea>
             </label>
           </div>
@@ -598,7 +751,7 @@
               [disabled]="actionLoading() || (finalPhotoRequired() && !finalPhoto())"
               (click)="submitClose()"
             >
-              @if (!(actionLoading())) { <app-icon name="check-circle" /> } {{ actionLoading() ? 'Finalizando…' : 'Finalizar' }}
+              @if (!(actionLoading())) { <app-icon name="check-circle" /> } {{ actionLoading() ? 'Cerrando…' : 'Cerrar novedad' }}
             </button>
           </div>
         </div>
@@ -636,7 +789,7 @@
               [disabled]="actionLoading() || !reopenReason.trim()"
               (click)="submitReopen()"
             >
-              @if (!(actionLoading())) { <app-icon name="refresh" /> } {{ actionLoading() ? 'Reabriendo...' : 'Reabrir' }}
+              @if (!(actionLoading())) { <app-icon name="refresh" /> } {{ actionLoading() ? 'Reabriendo…' : 'Reabrir novedad' }}
             </button>
           </div>
         </div>
@@ -674,7 +827,7 @@
               [disabled]="actionLoading() || !discardReason.trim()"
               (click)="submitDiscard()"
             >
-              @if (!(actionLoading())) { <app-icon name="ban" /> } {{ actionLoading() ? 'Descartando...' : 'Descartar' }}
+              @if (!(actionLoading())) { <app-icon name="ban" /> } {{ actionLoading() ? 'Descartando…' : 'Descartar novedad' }}
             </button>
           </div>
         </div>
@@ -685,7 +838,7 @@
       <span class="empty-icon tone-danger"><app-icon name="ban" size="28px" /></span>
       <h2>No pudimos abrir esta novedad</h2>
       <p>{{ errorMessage() || 'Puede que no exista o que no tengas acceso a ella.' }}</p>
-      <a routerLink="/issues" class="btn-primary">Volver a novedades</a>
+      <a [routerLink]="backUrl.path" [queryParams]="backUrl.queryParams" class="btn-primary">Volver a Novedades</a>
     </div>
   }
 </div>

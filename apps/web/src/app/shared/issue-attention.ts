@@ -50,14 +50,18 @@ export function attentionState(
   const base = { responsible, suggested };
 
   switch (issue.status) {
-    case 'CERRADA':
+    case 'CERRADA': {
+      // Registros antiguos pueden no tener fecha de cierre: se informa sin inventarla
+      const closedOn = issue.closedAt ?? issue.updatedAt;
+      const valid = closedOn && !Number.isNaN(Date.parse(closedOn));
       return {
         ...base,
         stage: 'FINISHED',
         tone: 'success',
         label: 'Resuelta',
-        message: `Resuelta el ${humanDate(issue.closedAt ?? issue.updatedAt, now)}.`,
+        message: valid ? `Resuelta el ${humanDate(closedOn, now)}.` : 'Resuelta.',
       };
+    }
     case 'DESCARTADA':
       return {
         ...base,

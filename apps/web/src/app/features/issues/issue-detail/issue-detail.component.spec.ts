@@ -20,6 +20,8 @@ describe('IssueDetailComponent', () => {
       updatePriority: vi.fn(),
       addUrgentMeasure: vi.fn(),
       createComment: vi.fn(),
+      createActivity: vi.fn(),
+      updateActivity: vi.fn(),
       uploadAttachment: vi.fn(),
       listAttachments: vi.fn().mockReturnValue(of([])),
       downloadAttachment: vi.fn(),
@@ -319,7 +321,7 @@ describe('IssueDetailComponent', () => {
       component.runAction('start');
 
       expect(mockIssuesService.startWork).toHaveBeenCalledWith('issue-513');
-      expect(component.successMessage()).toContain('Trabajo iniciado');
+      expect(component.successMessage()).toContain('Atención iniciada');
       expect(mockIssuesService.getIssueById).toHaveBeenCalledWith('issue-513');
     });
 
@@ -358,11 +360,11 @@ describe('IssueDetailComponent', () => {
 
       component.submitClose();
 
-      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith('issue-515', photo, 'FINAL');
+      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith('issue-515', photo, 'FINAL', undefined, expect.any(String));
       expect(mockIssuesService.closeIssue).toHaveBeenCalledWith('issue-515', {
         closureObservations: 'Se cambió el contactor',
       });
-      expect(component.successMessage()).toContain('Novedad finalizada');
+      expect(component.successMessage()).toContain('Novedad cerrada');
       expect(component.finalPhoto()).toBeNull();
     });
 
@@ -409,7 +411,7 @@ describe('IssueDetailComponent', () => {
       expect(mockIssuesService.closeIssue).toHaveBeenCalledWith('issue-503', {
         closureObservations: 'Verificado en campo a conformidad',
       });
-      expect(component.successMessage()).toContain('Novedad finalizada');
+      expect(component.successMessage()).toContain('Novedad cerrada');
     });
 
     it('reabrir novedad cerrada exige motivo obligatorio e invoca reopenIssue', () => {
@@ -474,33 +476,31 @@ describe('IssueDetailComponent', () => {
       expect(component.primaryAction()?.key).toBe('start');
     });
 
-    it('en proceso: la acción principal es finalizar, avisando de la foto final si se exige', () => {
+    it('en proceso: se ven «Registrar avance» y «Resolver», avisando de la foto final si se exige', () => {
       component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
-      expect(component.primaryAction()?.key).toBe('close');
-      expect(component.primaryAction()?.hint).toBeUndefined();
+      expect(component.mainActions().map((a) => a.key)).toEqual(['progress', 'close']);
 
       component.issue.set({
         ...baseIssue,
         status: 'EN_ATENCION',
         category: { name: 'Equipos', requiresEvidence: true },
       });
-      expect(component.primaryAction()?.key).toBe('close');
-      expect(component.primaryAction()?.hint).toContain('foto final');
+      expect(component.mainActions().find((a) => a.key === 'close')?.hint).toContain('foto final');
     });
 
     it('explica en una línea qué sigue según el rol', () => {
       component.issue.set({ ...baseIssue, status: 'EN_REVISION', assignedUserId: null });
-      expect(component.nextStepHint()).toContain('Asígnala');
+      expect(component.nextStepHint()).toBe('Elige quién la atenderá.');
 
       mockAuthService.isDirector.mockReturnValue(false);
       mockAuthService.isCoordinator.mockReturnValue(true);
       mockAuthService.canAssignIssues.mockReturnValue(false);
       mockAuthService.currentUser.mockReturnValue({ id: 'coord-1', role: 'COORDINADOR_OPERATIVO' });
       component.issue.set({ ...baseIssue, status: 'ASIGNADA' });
-      expect(component.nextStepHint()).toContain('márcala como iniciada');
+      expect(component.nextStepHint()).toContain('Iniciar atención');
 
       component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
-      expect(component.nextStepHint()).toContain('finalízala');
+      expect(component.nextStepHint()).toContain('ciérrala cuando termine');
     });
 
     it('para el Director sin responsable confirmado, la acción principal es confirmar responsable', () => {
@@ -541,6 +541,167 @@ describe('IssueDetailComponent', () => {
 
       expect(component.photoAttachments().map((a) => a.id)).toEqual(['a1']);
       expect(component.documentAttachments().map((a) => a.id)).toEqual(['a2']);
+    });
+  });
+
+  describe('Situación de atención arriba del detalle', () => {
+    const juan = { id: 'coord-1', firstName: 'Juan', lastName: 'Pérez', email: 'j@x' };
+    const pedro = { id: 'coord-2', firstName: 'Pedro', lastName: 'Gómez', email: 'p@x' };
+    const issue: any = {
+      id: 'issue-st',
+      code: 'NOV-2026-0100',
+      title: 'Fuga en el sótano',
+      priority: 'ALTA',
+      initialPriority: 'ALTA',
+      scope: 'PROPIEDAD',
+      property: { name: 'Torres del Parque' },
+      category: { name: 'Mantenimiento', requiresEvidence: false },
+      attachments: [],
+      events: [],
+      comments: [],
+      activities: [],
+      createdAt: '2026-10-01T15:00:00Z',
+      updatedAt: '2026-10-22T15:00:00Z',
+    };
+    const asProfile = (id: string, role: string, opts: { director?: boolean; assign?: boolean; coord?: boolean } = {}) => {
+      mockAuthService.currentUser.mockReturnValue({ id, role });
+      mockAuthService.isDirector.mockReturnValue(Boolean(opts.director));
+      mockAuthService.isCoordinator.mockReturnValue(Boolean(opts.coord));
+      mockAuthService.canAssignIssues.mockReturnValue(Boolean(opts.assign));
+    };
+    const keys = () => component.mainActions().map((a) => a.label);
+    const text = () => {
+      fixture.detectChanges();
+      return (fixture.nativeElement as HTMLElement).querySelector('.status-card')?.textContent ?? '';
+    };
+    const show = (data: any) => {
+      mockIssuesService.getIssueById.mockReturnValue(of(data));
+      component.loadIssue(data.id);
+    };
+
+    it('sin asignar: coordinación ve «Asignar responsable»; quien reporta entiende quién debe actuar', () => {
+      asProfile('aux-1', 'AUXILIAR_GERENCIA', { assign: true });
+      show({ ...issue, status: 'EN_REVISION', assignedUserId: null });
+      expect(text()).toContain('Falta asignar un responsable.');
+      expect(keys()).toEqual(['Asignar responsable']);
+
+      asProfile('coord-9', 'COORDINADOR_OPERATIVO', { coord: true });
+      show({ ...issue, status: 'EN_REVISION', assignedUserId: null });
+      expect(keys()).toEqual([]);
+      expect(text()).toContain('Gerencia o la Dirección deben asignar un responsable.');
+    });
+
+    it('persona sugerida: ofrece confirmarla o elegir otra, y el diálogo dice lo mismo', () => {
+      asProfile('ger-1', 'GERENTE', { assign: true });
+      show({ ...issue, status: 'EN_REVISION', assignedUserId: null, suggestedUserId: 'coord-2', suggestedUser: pedro });
+
+      expect(text()).toContain('Pedro Gómez fue sugerido. Falta confirmar.');
+      expect(keys()).toEqual(['Confirmar a Pedro Gómez', 'Elegir otra persona']);
+
+      component.runAction('confirm-suggested');
+      fixture.detectChanges();
+      expect(component.newAssignedUserId).toBe('coord-2');
+      expect(component.assignConfirmLabel()).toBe('Confirmar responsable');
+      const dialog = (fixture.nativeElement as HTMLElement).querySelector('[role="dialog"]')?.textContent ?? '';
+      expect(dialog).toContain('Pedro Gómez fue sugerido. Falta confirmar.');
+    });
+
+    it('responsable confirmado: el responsable ve «Iniciar atención»; la Gerencia solo ve el estado', () => {
+      asProfile('coord-1', 'COORDINADOR_OPERATIVO', { coord: true });
+      show({ ...issue, status: 'ASIGNADA', assignedUserId: 'coord-1', assignedUser: juan });
+      expect(text()).toContain('Tú debes iniciar el trabajo.');
+      expect(keys()).toEqual(['Iniciar atención']);
+
+      asProfile('ger-1', 'GERENTE', { assign: true });
+      show({ ...issue, status: 'ASIGNADA', assignedUserId: 'coord-1', assignedUser: juan });
+      expect(text()).toContain('Juan Pérez debe iniciar el trabajo.');
+      expect(keys()).not.toContain('Iniciar atención');
+    });
+
+    it('en proceso: muestra la actividad abierta con quién la atiende y la fecha prevista', () => {
+      asProfile('aux-1', 'AUXILIAR_GERENCIA', { assign: true });
+      show({
+        ...issue,
+        status: 'EN_ATENCION',
+        assignedUserId: 'coord-1',
+        assignedUser: juan,
+        activities: [
+          { id: 'a2', title: 'Pintar muro', status: 'PENDIENTE', createdAt: '2026-10-03T00:00:00Z', dueDate: null },
+          { id: 'a1', title: 'Cambiar tubo', status: 'EN_CURSO', assignedUser: pedro, dueDate: '2026-10-25T17:00:00Z', createdAt: '2026-10-05T00:00:00Z' },
+          { id: 'a0', title: 'Revisión', status: 'COMPLETADA', createdAt: '2026-10-02T00:00:00Z' },
+        ],
+      });
+
+      const card = text();
+      expect(card).toContain('Juan Pérez está atendiendo la novedad.');
+      expect(card).toContain('Cambiar tubo');
+      expect(card).toContain('La atiende Pedro Gómez');
+      expect(card).toContain('25 de octubre');
+      expect(card).toContain('y 1 más en el seguimiento');
+    });
+
+    it('registrar avance crea la actividad, la completa y adjunta la foto como evidencia de ejecución', () => {
+      asProfile('coord-1', 'COORDINADOR_OPERATIVO', { coord: true });
+      show({ ...issue, status: 'EN_ATENCION', assignedUserId: 'coord-1', assignedUser: juan });
+      mockIssuesService.createActivity.mockReturnValue(of({ id: 'act-1', version: 1 }));
+      mockIssuesService.updateActivity.mockReturnValue(of({ id: 'act-1', version: 2 }));
+      mockIssuesService.uploadAttachment.mockReturnValue(of({}));
+      const photo = new File(['img'], 'avance.jpg', { type: 'image/jpeg' });
+
+      component.runAction('progress');
+      component.progressText = 'Se cambió el tubo roto';
+      component.onProgressPhotoSelected({ target: { files: [photo], value: 'x' } } as unknown as Event);
+      component.submitProgress();
+
+      expect(mockIssuesService.createActivity).toHaveBeenCalledWith('issue-st', {
+        title: 'Se cambió el tubo roto',
+        description: 'Se cambió el tubo roto',
+      });
+      expect(mockIssuesService.updateActivity).toHaveBeenCalledWith('issue-st', 'act-1', { status: 'COMPLETADA', version: 1 });
+      expect(mockIssuesService.uploadAttachment).toHaveBeenCalledWith('issue-st', photo, 'EJECUCION', 'act-1', expect.any(String));
+      expect(component.successMessage()).toContain('Avance registrado');
+    });
+
+    it('registrar avance sin texto marca el campo y no envía nada', () => {
+      asProfile('coord-1', 'COORDINADOR_OPERATIVO', { coord: true });
+      show({ ...issue, status: 'EN_ATENCION', assignedUserId: 'coord-1', assignedUser: juan });
+
+      component.openProgressModal();
+      component.submitProgress();
+
+      expect(mockIssuesService.createActivity).not.toHaveBeenCalled();
+      expect(component.progressError()).toBe('Cuenta qué se hizo.');
+    });
+
+    it('finalizada: muestra fecha, solución, quién cerró y las fotos de cierre', () => {
+      asProfile('aux-1', 'AUXILIAR_GERENCIA', { assign: true });
+      mockIssuesService.downloadAttachment.mockReturnValue(of(new Blob()));
+      URL.createObjectURL = vi.fn().mockReturnValue('blob:x');
+      show({
+        ...issue,
+        status: 'CERRADA',
+        assignedUserId: 'coord-1',
+        assignedUser: juan,
+        closedAt: '2026-10-22T20:00:00Z',
+        attachments: [{ id: 'f1', fileName: 'final.jpg', mimeType: 'image/jpeg', stage: 'FINAL', createdAt: '2026-10-22T19:00:00Z' }],
+        events: [{ id: 'e1', eventType: 'CIERRE_DEFINITIVO', user: juan, createdAt: '2026-10-22T20:00:00Z', details: { observations: 'Se cambió el tubo' } }],
+      });
+
+      const card = text();
+      expect(card).toContain('Resuelta el 22 de octubre.');
+      expect(card).toContain('Se cambió el tubo');
+      expect(card).toContain('Juan Pérez');
+      expect(component.closure()?.photos.map((p) => p.id)).toEqual(['f1']);
+    });
+
+    it('una novedad finalizada antigua sin foto ni fecha se puede consultar', () => {
+      asProfile('aux-1', 'AUXILIAR_GERENCIA', { assign: true });
+      show({ ...issue, status: 'CERRADA', assignedUserId: 'coord-1', assignedUser: juan, closedAt: null, updatedAt: null, events: [] });
+
+      const card = text();
+      expect(card).toContain('Resuelta.');
+      expect(card).toContain('No se registró foto de cierre.');
+      expect(card).toContain('No se registró una descripción de la solución.');
     });
   });
 });
