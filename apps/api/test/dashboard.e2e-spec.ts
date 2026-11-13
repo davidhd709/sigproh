@@ -151,8 +151,11 @@ describe('Paneles e Indicadores Operativos F6 (e2e)', () => {
       .set('Authorization', `Bearer ${directorToken}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.period.startDate).toContain('2026-01-01');
-    expect(res.body.period.endDate).toContain('2026-12-31');
+    // Límites del período en hora de Colombia (UTC-5)
+    expect(res.body.period.startDate).toBe('2026-01-01T05:00:00.000Z');
+    expect(res.body.period.endDate).toBe('2027-01-01T04:59:59.999Z');
+    // El corte no puede ser posterior al momento de la consulta
+    expect(new Date(res.body.period.cutoffDate).getTime()).toBeLessThanOrEqual(Date.now());
     // Todas las ubicaciones deben ser de ámbito PROPIEDAD
     expect(res.body.byLocation.every((l: any) => l.scope === 'PROPIEDAD')).toBe(true);
   });

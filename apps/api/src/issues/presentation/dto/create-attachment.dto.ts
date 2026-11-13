@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional } from 'class-validator';
+import { IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { EvidenceStage } from '../../../generated/prisma/client';
 import { IsValidUuid } from '../../../shared/presentation/validators/is-valid-uuid.decorator';
 
@@ -12,4 +12,9 @@ export class CreateAttachmentDto {
   @IsOptional()
   @IsValidUuid({ message: 'El identificador de la actividad debe ser un UUID válido' })
   activityId?: string;
+
+  /** Identificador del archivo generado en el dispositivo; un reintento con el mismo valor no lo duplica. */
+  @IsOptional()
+  @IsUUID('all', { message: 'El identificador del archivo no es válido' })
+  clientFileId?: string;
 }
