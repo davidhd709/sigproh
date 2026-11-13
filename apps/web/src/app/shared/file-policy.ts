@@ -23,10 +23,26 @@ export const ACCEPT_ANY = ALLOWED_TYPES.join(',');
 export const ALLOWED_FORMATS_LABEL = 'JPG, PNG, WEBP, PDF, Word o Excel';
 export const MAX_SIZE_LABEL = '10 MB';
 
-/** Devuelve el motivo de rechazo o null si el archivo es válido. */
+/**
+ * Devuelve por qué se rechaza el archivo y cómo corregirlo, o null si es válido.
+ * Se muestra tal cual a quien reporta, que puede no saber qué es un «formato».
+ */
 export function fileRejection(file: File, allowed: readonly string[] = ALLOWED_TYPES): string | null {
-  if (!allowed.includes(file.type)) return `«${file.name}» no es un formato permitido.`;
-  if (file.size > FILE_POLICY.maxFileSizeBytes) return `«${file.name}» supera ${MAX_SIZE_LABEL}.`;
+  const onlyImages = allowed.every((t) => t.startsWith('image/'));
+  if (!allowed.includes(file.type)) {
+    return onlyImages
+      ? `«${file.name}» no es una foto que podamos recibir. Elige una foto JPG, PNG o WEBP; en iPhone, ` +
+          'activa Ajustes › Cámara › Formatos › «Más compatible».'
+      : `«${file.name}» no se puede adjuntar. Usa una foto (JPG, PNG o WEBP) o un documento PDF, Word o Excel.`;
+  }
+  if (file.size > FILE_POLICY.maxFileSizeBytes) {
+    return (
+      `«${file.name}» pesa ${formatBytes(file.size)} y el máximo es ${MAX_SIZE_LABEL}. ` +
+      (file.type.startsWith('image/')
+        ? 'Toma la foto de nuevo con menor resolución o envíala por otro medio y adjúntala después.'
+        : 'Reduce el tamaño del archivo o adjunta solo las páginas necesarias.')
+    );
+  }
   return null;
 }
 

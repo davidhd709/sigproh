@@ -138,6 +138,8 @@ export interface Issue {
   attachments?: IssueAttachment[];
   /** Solo viene en la lista (GET /issues). */
   inbox?: IssueInboxSummary;
+  /** Solo al registrar: true si el servidor ya tenía este envío y devolvió el caso existente. */
+  replayed?: boolean;
 }
 
 export type ActivityStatus =
@@ -219,6 +221,8 @@ export interface CreateIssuePayload {
   propertyZoneId?: string;
   internalAreaId?: string;
   urgentMeasures?: string;
+  /** Identificador estable del envío; repetirlo no duplica la novedad. */
+  clientRequestId?: string;
 }
 
 export interface IssueAttachment {
