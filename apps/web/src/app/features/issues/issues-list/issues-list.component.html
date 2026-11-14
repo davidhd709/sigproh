@@ -6,10 +6,15 @@
         @if (loading()) {
           Cargando…
         } @else {
-          {{ stats().total }} en total · {{ stats().critical }} {{ stats().critical === 1 ? 'crítica' : 'críticas' }}
+          {{ stats().total }} en total · {{ stats().critical }} {{ stats().critical === 1 ? 'crítica abierta' : 'críticas abiertas' }}
         }
       </p>
     </div>
+    @if (!authService.isAdmin()) {
+      <a routerLink="/issues/new" class="btn-primary report-cta">
+        <app-icon name="plus" /> Reportar novedad
+      </a>
+    }
   </header>
 
   <!-- Bandejas según el rol -->
@@ -31,17 +36,7 @@
     }
   </div>
 
-  @if (locationFilter(); as loc) {
-    <div class="location-filter">
-      <app-icon [name]="loc.propertyId ? 'building' : 'landmark'" />
-      Solo <strong>{{ loc.name }}</strong>
-      <button type="button" class="location-clear" (click)="clearLocation()" aria-label="Quitar filtro de ubicación">
-        <app-icon name="x" size="16px" />
-      </button>
-    </div>
-  }
-
-  <!-- Búsqueda y filtros avanzados -->
+  <!-- Búsqueda, orden y filtros -->
   <div class="search-row">
     <label class="search-box">
       <app-icon name="search" size="18px" />
@@ -49,8 +44,9 @@
         type="search"
         placeholder="Buscar por código, título o ubicación"
         aria-label="Buscar novedades"
+        enterkeyhint="search"
         [ngModel]="searchQuery()"
-        (ngModelChange)="searchQuery.set($event)"
+        (ngModelChange)="setSearch($event)"
       />
     </label>
     <button
@@ -59,6 +55,7 @@
       [class.active]="showFilters() || activeFilterCount() > 0"
       (click)="showFilters.set(!showFilters())"
       [attr.aria-expanded]="showFilters()"
+      aria-controls="issues-filters"
     >
       <app-icon name="sliders" size="18px" />
       <span class="filter-toggle-label">Filtros</span>
@@ -69,18 +66,38 @@
   </div>
 
   @if (showFilters()) {
-    <div class="filters-panel">
+    <div class="filters-panel" id="issues-filters">
+      <label class="filter-field filter-wide">
+        <span class="filter-label">Conjunto, edificio o área</span>
+        <select [ngModel]="locationValue()" (ngModelChange)="setLocation($event)">
+          <option value="">Todas las ubicaciones</option>
+          @if (properties().length > 0 && selectedScope() !== 'INTERNA') {
+            <optgroup label="Conjuntos o edificios">
+              @for (p of properties(); track p.id) {
+                <option [value]="'p:' + p.id">{{ p.name }}</option>
+              }
+            </optgroup>
+          }
+          @if (internalAreas().length > 0 && selectedScope() !== 'PROPIEDAD') {
+            <optgroup label="Áreas de la empresa">
+              @for (a of internalAreas(); track a.id) {
+                <option [value]="'a:' + a.id">{{ a.name }}</option>
+              }
+            </optgroup>
+          }
+        </select>
+      </label>
       <div class="filter-field">
-        <span class="filter-label">Ámbito</span>
-        <div class="segmented">
-          <button type="button" [class.active]="selectedScope() === 'ALL'" (click)="selectedScope.set('ALL')">Todos</button>
-          <button type="button" [class.active]="selectedScope() === 'PROPIEDAD'" (click)="selectedScope.set('PROPIEDAD')">Propiedades</button>
-          <button type="button" [class.active]="selectedScope() === 'INTERNA'" (click)="selectedScope.set('INTERNA')">Áreas internas</button>
+        <span class="filter-label" id="scope-filter-label">Tipo de ubicación</span>
+        <div class="segmented" role="group" aria-labelledby="scope-filter-label">
+          <button type="button" [class.active]="selectedScope() === 'ALL'" [attr.aria-pressed]="selectedScope() === 'ALL'" (click)="setScope('ALL')">Todas</button>
+          <button type="button" [class.active]="selectedScope() === 'PROPIEDAD'" [attr.aria-pressed]="selectedScope() === 'PROPIEDAD'" (click)="setScope('PROPIEDAD')">Conjuntos o edificios</button>
+          <button type="button" [class.active]="selectedScope() === 'INTERNA'" [attr.aria-pressed]="selectedScope() === 'INTERNA'" (click)="setScope('INTERNA')">Áreas de la empresa</button>
         </div>
       </div>
       <label class="filter-field">
         <span class="filter-label">Prioridad</span>
-        <select [ngModel]="selectedPriority()" (ngModelChange)="selectedPriority.set($event)">
+        <select [ngModel]="selectedPriority()" (ngModelChange)="setPriority($event)">
           <option value="ALL">Todas</option>
           <option value="CRITICA">Crítica</option>
           <option value="ALTA">Alta</option>
@@ -90,7 +107,7 @@
       </label>
       <label class="filter-field">
         <span class="filter-label">Estado</span>
-        <select [ngModel]="selectedStatus()" (ngModelChange)="selectedStatus.set($event)">
+        <select [ngModel]="selectedStatus()" (ngModelChange)="setStatus($event)">
           <option value="ALL">Todos</option>
           <option value="ASIGNADA">Pendiente</option>
           <option value="EN_ATENCION">En proceso</option>
@@ -98,10 +115,45 @@
           <option value="DESCARTADA">Descartada</option>
         </select>
       </label>
-      @if (activeFilterCount() > 0) {
-        <button type="button" class="clear-filters" (click)="clearFilters()">Limpiar filtros</button>
-      }
     </div>
+  }
+
+  <!-- Resultado, filtros aplicados y orden -->
+  @if (!loading() && !errorMessage()) {
+    <div class="results-bar">
+      <p class="results-count" role="status" aria-live="polite">
+        {{ filteredIssues().length }} {{ filteredIssues().length === 1 ? 'resultado' : 'resultados' }}
+        @if (view() !== 'ALL') {
+          <span class="results-view">en «{{ currentViewLabel() }}»</span>
+        }
+      </p>
+      <label class="sort-field">
+        <span>Ordenar por</span>
+        <select [ngModel]="sort()" (ngModelChange)="setSort($event)">
+          @for (o of sortOptions; track o.value) {
+            <option [value]="o.value">{{ o.label }}</option>
+          }
+        </select>
+      </label>
+    </div>
+
+    @if (activeFilters().length > 0) {
+      <ul class="active-filters" aria-label="Filtros aplicados">
+        @for (f of activeFilters(); track f.key) {
+          <li>
+            <button type="button" class="filter-tag" (click)="removeFilter(f)" [attr.aria-label]="'Quitar filtro ' + f.label">
+              <span>{{ f.label }}</span>
+              <app-icon name="x" size="14px" />
+            </button>
+          </li>
+        }
+        @if (activeFilters().length > 1) {
+          <li>
+            <button type="button" class="clear-filters" (click)="clearFilters()">Quitar todos</button>
+          </li>
+        }
+      </ul>
+    }
   }
 
   <!-- Lista -->
@@ -124,24 +176,23 @@
       @if (stats().total === 0) {
         <h2>Aún no hay novedades</h2>
         <p>Cuando se registre una novedad aparecerá aquí.</p>
-        <a routerLink="/issues/new" class="btn-primary">Registrar la primera</a>
+        <a routerLink="/issues/new" class="btn-primary">Reportar novedad</a>
+      } @else if (view() !== 'ALL' && activeFilters().length === 0) {
+        <h2>Nada pendiente aquí</h2>
+        <p>No hay novedades en «{{ currentViewLabel() }}».</p>
+        <button type="button" class="btn-secondary" (click)="setView('ALL')">Ver todas</button>
       } @else {
-        @if (view() !== 'ALL' && !searchQuery() && activeFilterCount() === 0) {
-          <h2>Nada pendiente aquí</h2>
-          <p>No hay novedades en «{{ currentViewLabel() }}».</p>
-          <button type="button" class="btn-secondary" (click)="setView('ALL')">Ver todas</button>
-        } @else {
-          <h2>Sin resultados</h2>
-          <p>Ninguna novedad coincide con la búsqueda o los filtros.</p>
-          <button type="button" class="btn-secondary" (click)="clearFilters()">Limpiar filtros</button>
-        }
+        <h2>Sin resultados</h2>
+        <p>Ninguna novedad coincide con la búsqueda o los filtros.</p>
+        <button type="button" class="btn-secondary" (click)="clearFilters()">Quitar filtros</button>
       }
     </div>
   } @else {
     <ul class="issue-list">
       @for (issue of filteredIssues(); track issue.id) {
+        @let info = cardInfo(issue);
         <li>
-          <a [routerLink]="['/issues', issue.id]" class="issue-card" [attr.data-priority]="issue.priority">
+          <a [routerLink]="['/issues', issue.id]" class="issue-card" [attr.data-priority]="issue.priority" (click)="onOpenIssue()">
             <div class="issue-main">
               <div class="issue-meta">
                 <span class="issue-code">{{ issue.code }}</span>
@@ -159,31 +210,39 @@
                   }
                   {{ priorityLabel(issue.priority) }}
                 </span>
-                <span class="pill pill-soft" [attr.data-tone]="statusTone(issue.status)">{{ statusLabel(issue.status) }}</span>
+                <span class="pill pill-soft" [attr.data-tone]="info.attention.tone">{{ info.attention.label }}</span>
                 @if (issue.category?.name) {
                   <span class="issue-category">{{ issue.category?.name }}</span>
                 }
-                @if (issue.priority === 'CRITICA' && !issue.urgentMeasures) {
+                @if (issue.priority === 'CRITICA' && !issue.urgentMeasures && info.open) {
                   <span class="pill pill-soft" data-tone="danger"><app-icon name="alert" /> Sin medida urgente</span>
                 }
               </div>
             </div>
 
             <div class="issue-side">
-              @if (issue.assignedUser; as u) {
-                <span class="person" title="Responsable: {{ u.firstName }} {{ u.lastName }}">
+              @if (info.attention.responsible; as u) {
+                <span class="person" [title]="'Responsable: ' + fullName(u)">
                   <span class="avatar">{{ initials(u.firstName, u.lastName) }}</span>
-                  <span class="person-name">{{ u.firstName }} {{ u.lastName }}</span>
+                  <span class="person-name">{{ fullName(u) }}</span>
                 </span>
-              } @else if (issue.suggestedUser; as u) {
-                <span class="person suggested" title="Responsable sugerido: {{ u.firstName }} {{ u.lastName }}">
+              } @else if (info.attention.suggested; as u) {
+                <span class="person suggested" [title]="'Sugerido: ' + fullName(u)">
                   <span class="avatar">{{ initials(u.firstName, u.lastName) }}</span>
-                  <span class="person-name">{{ u.firstName }} {{ u.lastName }} <small>(sugerido)</small></span>
+                  <span class="person-name">{{ fullName(u) }} <small>(sugerido)</small></span>
                 </span>
               } @else {
                 <span class="person unassigned">Sin responsable</span>
               }
-              <span class="issue-age">{{ timeAgo(issue.createdAt) }}</span>
+              <span class="issue-age">
+                @if (info.open) {
+                  {{ info.daysOpen === 0 ? 'Abierta hoy' : 'Abierta hace ' + daysOpenLabel(info.daysOpen) }}
+                } @else if (issue.status === 'CERRADA' && issue.closedAt) {
+                  Resuelta el {{ humanDate(issue.closedAt) }}
+                } @else {
+                  {{ statusLabel(issue.status) }}
+                }
+              </span>
               <app-icon name="chevron-right" class="chevron" />
             </div>
           </a>

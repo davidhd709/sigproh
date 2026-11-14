@@ -2,6 +2,8 @@ export interface DashboardPeriodInfo {
   startDate: string;
   endDate: string;
   cutoffDate: string;
+  /** Momento con el que se mide la antigüedad de los casos abiertos. */
+  operationalDate?: string;
   timezone: string;
 }
 

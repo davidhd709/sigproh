@@ -2,6 +2,8 @@ export interface DashboardPeriodInfo {
   startDate: string;
   endDate: string;
   cutoffDate: string;
+  /** Momento con el que se calcula la antigüedad de los casos abiertos (cola operativa). */
+  operationalDate: string;
   timezone: string;
 }
 

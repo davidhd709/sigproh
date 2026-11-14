@@ -73,6 +73,12 @@ export class IssuesService {
       throw new ForbiddenException('Su rol no tiene autorización para registrar novedades');
     }
 
+    // Reintento de un envío que el servidor ya guardó (la respuesta se perdió en el camino)
+    if (dto.clientRequestId) {
+      const previous = await this.findByClientRequestId(user, dto.clientRequestId);
+      if (previous) return previous;
+    }
+
     // 2. Validar exclusividad estricta de ámbito (RN-003, RN-021, RN-022)
     if (dto.scope === IssueScope.PROPIEDAD) {
       if (!dto.propertyId) {
@@ -174,6 +180,77 @@ export class IssuesService {
     const isCritical = dto.priority === IssuePriority.CRITICA;
 
     // 5. Transacción atómica para generar código correlativo sin colisiones, crear Issue, Eventos y Alertas
+    try {
+      return await this.createInTransaction(user, dto, assignedUserId, currentYear, isCritical);
+    } catch (error) {
+      // Dos envíos simultáneos con el mismo identificador: gana uno y el otro recibe el mismo caso
+      if (dto.clientRequestId && IssuesService.isUniqueViolation(error)) {
+        const previous = await this.findByClientRequestId(user, dto.clientRequestId);
+        if (previous) return previous;
+      }
+      throw error;
+    }
+  }
+
+  /** Nombre del conjunto o área de una novedad recién creada, para los avisos. */
+  private static placeOf(issue: { property?: { name: string } | null; internalArea?: { name: string } | null }) {
+    return issue.property?.name ?? issue.internalArea?.name ?? 'tu ubicación';
+  }
+
+  /** Nombre del conjunto o área para los avisos; si no se puede leer, el aviso sale igual. */
+  private async placeName(propertyId: string | null, internalAreaId: string | null): Promise<string> {
+    try {
+      if (propertyId) {
+        const property = await this.prisma.property.findUnique({ where: { id: propertyId }, select: { name: true } });
+        if (property) return property.name;
+      } else if (internalAreaId) {
+        const area = await this.prisma.internalArea.findUnique({ where: { id: internalAreaId }, select: { name: true } });
+        if (area) return area.name;
+      }
+    } catch {
+      // El nombre solo adorna el aviso
+    }
+    return 'tu ubicación';
+  }
+
+  private static isUniqueViolation(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
+  }
+
+  private static readonly CREATED_ISSUE_INCLUDE = {
+    category: { select: { id: true, name: true } },
+    property: { select: { id: true, name: true, code: true } },
+    internalArea: { select: { id: true, name: true, code: true } },
+    assignedUser: {
+      select: { id: true, firstName: true, lastName: true, email: true },
+    },
+  } as const;
+
+  /**
+   * Devuelve la novedad registrada antes con el mismo identificador de operación.
+   * Un identificador usado por otra persona no se reutiliza: se rechaza sin revelar el caso.
+   */
+  private async findByClientRequestId(user: AuthenticatedUser, clientRequestId: string) {
+    const previous = await this.prisma.issue.findUnique({
+      where: {
+        organizationId_clientRequestId: { organizationId: user.organizationId, clientRequestId },
+      },
+      include: IssuesService.CREATED_ISSUE_INCLUDE,
+    });
+    if (!previous) return null;
+    if (previous.createdById !== user.id) {
+      throw new ConflictException('Este envío ya fue usado por otra cuenta. Vuelve a abrir el formulario.');
+    }
+    return { ...previous, replayed: true };
+  }
+
+  private async createInTransaction(
+    user: AuthenticatedUser,
+    dto: CreateIssueDto,
+    assignedUserId: string | null,
+    currentYear: number,
+    isCritical: boolean,
+  ) {
     return this.prisma.$transaction(async (tx) => {
       // Contador atómico por organización y año protegido contra carreras en su primera creación e incrementos
       const seqResult = await tx.$queryRaw<{ lastValue: number }[]>`
@@ -212,16 +289,10 @@ export class IssuesService {
           createdById: user.id,
           suggestedUserId: assignedUserId,
           assignedUserId,
-          urgentMeasures: isCritical && dto.urgentMeasures ? dto.urgentMeasures.trim() : null,
+          urgentMeasures: isCritical && dto.urgentMeasures?.trim() ? dto.urgentMeasures.trim() : null,
+          clientRequestId: dto.clientRequestId ?? null,
         },
-        include: {
-          category: { select: { id: true, name: true } },
-          property: { select: { id: true, name: true, code: true } },
-          internalArea: { select: { id: true, name: true, code: true } },
-          assignedUser: {
-            select: { id: true, firstName: true, lastName: true, email: true },
-          },
-        },
+        include: IssuesService.CREATED_ISSUE_INCLUDE,
       });
 
       // Registrar evento inmutable de creación
@@ -269,15 +340,15 @@ export class IssuesService {
               organizationId: user.organizationId,
               recipientId: assignedUserId,
               issueId: issue.id,
-              title: `Novedad asignada: ${code}`,
-              message: `Se le asignó la novedad "${dto.title.trim()}" reportada por ${user.email}.`,
+              title: `Te asignaron una novedad en ${IssuesService.placeOf(issue)}`,
+              message: `${code} · ${dto.title.trim()}. Ábrela para iniciar la atención.`,
             },
           });
         }
       }
 
       // Si es crítica y se aportaron medidas urgentes iniciales
-      if (isCritical && dto.urgentMeasures) {
+      if (isCritical && dto.urgentMeasures?.trim()) {
         await tx.issueEvent.create({
           data: {
             issueId: issue.id,
@@ -310,16 +381,18 @@ export class IssuesService {
               organizationId: user.organizationId,
               recipientId: assigner.id,
               issueId: issue.id,
-              title: isCritical ? `ALERTA: Novedad crítica ${code}` : `Novedad por asignar: ${code}`,
+              title: isCritical
+                ? `ALERTA: Novedad crítica en ${IssuesService.placeOf(issue)}`
+                : `Falta asignar una novedad en ${IssuesService.placeOf(issue)}`,
               message: isCritical
-                ? `Se ha reportado la novedad crítica "${dto.title.trim()}". Requiere atención inmediata.`
-                : `Se ha reportado la novedad "${dto.title.trim()}" y no tiene responsable. Asígnela a un coordinador.`,
+                ? `${code} · ${dto.title.trim()}. Requiere atención inmediata.`
+                : `${code} · ${dto.title.trim()}. Aún no tiene responsable: asígnala.`,
             },
           });
         }
       }
 
-      return issue;
+      return { ...issue, replayed: false };
     });
   }
 
@@ -434,6 +507,7 @@ export class IssuesService {
 
     const isFirstAssignment =
       issue.status === IssueStatus.REGISTRADA || issue.status === IssueStatus.EN_REVISION;
+    const place = await this.placeName(issue.propertyId, issue.internalAreaId);
 
     return this.prisma.$transaction(async (tx) => {
       // Escritura condicionada al estado leído para no pisar una transición concurrente (409)
@@ -497,16 +571,18 @@ export class IssuesService {
         },
       });
 
-      // Notificar al usuario asignado
-      await tx.notification.create({
-        data: {
-          organizationId: user.organizationId,
-          recipientId: targetUser.id,
-          issueId: issue.id,
-          title: `Novedad asignada: ${issue.code}`,
-          message: `${user.email} le ha asignado como responsable principal de la novedad "${issue.title}".`,
-        },
-      });
+      // Notificar al usuario asignado (salvo que se asigne a sí mismo)
+      if (targetUser.id !== user.id) {
+        await tx.notification.create({
+          data: {
+            organizationId: user.organizationId,
+            recipientId: targetUser.id,
+            issueId: issue.id,
+            title: `Te asignaron una novedad en ${place}`,
+            message: `${issue.code} · ${issue.title}. Ábrela para iniciar la atención.`,
+          },
+        });
+      }
 
       return updatedIssue;
     });
@@ -2003,6 +2079,12 @@ export class IssuesService {
       }
     }
 
+    // Reintento de una subida que ya quedó vinculada: se devuelve el adjunto existente sin duplicarlo
+    if (dto.clientFileId) {
+      const previous = await this.findAttachmentByClientFileId(issue.id, dto.clientFileId);
+      if (previous) return previous;
+    }
+
     const currentAttachmentCount = await this.prisma.issueAttachment.count({
       where: { issueId: issue.id },
     });
@@ -2020,6 +2102,43 @@ export class IssuesService {
 
     const stage = dto.stage || EvidenceStage.SOPORTE;
 
+    try {
+      return await this.saveAttachment(user, issue.id, stored, stage, dto);
+    } catch (error) {
+      // Dos subidas simultáneas del mismo archivo: se conserva una y se descarta la copia en disco
+      if (dto.clientFileId && IssuesService.isUniqueViolation(error)) {
+        await this.privateStorage.deleteFile(stored.storageKey);
+        const previous = await this.findAttachmentByClientFileId(issue.id, dto.clientFileId);
+        if (previous) return previous;
+      }
+      throw error;
+    }
+  }
+
+  private static readonly ATTACHMENT_INCLUDE = {
+    uploadedBy: {
+      select: { id: true, firstName: true, lastName: true, role: true },
+    },
+    activity: {
+      select: { id: true, title: true },
+    },
+  } as const;
+
+  private findAttachmentByClientFileId(issueId: string, clientFileId: string) {
+    return this.prisma.issueAttachment.findUnique({
+      where: { issueId_clientFileId: { issueId, clientFileId } },
+      include: IssuesService.ATTACHMENT_INCLUDE,
+    });
+  }
+
+  private async saveAttachment(
+    user: AuthenticatedUser,
+    issueId: string,
+    stored: { fileName: string; fileSize: number; mimeType: string; sha256: string; storageKey: string },
+    stage: EvidenceStage,
+    dto: CreateAttachmentDto,
+  ) {
+    const issue = { id: issueId };
     return this.prisma.$transaction(async (tx) => {
       const attachment = await tx.issueAttachment.create({
         data: {
@@ -2032,6 +2151,7 @@ export class IssuesService {
           mimeType: stored.mimeType,
           sha256: stored.sha256,
           storageKey: stored.storageKey,
+          clientFileId: dto.clientFileId ?? null,
         },
         include: {
           uploadedBy: {
@@ -2184,6 +2304,7 @@ export class IssuesService {
         `Solo es posible iniciar el trabajo de una novedad pendiente (estado actual: ${issue.status})`,
       );
     }
+    const place = await this.placeName(issue.propertyId, issue.internalAreaId);
 
     return this.prisma.$transaction(async (tx) => {
       await this.transitionStatus(tx, issue.id, [IssueStatus.ASIGNADA], IssueStatus.EN_ATENCION);
@@ -2205,8 +2326,8 @@ export class IssuesService {
             organizationId: user.organizationId,
             recipientId: issue.createdById,
             issueId: issue.id,
-            title: `Novedad en proceso: ${issue.code}`,
-            message: `Se inició el trabajo de la novedad ${issue.code}.`,
+            title: `Ya están atendiendo tu novedad en ${place}`,
+            message: `${issue.code} · ${issue.title}. El responsable inició la atención.`,
           },
         });
       }
@@ -2253,6 +2374,7 @@ export class IssuesService {
     }
 
     const now = new Date();
+    const place = await this.placeName(issue.propertyId, issue.internalAreaId);
 
     return this.prisma.$transaction(async (tx) => {
       await this.transitionStatus(tx, issue.id, closableStatuses, IssueStatus.CERRADA, {
@@ -2292,8 +2414,8 @@ export class IssuesService {
             organizationId: user.organizationId,
             recipientId,
             issueId: issue.id,
-            title: `Novedad finalizada: ${issue.code}`,
-            message: `La novedad ${issue.code} fue finalizada por ${user.email}.`,
+            title: `Se resolvió una novedad en ${place}`,
+            message: `${issue.code} · ${issue.title}. Ábrela para ver la solución.`,
           },
         });
       }
@@ -2316,6 +2438,7 @@ export class IssuesService {
     }
 
     const previousClosedAt = issue.closedAt;
+    const place = await this.placeName(issue.propertyId, issue.internalAreaId);
 
     return this.prisma.$transaction(async (tx) => {
       await this.transitionStatus(tx, issue.id, [IssueStatus.CERRADA], IssueStatus.EN_ATENCION, {
@@ -2341,8 +2464,8 @@ export class IssuesService {
             organizationId: user.organizationId,
             recipientId: issue.assignedUserId,
             issueId: issue.id,
-            title: `Reapertura de novedad: ${issue.code}`,
-            message: `La novedad ${issue.code} ha sido reabierta por ${user.email}. Motivo: ${dto.reason}`,
+            title: `Se reabrió una novedad en ${place}`,
+            message: `${issue.code} · ${issue.title}. Motivo: ${dto.reason}`,
           },
         });
       }
@@ -2361,6 +2484,7 @@ export class IssuesService {
     const issue = await this.findIssueForTransition(user, issueId);
 
     this.assertIssueIsOpen(issue.status, 'descartar');
+    const place = await this.placeName(issue.propertyId, issue.internalAreaId);
 
     return this.prisma.$transaction(async (tx) => {
       // Se condiciona al estado leído para no pisar un cierre concurrente
@@ -2385,8 +2509,8 @@ export class IssuesService {
             organizationId: user.organizationId,
             recipientId: issue.createdById,
             issueId: issue.id,
-            title: `Novedad descartada: ${issue.code}`,
-            message: `La novedad ${issue.code} ha sido descartada. Motivo: ${dto.reason}`,
+            title: `Se descartó tu novedad en ${place}`,
+            message: `${issue.code} · ${issue.title}. Motivo: ${dto.reason}`,
           },
         });
       }

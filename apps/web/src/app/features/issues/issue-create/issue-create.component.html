@@ -2,263 +2,365 @@
   <a routerLink="/issues" class="back-link"><app-icon name="chevron-left" /> Novedades</a>
   <header class="page-head">
     <div>
-      <h1 class="page-title">Nueva novedad</h1>
-      <p class="page-subtitle">Cuéntanos qué pasó y dónde. Los campos con * son obligatorios.</p>
+      <h1 class="page-title">Reportar novedad</h1>
+      @if (phase() !== 'done') {
+        <p class="page-subtitle">Cuéntanos dónde ocurrió y qué pasó. Los campos con * son obligatorios.</p>
+      }
     </div>
   </header>
 
-  @if (errorMessage()) {
-    <div class="notice notice-danger" role="alert">
-      <app-icon name="alert" />
-      <span>{{ errorMessage() }}</span>
-    </div>
-  }
-
-  @if (successMessage()) {
-    <div class="notice notice-success" role="status">
-      <app-icon name="check-circle" />
-      <span>{{ successMessage() }}</span>
-    </div>
-  }
-
-  <form (ngSubmit)="onSubmit()" class="issue-form">
-    <!-- Ámbito -->
-    <section class="section">
-      <h2 class="step"><span>1</span> ¿Dónde ocurre?</h2>
-      <div class="scope-options" role="radiogroup" aria-label="Ámbito de la novedad">
-        <label class="scope-option" [class.selected]="scope === 'PROPIEDAD'">
-          <input type="radio" name="scope" value="PROPIEDAD" [checked]="scope === 'PROPIEDAD'" (change)="onScopeChange('PROPIEDAD')" />
-          <span class="scope-icon"><app-icon name="building" size="22px" /></span>
-          <span class="scope-text">
-            <strong>Propiedad horizontal</strong>
-            <small>Conjunto o edificio administrado</small>
-          </span>
-        </label>
-        <label class="scope-option" [class.selected]="scope === 'INTERNA'">
-          <input type="radio" name="scope" value="INTERNA" [checked]="scope === 'INTERNA'" (change)="onScopeChange('INTERNA')" />
-          <span class="scope-icon"><app-icon name="landmark" size="22px" /></span>
-          <span class="scope-text">
-            <strong>Área interna</strong>
-            <small>Operaciones, sistemas u otra área de EG S.A.S.</small>
-          </span>
-        </label>
+  @if (outcome(); as result) {
+    <!-- El servidor confirmó el registro -->
+    <section class="result" [class.result-partial]="failedFiles().length > 0" aria-live="polite">
+      <div class="result-head" id="submit-result" tabindex="-1">
+        <span class="result-icon"><app-icon name="check-circle" size="28px" /></span>
+        <div>
+          <h2>Novedad registrada</h2>
+          <p class="result-code">{{ result.issue.code }} · {{ result.issue.title }}</p>
+        </div>
       </div>
+      @if (result.issue.replayed) {
+        <p class="result-note">Ya habíamos recibido este reporte; no se creó una novedad repetida.</p>
+      }
+      <p class="result-who">{{ result.whoHandlesIt }}</p>
 
-      <div class="form-grid">
-        @if (scope === 'PROPIEDAD') {
-          <label class="field" [class.invalid]="fieldError()?.field === 'propertyId'">
-            <span>Propiedad *</span>
-            <select id="propertyId" [(ngModel)]="propertyId" name="propertyId" required
-              [attr.aria-invalid]="fieldError()?.field === 'propertyId'" aria-describedby="propertyId-error"
-              (ngModelChange)="clearFieldError('propertyId')">
-              <option value="" disabled>Selecciona una propiedad</option>
-              @for (prop of properties(); track prop.id) {
-                <option [value]="prop.id">{{ prop.name }}</option>
-              }
-            </select>
-            @if (fieldError()?.field === 'propertyId') {
-              <span class="field-error" id="propertyId-error">{{ fieldError()?.message }}</span>
-            }
-          </label>
-          <label class="field">
-            <span>Zona (opcional)</span>
-            <select id="propertyZoneId" [(ngModel)]="propertyZoneId" name="propertyZoneId" [disabled]="!propertyId">
-              <option value="">General</option>
-              @for (zone of getSelectedPropertyZones(); track zone.id) {
-                <option [value]="zone.id">{{ zone.name }}</option>
-              }
-            </select>
-          </label>
-        }
+      @if (uploadProgress(); as up) {
+        <p class="result-uploading" role="status">
+          <span class="btn-spinner dark"></span> Subiendo archivos: {{ up.done }} de {{ up.total }}…
+        </p>
+      } @else if (failedFiles().length > 0) {
+        <div class="notice notice-warning" role="alert">
+          <app-icon name="alert" />
+          <span>
+            La novedad quedó registrada, pero no se pudieron subir:
+            <strong>{{ failedFiles().length === 1 ? failedFiles()[0].file.name : failedFiles().length + ' archivos' }}</strong>.
+            Revisa la conexión y vuelve a intentarlo. También puedes agregarlos después desde la novedad.
+          </span>
+        </div>
+        <button type="button" class="btn-secondary result-retry" (click)="retryUploads()">
+          <app-icon name="refresh" /> Reintentar {{ failedFiles().length === 1 ? 'la foto' : 'los archivos' }}
+        </button>
+      } @else if (pendingFiles().length > 0) {
+        <p class="result-files"><app-icon name="camera" /> {{ pendingFiles().length === 1 ? 'Se subió el archivo adjunto.' : 'Se subieron los ' + pendingFiles().length + ' archivos adjuntos.' }}</p>
+      }
 
-        @if (scope === 'INTERNA') {
-          <label class="field full" [class.invalid]="fieldError()?.field === 'internalAreaId'">
-            <span>Área interna *</span>
-            <select id="internalAreaId" [(ngModel)]="internalAreaId" name="internalAreaId" required
-              [attr.aria-invalid]="fieldError()?.field === 'internalAreaId'" aria-describedby="internalAreaId-error"
-              (ngModelChange)="clearFieldError('internalAreaId')">
-              <option value="" disabled>Selecciona un área</option>
-              @for (area of internalAreas(); track area.id) {
-                <option [value]="area.id">{{ area.name }}</option>
-              }
-            </select>
-            @if (fieldError()?.field === 'internalAreaId') {
-              <span class="field-error" id="internalAreaId-error">{{ fieldError()?.message }}</span>
-            }
-          </label>
-        }
-
-        <label class="field full" [class.invalid]="fieldError()?.field === 'categoryId'">
-          <span>Categoría *</span>
-          <select id="categoryId" [(ngModel)]="categoryId" name="categoryId" required
-            [attr.aria-invalid]="fieldError()?.field === 'categoryId'" aria-describedby="categoryId-error"
-            (ngModelChange)="clearFieldError('categoryId')">
-            <option value="" disabled>Selecciona una categoría</option>
-            @for (cat of categories(); track cat.id) {
-              <option [value]="cat.id">{{ cat.name }}</option>
-            }
-          </select>
-          @if (fieldError()?.field === 'categoryId') {
-            <span class="field-error" id="categoryId-error">{{ fieldError()?.message }}</span>
-          }
-        </label>
+      <div class="result-actions">
+        <a [routerLink]="['/issues', result.issue.id]" class="btn-primary">Ver novedad</a>
+        <a routerLink="/issues" class="btn-secondary">Volver a la lista</a>
       </div>
     </section>
-
-    <!-- Detalle -->
-    <section class="section">
-      <h2 class="step"><span>2</span> ¿Qué pasó?</h2>
-      <div class="form-grid">
-        <label class="field full" [class.invalid]="fieldError()?.field === 'title'">
-          <span>Título *</span>
-          <input type="text" id="title" [(ngModel)]="title" name="title" placeholder="Ej.: Fuga de agua en motobombas" maxlength="160" required
-            [attr.aria-invalid]="fieldError()?.field === 'title'" aria-describedby="title-error"
-            (ngModelChange)="clearFieldError('title')" />
-          @if (fieldError()?.field === 'title') {
-            <span class="field-error" id="title-error">{{ fieldError()?.message }}</span>
-          }
-        </label>
-        <label class="field full" [class.invalid]="fieldError()?.field === 'description'">
-          <span>Descripción *</span>
-          <textarea
-            id="description"
-            [(ngModel)]="description"
-            name="description"
-            rows="4"
-            placeholder="Qué se detectó, qué personas o bienes se ven afectados y cualquier contexto útil"
-            required
-            [attr.aria-invalid]="fieldError()?.field === 'description'"
-            aria-describedby="description-error"
-            (ngModelChange)="clearFieldError('description')"
-          ></textarea>
-          @if (fieldError()?.field === 'description') {
-            <span class="field-error" id="description-error">{{ fieldError()?.message }}</span>
-          }
-        </label>
+  } @else if (draftOffer(); as draft) {
+    <!-- Reporte guardado de una visita anterior -->
+    <section class="draft-offer" aria-labelledby="draft-offer-title">
+      <span class="draft-chip" [attr.data-status]="draft.status">
+        {{ draft.status === 'PENDIENTE_ENVIO' ? 'Pendiente de envío' : 'Borrador' }}
+      </span>
+      <h2 id="draft-offer-title">Tienes un reporte sin terminar</h2>
+      <p class="draft-title">«{{ draft.fields.title || 'Sin título' }}»</p>
+      <p class="draft-meta">Guardado {{ timeAgo(draft.updatedAt) }} en este dispositivo.</p>
+      @if (draft.status === 'PENDIENTE_ENVIO') {
+        <p class="draft-hint">Lo enviaste pero no recibimos la confirmación. Al continuar podrás reintentar sin que se duplique.</p>
+      }
+      @if (draft.attachments.length > 0) {
+        <p class="draft-hint">
+          <app-icon name="camera" /> Tendrás que volver a elegir {{ draft.attachments.length === 1 ? 'la foto o archivo' : 'las ' + draft.attachments.length + ' fotos o archivos' }}.
+        </p>
+      }
+      <div class="draft-actions">
+        <button type="button" class="btn-primary" (click)="continueDraft()">Continuar borrador</button>
+        <button type="button" class="btn-secondary" (click)="discardDraft()">Descartar borrador</button>
       </div>
     </section>
-
-    <!-- Prioridad -->
-    <section class="section">
-      <h2 class="step"><span>3</span> ¿Qué tan urgente es?</h2>
-      <div class="priority-grid" role="radiogroup" aria-label="Prioridad">
-        <label class="priority-option" data-tone="neutral" [class.selected]="priority === 'BAJA'">
-          <input type="radio" [(ngModel)]="priority" name="priority" value="BAJA" />
-          <strong>Baja</strong>
-          <small>Se puede programar</small>
-        </label>
-        <label class="priority-option" data-tone="info" [class.selected]="priority === 'MEDIA'">
-          <input type="radio" [(ngModel)]="priority" name="priority" value="MEDIA" />
-          <strong>Media</strong>
-          <small>Atención estándar</small>
-        </label>
-        <label class="priority-option" data-tone="warning" [class.selected]="priority === 'ALTA'">
-          <input type="radio" [(ngModel)]="priority" name="priority" value="ALTA" />
-          <strong>Alta</strong>
-          <small>Afecta la operación</small>
-        </label>
-        <label
-          class="priority-option"
-          data-tone="danger"
-          [class.selected]="priority === 'CRITICA'"
-        >
-          <input type="radio" [(ngModel)]="priority" name="priority" value="CRITICA" />
-          <strong><app-icon name="alert-octagon" /> Crítica</strong>
-          <small>Riesgo inminente</small>
-        </label>
+  } @else {
+    @if (errorMessage()) {
+      <div class="notice notice-danger" role="alert">
+        <app-icon name="alert" />
+        <span>{{ errorMessage() }}</span>
       </div>
+    }
+    @if (errorCount() > 1) {
+      <p class="visually-hidden" role="alert">Hay {{ errorCount() }} campos por corregir.</p>
+    }
 
-      @if (priority === 'CRITICA') {
-        <div class="critical-box">
-          <div class="critical-head">
-            <app-icon name="alert-octagon" size="20px" />
-            <div>
-              <strong>El Director Operativo recibirá una alerta inmediata</strong>
-              <p>Si ya se tomaron medidas de contención, regístralas aquí. Puedes dejarlo vacío y reportar de inmediato.</p>
+    @if (filesToReselect().length > 0) {
+      <div class="notice notice-info">
+        <app-icon name="camera" />
+        <span>
+          Vuelve a elegir {{ filesToReselect().length === 1 ? 'este archivo' : 'estos archivos' }}:
+          <strong>{{ filesToReselect().join(', ') }}</strong>. El celular no los guarda en el borrador.
+        </span>
+      </div>
+    }
+
+    <form (ngSubmit)="onSubmit()" (input)="onEdit()" (change)="onEdit()" class="issue-form" novalidate>
+      <!-- 1. Dónde ocurrió -->
+      <section class="section">
+        <h2 class="step"><span>1</span> ¿Dónde ocurrió?</h2>
+
+        @if (showScopeChoice()) {
+          <fieldset class="scope-fieldset">
+            <legend class="field-label">Tipo de ubicación</legend>
+            <div class="scope-options">
+              <label class="scope-option" [class.selected]="scope === 'PROPIEDAD'">
+                <input type="radio" name="scope" value="PROPIEDAD" [checked]="scope === 'PROPIEDAD'" (change)="onScopeChange('PROPIEDAD')" />
+                <span class="scope-icon"><app-icon name="building" size="22px" /></span>
+                <span class="scope-text">
+                  <strong>Conjunto o edificio</strong>
+                  <small>Una copropiedad que administramos</small>
+                </span>
+              </label>
+              <label class="scope-option" [class.selected]="scope === 'INTERNA'">
+                <input type="radio" name="scope" value="INTERNA" [checked]="scope === 'INTERNA'" (change)="onScopeChange('INTERNA')" />
+                <span class="scope-icon"><app-icon name="landmark" size="22px" /></span>
+                <span class="scope-text">
+                  <strong>Área de la empresa</strong>
+                  <small>Operaciones, sistemas u otra área de EG S.A.S.</small>
+                </span>
+              </label>
             </div>
-          </div>
-          <label class="field">
-            <span>Medidas urgentes realizadas (opcional)</span>
-            <textarea
-              id="urgentMeasures"
-              [(ngModel)]="urgentMeasures"
-              name="urgentMeasures"
-              rows="3"
-              placeholder="Ej.: Se cerró la válvula principal y se avisó al técnico"
-            ></textarea>
-          </label>
-        </div>
-      }
-    </section>
+          </fieldset>
+        }
 
-    <!-- Fotos y cotización -->
-    <section class="section">
-      <h2 class="step"><span>4</span> Fotos y cotización <small class="optional">opcional</small></h2>
-
-      <div class="attach-block">
-        <div class="attach-head">
-          <strong>Fotos</strong>
-          <span class="field-hint">Muestran el estado al momento de reportar.</span>
-        </div>
-        <div class="photo-grid">
-          @for (p of photos(); track p.id) {
-            <figure class="photo">
-              <img [src]="p.previewUrl" [alt]="p.file.name" />
-              <button type="button" class="remove-btn" (click)="removeFile(p.id)" [attr.aria-label]="'Quitar ' + p.file.name">
-                <app-icon name="x" size="14px" />
-              </button>
-            </figure>
+        <div class="form-grid">
+          @if (scope === 'PROPIEDAD') {
+            <label class="field" [class.invalid]="errorFor('propertyId')">
+              <span>Conjunto o edificio *</span>
+              <select id="propertyId" [(ngModel)]="propertyId" name="propertyId" required
+                [attr.aria-invalid]="!!errorFor('propertyId')" aria-describedby="propertyId-error"
+                (ngModelChange)="onPropertyChange()">
+                <option value="" disabled>Elige el conjunto o edificio</option>
+                @for (prop of properties(); track prop.id) {
+                  <option [value]="prop.id">{{ prop.name }}</option>
+                }
+              </select>
+              @if (errorFor('propertyId'); as msg) {
+                <span class="field-error" id="propertyId-error">{{ msg }}</span>
+              }
+            </label>
+            <label class="field">
+              <span>Zona (opcional)</span>
+              <select id="propertyZoneId" [(ngModel)]="propertyZoneId" name="propertyZoneId" [disabled]="!propertyId" aria-describedby="zone-hint">
+                <option value="">{{ propertyId ? 'General / no sé' : 'Primero elige el conjunto' }}</option>
+                @for (zone of getSelectedPropertyZones(); track zone.id) {
+                  <option [value]="zone.id">{{ zone.name }}</option>
+                }
+              </select>
+              <span class="field-hint" id="zone-hint">
+                @if (!propertyId) {
+                  Primero elige el conjunto o edificio para ver sus zonas.
+                } @else {
+                  Si no aparece, escribe el lugar exacto en la descripción, por ejemplo «Torre B, sótano».
+                }
+              </span>
+            </label>
           }
-          <label class="photo-add">
-            <input type="file" [accept]="acceptImages" multiple (change)="onFilesSelected($event, 'PHOTO')" />
-            <app-icon name="camera" size="24px" />
-            <span>{{ photos().length ? 'Agregar' : 'Tomar o elegir' }}</span>
+
+          @if (scope === 'INTERNA') {
+            <label class="field full" [class.invalid]="errorFor('internalAreaId')">
+              <span>Área de la empresa *</span>
+              <select id="internalAreaId" [(ngModel)]="internalAreaId" name="internalAreaId" required
+                [attr.aria-invalid]="!!errorFor('internalAreaId')" aria-describedby="internalAreaId-error"
+                (ngModelChange)="clearFieldError('internalAreaId')">
+                <option value="" disabled>Elige el área</option>
+                @for (area of internalAreas(); track area.id) {
+                  <option [value]="area.id">{{ area.name }}</option>
+                }
+              </select>
+              @if (errorFor('internalAreaId'); as msg) {
+                <span class="field-error" id="internalAreaId-error">{{ msg }}</span>
+              }
+            </label>
+          }
+        </div>
+      </section>
+
+      <!-- 2. Qué pasó -->
+      <section class="section">
+        <h2 class="step"><span>2</span> ¿Qué pasó?</h2>
+        <div class="form-grid">
+          <label class="field full" [class.invalid]="errorFor('categoryId')">
+            <span>Categoría *</span>
+            <select id="categoryId" [(ngModel)]="categoryId" name="categoryId" required
+              [attr.aria-invalid]="!!errorFor('categoryId')" aria-describedby="categoryId-error"
+              (ngModelChange)="clearFieldError('categoryId')">
+              <option value="" disabled>Elige el tipo de problema</option>
+              @for (cat of categories(); track cat.id) {
+                <option [value]="cat.id">{{ cat.name }}</option>
+              }
+            </select>
+            @if (errorFor('categoryId'); as msg) {
+              <span class="field-error" id="categoryId-error">{{ msg }}</span>
+            }
+          </label>
+          <label class="field full" [class.invalid]="errorFor('title')">
+            <span>Título *</span>
+            <input type="text" id="title" [(ngModel)]="title" name="title" placeholder="Ej.: Fuga de agua en el sótano" maxlength="160" required
+              enterkeyhint="next" autocomplete="off"
+              [attr.aria-invalid]="!!errorFor('title')" aria-describedby="title-error"
+              (ngModelChange)="clearFieldError('title')" />
+            @if (errorFor('title'); as msg) {
+              <span class="field-error" id="title-error">{{ msg }}</span>
+            }
+          </label>
+          <label class="field full" [class.invalid]="errorFor('description')">
+            <span>Descripción *</span>
+            <textarea
+              id="description"
+              [(ngModel)]="description"
+              name="description"
+              rows="4"
+              placeholder="Qué viste y el lugar exacto. Ej.: Torre B, sótano: sale agua de la pared junto al parqueadero 12."
+              required
+              [attr.aria-invalid]="!!errorFor('description')"
+              aria-describedby="description-error"
+              (ngModelChange)="clearFieldError('description')"
+            ></textarea>
+            @if (errorFor('description'); as msg) {
+              <span class="field-error" id="description-error">{{ msg }}</span>
+            }
           </label>
         </div>
-      </div>
+      </section>
 
-      <div class="attach-block">
-        <div class="attach-head">
-          <strong>Cotización</strong>
-          <span class="field-hint">Si ya tienes un presupuesto del arreglo.</span>
+      <!-- 3. Urgencia -->
+      <section class="section">
+        <h2 class="step"><span>3</span> ¿Qué tan urgente es?</h2>
+        <div class="priority-grid" role="radiogroup" aria-label="Urgencia">
+          @for (opt of priorityOptions; track opt.value) {
+            <label class="priority-option" [attr.data-tone]="opt.tone" [class.selected]="priority === opt.value">
+              <input type="radio" [(ngModel)]="priority" name="priority" [value]="opt.value" />
+              <strong>
+                @if (opt.value === 'CRITICA') {
+                  <app-icon name="alert-octagon" />
+                }
+                {{ opt.label }}
+              </strong>
+              <small>{{ opt.hint }}</small>
+              <small class="priority-example">Ej.: {{ opt.example }}</small>
+            </label>
+          }
         </div>
-        @if (quotes().length > 0) {
-          <ul class="quote-list">
-            @for (q of quotes(); track q.id) {
-              <li>
-                <app-icon [name]="q.previewUrl ? 'camera' : 'file-text'" />
-                <span class="quote-name">{{ q.file.name }}</span>
-                <span class="quote-size">{{ formatBytes(q.file.size) }}</span>
-                <button type="button" class="remove-inline" (click)="removeFile(q.id)" [attr.aria-label]="'Quitar ' + q.file.name">
-                  <app-icon name="x" size="16px" />
+
+        @if (priority === 'CRITICA') {
+          <div class="critical-box">
+            <div class="critical-head">
+              <app-icon name="alert-octagon" size="20px" />
+              <div>
+                <strong>La Dirección recibirá una alerta apenas envíes</strong>
+                <p>Si ya hiciste algo para controlar la situación, cuéntalo. Si no, envía de una vez.</p>
+              </div>
+            </div>
+            <label class="field">
+              <span>¿Qué se hizo de inmediato? (opcional)</span>
+              <textarea
+                id="urgentMeasures"
+                [(ngModel)]="urgentMeasures"
+                name="urgentMeasures"
+                rows="3"
+                placeholder="Ej.: Se cerró la llave de paso y se avisó al técnico"
+              ></textarea>
+            </label>
+          </div>
+        }
+      </section>
+
+      <!-- 4. Fotos y cotización -->
+      <section class="section">
+        <h2 class="step"><span>4</span> Fotos y cotización <small class="optional">opcional</small></h2>
+
+        <div class="attach-block">
+          <div class="attach-head">
+            <strong>Fotos</strong>
+            <span class="field-hint">Muestran cómo estaba al reportar. Puedes tomarla o elegirla de la galería.</span>
+          </div>
+          <div class="photo-grid">
+            @for (p of photos(); track p.id) {
+              <figure class="photo">
+                <img [src]="p.previewUrl" [alt]="p.file.name" />
+                <button type="button" class="remove-btn" (click)="removeFile(p.id)" [attr.aria-label]="'Quitar ' + p.file.name">
+                  <app-icon name="x" size="14px" />
                 </button>
-              </li>
+              </figure>
             }
-          </ul>
-        }
-        <label class="file-add">
-          <input type="file" [accept]="acceptQuotes" multiple (change)="onFilesSelected($event, 'QUOTE')" />
-          <app-icon name="plus" /> {{ quotes().length ? 'Agregar otro archivo' : 'Adjuntar cotización' }}
-        </label>
-      </div>
+            <label class="photo-add">
+              <input type="file" [accept]="acceptImages" multiple (change)="$event.stopPropagation(); onFilesSelected($event, 'PHOTO')" />
+              <app-icon name="camera" size="24px" />
+              <span>{{ photos().length ? 'Agregar' : 'Tomar o elegir foto' }}</span>
+            </label>
+          </div>
+        </div>
 
-      @if (fileWarning()) {
-        <div class="notice notice-warning"><app-icon name="alert" /><span>{{ fileWarning() }}</span></div>
+        <div class="attach-block">
+          <div class="attach-head">
+            <strong>Cotización</strong>
+            <span class="field-hint">Si ya tienes un presupuesto del arreglo.</span>
+          </div>
+          @if (quotes().length > 0) {
+            <ul class="quote-list">
+              @for (q of quotes(); track q.id) {
+                <li>
+                  <app-icon [name]="q.previewUrl ? 'camera' : 'file-text'" />
+                  <span class="quote-name">{{ q.file.name }}</span>
+                  <span class="quote-size">{{ formatBytes(q.file.size) }}</span>
+                  <button type="button" class="remove-inline" (click)="removeFile(q.id)" [attr.aria-label]="'Quitar ' + q.file.name">
+                    <app-icon name="x" size="16px" />
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+          <label class="file-add">
+            <input type="file" [accept]="acceptQuotes" multiple (change)="$event.stopPropagation(); onFilesSelected($event, 'QUOTE')" />
+            <app-icon name="plus" /> {{ quotes().length ? 'Agregar otro archivo' : 'Adjuntar cotización' }}
+          </label>
+        </div>
+
+        @if (fileWarning().length > 0) {
+          <div class="notice notice-warning" role="alert">
+            <app-icon name="alert" />
+            <ul class="file-warnings">
+              @for (w of fileWarning(); track $index) {
+                <li>{{ w }}</li>
+              }
+            </ul>
+          </div>
+        }
+        <p class="field-hint">{{ formatsLabel }} · hasta {{ maxSizeLabel }} por archivo.</p>
+      </section>
+
+      @if (phase() === 'unconfirmed') {
+        <div class="notice notice-warning unconfirmed" role="alert">
+          <app-icon name="alert" />
+          <span>
+            <strong>Pendiente de envío.</strong> No pudimos confirmar que llegó, quizá por la señal.
+            Tus datos siguen guardados. Toca <strong>Reintentar</strong>: si ya había llegado, no se repetirá.
+          </span>
+        </div>
       }
-      <p class="field-hint">{{ formatsLabel }} · hasta {{ maxSizeLabel }} por archivo.</p>
-    </section>
 
-    <div class="form-actions">
-      <a routerLink="/issues" class="btn-secondary">Cancelar</a>
-      <button type="submit" class="btn-primary" [disabled]="loading()">
-        @if (uploadProgress(); as up) {
-          <span class="btn-spinner"></span> Subiendo {{ up.done + 1 > up.total ? up.total : up.done + 1 }} de {{ up.total }}…
-        } @else if (loading()) {
-          <span class="btn-spinner"></span> Guardando…
+      <div class="form-actions">
+        @if (phase() === 'unconfirmed') {
+          <button type="button" class="btn-secondary" (click)="backToEditing()">Seguir editando</button>
+          <button type="submit" class="btn-primary"><app-icon name="refresh" /> Reintentar</button>
         } @else {
-          Registrar novedad
+          <a routerLink="/issues" class="btn-secondary">{{ draftSavedAt() ? 'Guardar y salir' : 'Cancelar' }}</a>
+          <button type="submit" class="btn-primary" [disabled]="loading()" [attr.aria-busy]="loading()">
+            @if (loading()) {
+              <span class="btn-spinner"></span> Enviando…
+            } @else {
+              Enviar reporte
+            }
+          </button>
         }
-      </button>
-    </div>
-  </form>
+      </div>
+      <p class="draft-status" aria-live="polite">
+        @if (loading()) {
+          Enviando tu reporte. No cierres esta pantalla.
+        } @else if (draftSavedAt()) {
+          <app-icon name="check" size="14px" />
+          {{ draftStatus() === 'PENDIENTE_ENVIO' ? 'Pendiente de envío' : 'Borrador guardado en este dispositivo' }}
+        }
+      </p>
+    </form>
+  }
 </div>

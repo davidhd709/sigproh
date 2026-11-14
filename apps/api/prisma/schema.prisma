@@ -307,6 +307,10 @@ model Issue {
   // Medidas urgentes para casos críticos
   urgentMeasures String?
 
+  // Identificador de la operación de registro generado por el cliente: un reintento con el
+  // mismo valor devuelve la novedad ya creada en lugar de duplicarla
+  clientRequestId String?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   closedAt  DateTime?
@@ -327,6 +331,7 @@ model Issue {
   attachments    IssueAttachment[]
 
   @@unique([organizationId, code])
+  @@unique([organizationId, clientRequestId])
   @@index([organizationId])
   @@index([scope])
   @@index([propertyId])
@@ -466,12 +471,14 @@ model IssueAttachment {
   mimeType     String        // Tipo MIME validado
   sha256       String        // Hash SHA-256 para integridad
   storageKey   String        @unique // Identificador privado de almacenamiento (la ruta física nunca se expone al cliente)
+  clientFileId String?       // Identificador del archivo generado por el cliente; evita duplicarlo al reintentar la subida
   createdAt    DateTime      @default(now())
 
   issue      Issue          @relation(fields: [issueId], references: [id], onDelete: Restrict)
   activity   IssueActivity? @relation(fields: [activityId], references: [id], onDelete: Restrict)
   uploadedBy User           @relation("AttachmentUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
 
+  @@unique([issueId, clientFileId])
   @@index([issueId])
   @@index([activityId])
   @@index([uploadedById])

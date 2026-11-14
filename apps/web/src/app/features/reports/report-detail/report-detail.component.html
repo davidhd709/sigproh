@@ -36,13 +36,17 @@
       <div class="notice notice-success" role="status"><app-icon name="check-circle" /><span>{{ successMessage() }}</span></div>
     }
 
+    @if (rep.status === 'BORRADOR' || rep.status === 'DEVUELTO') {
+      <app-report-flow-steps [current]="2" />
+    }
+
     <!-- Estado del flujo y siguiente paso -->
     <section class="status-card" [attr.data-tone]="statusTone(rep.status)">
       <div class="status-text">
         @switch (rep.status) {
           @case ('BORRADOR') {
             <strong>Borrador en edición</strong>
-            <span>Solo tú y la Dirección lo ven. Revisa los textos, elige las fotos y finalízalo para publicarlo.</span>
+            <span>Solo tú y la Dirección lo ven. Revisa los textos y las fotos; los cambios se guardan como borrador. Cuando esté listo, finalízalo para publicarlo.</span>
           }
           @case ('EN_REVISION') {
             <strong>En revisión</strong>

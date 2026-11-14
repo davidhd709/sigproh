@@ -23,13 +23,18 @@ import {
 } from '../../../shared/file-policy';
 import { CommonModule } from '@angular/common';
 import { RouterModule, ActivatedRoute } from '@angular/router';
+import { attentionState, fullName, humanDate, openActivities } from '../../../shared/issue-attention';
+import { IssueDraftService } from '../../../core/services/issue-draft.service';
+import { listReturnUrl } from '../issues-list/list-return';
 import { FormsModule } from '@angular/forms';
 import { IssuesService, CandidateUser } from '../../../core/services/issues.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { Observable, of, switchMap } from 'rxjs';
-import { EvidenceStage, Issue, IssueAttachment, IssuePriority } from '../../../core/models/issue.model';
+import { EvidenceStage, Issue, IssueActivity, IssueAttachment, IssuePriority } from '../../../core/models/issue.model';
 
 type DetailAction =
+  | 'progress'
+  | 'confirm-suggested'
   | 'start'
   | 'close'
   | 'confirm-responsible'
@@ -46,6 +51,8 @@ interface ActionItem {
   icon: IconName;
   tone?: 'success' | 'danger' | 'warning';
   hint?: string;
+  /** Se muestra como botón visible, no dentro de «Más opciones». */
+  prominent?: boolean;
 }
 
 /** Etapas visibles del flujo; cada estado del backend se ubica en una de ellas. */
@@ -109,12 +116,42 @@ export class IssueDetailComponent {
     return idx === -1 ? 0 : idx;
   });
 
-  // ---------- Acciones: una principal y el resto en "Más acciones" ----------
+  // ---------- Situación de atención (la misma que en la bandeja y el diálogo) ----------
+  readonly fullName = fullName;
+  readonly humanDate = humanDate;
+  readonly attention = computed(() => {
+    const current = this.issue();
+    return current ? attentionState(current, this.authService.currentUser()?.id) : null;
+  });
+  /** Actividades abiertas por orden de atención: la primera se destaca arriba. */
+  readonly openActs = computed(() => openActivities(this.issue()?.activities));
+  readonly mainActivity = computed<IssueActivity | null>(() => this.openActs()[0] ?? null);
+  readonly activitiesByRecency = computed(() =>
+    [...(this.issue()?.activities ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+  );
+  /** Volver a la bandeja tal como se dejó (filtros, búsqueda y orden). */
+  readonly backUrl = listReturnUrl();
+
+  /** Datos del cierre: solución, fecha, quién cerró y fotos finales disponibles. */
+  readonly closure = computed(() => {
+    const current = this.issue();
+    if (!current || current.status !== 'CERRADA') return null;
+    const event = [...(current.events ?? [])].reverse().find((e) => e.eventType === 'CIERRE_DEFINITIVO' || e.eventType === 'CIERRE');
+    return {
+      closedAt: current.closedAt ?? event?.createdAt ?? current.updatedAt,
+      closedBy: event?.user ?? null,
+      solution: (event?.details?.observations as string | null | undefined) ?? null,
+      photos: this.photoAttachments().filter((a) => a.stage === 'FINAL'),
+    };
+  });
+
+  // ---------- Acciones: las principales visibles y el resto en "Más opciones" ----------
   readonly showMoreActions = signal(false);
   readonly actions = computed<ActionItem[]>(() => {
     const current = this.issue();
     const user = this.authService.currentUser();
-    if (!current || !user) return [];
+    const state = this.attention();
+    if (!current || !user || !state) return [];
     const director = this.authService.isDirector();
     const list: ActionItem[] = [];
     const isCritical = current.priority === 'CRITICA' || current.initialPriority === 'CRITICA';
@@ -122,24 +159,32 @@ export class IssueDetailComponent {
     const isOpen = current.status !== 'CERRADA' && current.status !== 'DESCARTADA';
     const canAssign = this.authService.canAssignIssues();
 
-    // Primero lo que mueve el flujo: asignar, atender lo urgente, iniciar, finalizar
-    if (canAssign && isOpen && !current.assignedUserId) {
-      list.push({ key: 'confirm-responsible', label: 'Asignar responsable', icon: 'user' });
+    // Primero lo que mueve el flujo, según la situación
+    if (canAssign && state.stage === 'UNASSIGNED') {
+      list.push({ key: 'confirm-responsible', label: 'Asignar responsable', icon: 'user', prominent: true });
     }
-    if (isCritical && !current.urgentMeasures && isOpen) {
-      list.push({ key: 'urgent-measure', label: 'Registrar medida urgente', icon: 'alert-octagon', tone: 'danger' });
+    if (canAssign && state.stage === 'SUGGESTED' && state.suggested) {
+      list.push({ key: 'confirm-suggested', label: `Confirmar a ${fullName(state.suggested)}`, icon: 'check', prominent: true });
+      list.push({ key: 'reassign', label: 'Elegir otra persona', icon: 'user', prominent: true });
     }
     if (this.canStart()) {
-      list.push({ key: 'start', label: 'Iniciar trabajo', icon: 'zap', hint: 'Pasa la novedad a en proceso' });
+      list.push({ key: 'start', label: 'Iniciar atención', icon: 'zap', hint: 'La novedad pasa a «En proceso»', prominent: true });
+    }
+    if (this.canRegisterProgress()) {
+      list.push({ key: 'progress', label: 'Registrar avance', icon: 'edit', hint: 'Qué se hizo, con foto si quieres', prominent: true });
     }
     if (this.canClose()) {
       list.push({
         key: 'close',
-        label: 'Finalizar',
+        label: 'Resolver',
         icon: 'check-circle',
         tone: 'success',
-        hint: this.hasMissingFinalEvidence() ? 'Con la foto final del trabajo' : undefined,
+        hint: this.hasMissingFinalEvidence() ? 'Con la foto final del trabajo' : 'Cierra la novedad',
+        prominent: true,
       });
+    }
+    if (isCritical && !current.urgentMeasures && isOpen) {
+      list.push({ key: 'urgent-measure', label: 'Registrar qué se hizo de inmediato', icon: 'alert-octagon', tone: 'danger' });
     }
     if (this.canReopen()) {
       list.push({ key: 'reopen', label: 'Reabrir', icon: 'refresh' });
@@ -161,50 +206,59 @@ export class IssueDetailComponent {
     }
     return list;
   });
-  readonly primaryAction = computed(() => this.actions()[0] ?? null);
+  /** Acciones del paso actual, visibles como botones; lo demás queda en «Más opciones». */
+  readonly mainActions = computed(() => this.actions().filter((a) => a.prominent));
+  readonly primaryAction = computed(() => this.mainActions()[0] ?? null);
 
-  /** Explicación en una línea de qué sigue y quién lo hace, pensada para alguien nuevo. */
+  /** Qué sigue y quién lo hace, en una línea, para cualquier perfil (también quien solo reportó). */
   readonly nextStepHint = computed<string | null>(() => {
     const current = this.issue();
+    const state = this.attention();
     const user = this.authService.currentUser();
-    if (!current || !user) return null;
-    const isResponsible = current.assignedUserId === user.id;
+    if (!current || !state || !user) return null;
+    const isMine = current.assignedUserId === user.id;
+    const responsible = fullName(state.responsible) || 'el responsable';
+    const canAssign = this.authService.canAssignIssues();
 
-    const responsible = current.assignedUser
-      ? `${current.assignedUser.firstName} ${current.assignedUser.lastName}`
-      : null;
-
-    switch (current.status) {
-      case 'REGISTRADA':
-      case 'EN_REVISION':
-        return this.authService.canAssignIssues()
-          ? 'No tiene responsable porque el ámbito no tiene coordinador ni director asignado. Asígnala.'
-          : 'Está esperando que Gerencia o la Dirección le asignen un responsable.';
-      case 'ASIGNADA':
+    switch (state.stage) {
+      case 'UNASSIGNED':
+        return canAssign ? 'Elige quién la atenderá.' : 'Gerencia o la Dirección deben asignar un responsable.';
+      case 'SUGGESTED':
+        return canAssign
+          ? `Confirma a ${fullName(state.suggested)} o elige otra persona.`
+          : 'Gerencia o la Dirección deben confirmar al responsable.';
+      case 'CONFIRMED':
         if (this.canStart()) {
-          return isResponsible
-            ? 'Está a tu cargo. Cuando mandes a hacer el trabajo, márcala como iniciada.'
-            : `Está a cargo de ${responsible}. Puedes iniciar el trabajo tú mismo.`;
+          return isMine
+            ? 'Cuando empieces el trabajo, toca «Iniciar atención».'
+            : `Puedes iniciar la atención en nombre de ${responsible}.`;
         }
-        return `Pendiente: ${responsible} debe iniciar el trabajo.`;
-      case 'CERRADA':
-        return 'Esta novedad ya se finalizó.';
-      case 'DESCARTADA':
-        return 'Esta novedad se descartó y no requiere atención.';
-      default:
+        return `Próximo paso: ${responsible} inicia la atención.`;
+      case 'IN_PROGRESS':
         if (this.canClose()) {
           return this.hasMissingFinalEvidence()
-            ? 'En proceso. Cuando termine el trabajo, agrega la foto final y finalízala.'
-            : 'En proceso. Cuando termine el trabajo, finalízala.';
+            ? 'Registra los avances. Para cerrarla necesitas la foto final.'
+            : 'Registra los avances y ciérrala cuando termine el trabajo.';
         }
-        return responsible ? `La está atendiendo ${responsible}.` : 'Está en proceso.';
+        return `Próximo paso: ${responsible} la cierra cuando termine el trabajo.`;
+      case 'FINISHED':
+        return null;
+      case 'DISCARDED':
+        return null;
     }
   });
-  readonly moreActions = computed(() => this.actions().slice(1));
+  readonly moreActions = computed(() => {
+    const shown = new Set(this.mainActions());
+    return this.actions().filter((a) => !shown.has(a));
+  });
 
   runAction(key: DetailAction): void {
     this.showMoreActions.set(false);
     switch (key) {
+      case 'progress':
+        return this.openProgressModal();
+      case 'confirm-suggested':
+        return this.openAssignModal(this.issue()?.suggestedUserId);
       case 'start':
         return this.startWork();
       case 'close':
@@ -250,6 +304,12 @@ export class IssueDetailComponent {
   readonly candidatesLoading = signal<boolean>(false);
 
   constructor() {
+    // Si se llega desde una lista desplazada, el caso se abre desde arriba (donde está la acción)
+    try {
+      if (typeof window !== 'undefined' && !/jsdom/i.test(navigator.userAgent)) window.scrollTo(0, 0);
+    } catch {
+      // Sin ventana desplazable
+    }
     // Descarga las fotos con la sesión del usuario (el almacenamiento es privado)
     effect(() => {
       const current = this.issue();
@@ -334,11 +394,21 @@ export class IssueDetailComponent {
     });
   }
 
-  openAssignModal(): void {
+  openAssignModal(preselectUserId?: string | null): void {
     const current = this.issue();
     if (!current) return;
+    this.newAssignedUserId = preselectUserId ?? current.assignedUserId ?? '';
+    this.reassignmentReason = '';
     this.loadCandidates(current.id);
     this.showAssignModal.set(true);
+  }
+
+  /** Texto del botón que confirma el diálogo: dice exactamente qué va a pasar. */
+  assignConfirmLabel(): string {
+    const stage = this.attention()?.stage;
+    if (stage === 'SUGGESTED' && this.newAssignedUserId === this.issue()?.suggestedUserId) return 'Confirmar responsable';
+    if (this.issue()?.assignedUserId) return 'Cambiar responsable';
+    return 'Asignar responsable';
   }
 
   // Confirmar o Reasignar Responsable Principal (Exclusivo Director Operativo - DEC-04 / RN-006 / RN-039)
@@ -377,10 +447,9 @@ export class IssueDetailComponent {
           this.issue.set(updated);
           this.showAssignModal.set(false);
           this.reassignmentReason = '';
+          const name = fullName(this.candidates().find((c) => c.id === this.newAssignedUserId)) || 'La persona elegida';
           this.successMessage.set(
-            isReassignment
-              ? 'Responsable principal reasignado con éxito.'
-              : 'Asignación de responsable confirmada por la Dirección.',
+            isReassignment ? `${name} es ahora responsable. Se le avisó.` : `${name} quedó como responsable. Se le avisó.`,
           );
           this.loadIssue(current.id);
         },
@@ -462,9 +531,9 @@ export class IssueDetailComponent {
 
   // --- F4: Pestañas y Comentarios ---
 
-  readonly activeTab = signal<'comentarios' | 'evidencias' | 'historial'>('comentarios');
+  readonly activeTab = signal<'avances' | 'comentarios' | 'evidencias' | 'historial'>('avances');
 
-  selectTab(tab: 'comentarios' | 'evidencias' | 'historial'): void {
+  selectTab(tab: 'avances' | 'comentarios' | 'evidencias' | 'historial'): void {
     this.activeTab.set(tab);
     if (tab === 'comentarios' && this.candidates().length === 0) {
       const current = this.issue();
@@ -562,6 +631,99 @@ export class IssueDetailComponent {
     return current.status !== 'CERRADA' && current.status !== 'DESCARTADA';
   }
 
+  /** Registrar avance usa las actividades: Director o responsable, con la novedad en proceso. */
+  canRegisterProgress(): boolean {
+    const current = this.issue();
+    const user = this.authService.currentUser();
+    if (!current || !user) return false;
+    const inProgress = current.status === 'EN_ATENCION' || current.status === 'PENDIENTE_CIERRE';
+    return inProgress && (this.authService.isDirector() || current.assignedUserId === user.id);
+  }
+
+  // ---------- Registrar avance ----------
+  readonly showProgressModal = signal(false);
+  readonly progressError = signal<string | null>(null);
+  readonly progressPhoto = signal<File | null>(null);
+  progressText = '';
+  private progressPhotoId = IssueDraftService.newRequestId();
+
+  openProgressModal(): void {
+    this.progressText = '';
+    this.progressError.set(null);
+    this.progressPhoto.set(null);
+    this.progressPhotoId = IssueDraftService.newRequestId();
+    this.showProgressModal.set(true);
+  }
+
+  onProgressPhotoSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file) return;
+    const reason = fileRejection(file, FILE_POLICY.imageTypes);
+    this.progressError.set(reason);
+    this.progressPhoto.set(reason ? null : file);
+    this.progressPhotoId = IssueDraftService.newRequestId();
+  }
+
+  /**
+   * Un avance es una actividad ya realizada: se crea con lo que se hizo, se marca completada
+   * y, si hay foto, se adjunta a esa actividad como evidencia de ejecución.
+   */
+  submitProgress(): void {
+    const current = this.issue();
+    const text = this.progressText.trim();
+    if (!current) return;
+    if (!text) {
+      this.progressError.set('Cuenta qué se hizo.');
+      setTimeout(() => document.getElementById('progressText')?.focus());
+      return;
+    }
+    this.actionLoading.set(true);
+    this.progressError.set(null);
+    const firstLine = text.split('\n')[0];
+    const title = firstLine.length > 80 ? `${firstLine.slice(0, 77)}…` : firstLine;
+    const photo = this.progressPhoto();
+    let savedActivity = false;
+
+    this.issuesService
+      .createActivity(current.id, { title, description: text })
+      .pipe(
+        switchMap((activity) =>
+          this.issuesService.updateActivity(current.id, activity.id, { status: 'COMPLETADA', version: activity.version }),
+        ),
+        switchMap((activity) => {
+          savedActivity = true;
+          return photo
+            ? this.issuesService.uploadAttachment(current.id, photo, 'EJECUCION', activity.id, this.progressPhotoId)
+            : of(null);
+        }),
+      )
+      .subscribe({
+        next: () => {
+          this.actionLoading.set(false);
+          this.showProgressModal.set(false);
+          this.successMessage.set('Avance registrado. Quien reportó puede verlo en el seguimiento.');
+          this.activeTab.set('avances');
+          this.loadIssue(current.id);
+        },
+        error: (err) => {
+          this.actionLoading.set(false);
+          if (savedActivity) {
+            // El avance quedó registrado; solo falta la foto, que se puede adjuntar después
+            this.showProgressModal.set(false);
+            this.errorMessage.set(
+              'El avance quedó registrado, pero la foto no se pudo subir. Adjúntala con «Adjuntar foto o archivo».',
+            );
+          } else {
+            const msg = err.error?.message || 'No pudimos guardar el avance. Revisa la conexión e inténtalo de nuevo.';
+            this.progressError.set(Array.isArray(msg) ? msg.join(', ') : msg);
+          }
+          this.loadIssue(current.id);
+        },
+      });
+  }
+
   hasMissingFinalEvidence(): boolean {
     const current = this.issue();
     if (!current || !current.category?.requiresEvidence) return false;
@@ -654,7 +816,7 @@ export class IssueDetailComponent {
     this.issuesService.startWork(current.id).subscribe({
       next: () => {
         this.actionLoading.set(false);
-        this.successMessage.set('Trabajo iniciado. La novedad quedó en proceso.');
+        this.successMessage.set('Atención iniciada. La novedad quedó en proceso.');
         this.loadIssue(current.id);
       },
       error: (err) => {
@@ -689,7 +851,11 @@ export class IssueDetailComponent {
     this.setFinalPhoto(file);
   }
 
+  /** Estable mientras la foto no cambie: reintentar el cierre no la sube dos veces. */
+  private finalPhotoId = IssueDraftService.newRequestId();
+
   setFinalPhoto(file: File | null): void {
+    this.finalPhotoId = IssueDraftService.newRequestId();
     const previous = this.finalPhotoPreview();
     if (previous) URL.revokeObjectURL(previous);
     this.finalPhoto.set(file);
@@ -718,7 +884,7 @@ export class IssueDetailComponent {
 
     let photoUploaded = false;
     const upload$: Observable<unknown> = photo
-      ? this.issuesService.uploadAttachment(current.id, photo, 'FINAL')
+      ? this.issuesService.uploadAttachment(current.id, photo, 'FINAL', undefined, this.finalPhotoId)
       : of(null);
 
     upload$
@@ -735,7 +901,7 @@ export class IssueDetailComponent {
           this.actionLoading.set(false);
           this.closeFinalizeModal();
           this.closureObservations = '';
-          this.successMessage.set('Novedad finalizada. Se avisó a quien la reportó.');
+          this.successMessage.set('Novedad cerrada. Se avisó a quien la reportó.');
           this.loadIssue(current.id);
         },
         error: (err) => {

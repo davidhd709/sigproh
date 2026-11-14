@@ -625,7 +625,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    'actions'
     'summary'
     'facts'
     'tabs';
@@ -1005,10 +1004,9 @@
   .detail-grid {
     grid-template-columns: minmax(0, 1fr) 320px;
     grid-template-areas:
-      'summary actions'
       'summary facts'
       'tabs facts';
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto 1fr;
     align-items: start;
     gap: 1rem 1.5rem;
   }
@@ -1080,4 +1078,237 @@
 
 .final-photo-add:has(input:focus-visible) {
   box-shadow: var(--focus-ring);
+}
+
+/* ---------- Situación actual (arriba del detalle) ---------- */
+.status-card {
+  --tone: var(--warning);
+  --tone-bg: var(--warning-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--tone);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.status-card[data-tone='danger'] {
+  --tone: var(--danger);
+  --tone-bg: var(--danger-bg);
+}
+.status-card[data-tone='info'] {
+  --tone: var(--primary);
+  --tone-bg: var(--primary-50);
+}
+.status-card[data-tone='progress'] {
+  --tone: var(--info);
+  --tone-bg: var(--info-bg);
+}
+.status-card[data-tone='success'] {
+  --tone: var(--success);
+  --tone-bg: var(--success-bg);
+}
+.status-card[data-tone='muted'] {
+  --tone: var(--text-faint);
+  --tone-bg: var(--surface-muted);
+}
+
+.status-message {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.status-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone);
+  transform: translateY(-1px);
+}
+
+.status-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+  gap: 0.6rem 1rem;
+  margin: 0;
+}
+
+.status-facts dt {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-facts dd {
+  margin: 0.15rem 0 0;
+  color: var(--text-strong);
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+
+.status-next {
+  grid-column: 1 / -1;
+}
+
+.status-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius);
+  background: var(--tone-bg);
+  color: var(--text-body);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.status-activity-label {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-activity strong {
+  color: var(--ink);
+}
+
+.link-btn {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.status-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: 0.6rem;
+}
+
+.main-action:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.main-action.secondary {
+  background: var(--surface);
+  color: var(--primary-strong);
+  border: 1.5px solid var(--primary-200);
+  box-shadow: none;
+}
+
+.main-action.secondary:hover {
+  background: var(--primary-50);
+}
+
+.closure {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.2rem;
+}
+
+.closure-title {
+  margin: 0.3rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.closure-text {
+  margin: 0;
+  color: var(--text-body);
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.closure-gallery {
+  margin-top: 0.2rem;
+}
+
+.closure-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.modal-state {
+  margin: 0 0 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+/* ---------- Avances ---------- */
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.progress-item.open {
+  border-left: 3px solid var(--warning-bright);
+}
+
+.progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.progress-body {
+  margin: 0;
+  color: var(--text-body);
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+@media (min-width: 1024px) {
+  .status-card {
+    padding: 1.2rem 1.35rem;
+  }
 }

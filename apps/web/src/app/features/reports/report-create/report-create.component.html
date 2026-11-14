@@ -2,10 +2,12 @@
   <a routerLink="/reports" class="back-link"><app-icon name="chevron-left" /> Informes</a>
   <header class="page-head">
     <div>
-      <h1 class="page-title">Nuevo informe</h1>
+      <h1 class="page-title">Crear informe</h1>
       <p class="page-subtitle">Reunimos automáticamente las novedades, actividades e indicadores del período elegido.</p>
     </div>
   </header>
+
+  <app-report-flow-steps [current]="1" />
 
   @if (errorMessage()) {
     <div class="notice notice-danger" role="alert"><app-icon name="alert" /><span>{{ errorMessage() }}</span></div>
@@ -14,7 +16,7 @@
   <form (ngSubmit)="onSubmit()">
     <!-- Ámbito -->
     <section class="section">
-      <h2 class="step"><span>1</span> ¿Sobre qué es el informe?</h2>
+      <h2 class="step"><span>a</span> Ubicación: ¿sobre qué es el informe?</h2>
       <div class="scope-options" role="radiogroup" aria-label="Ámbito del informe">
         <label class="scope-option" [class.selected]="scope === 'PROPIEDAD'">
           <input type="radio" name="scope" value="PROPIEDAD" [(ngModel)]="scope" (change)="onScopeChange()" />
@@ -70,7 +72,7 @@
 
     <!-- Período -->
     <section class="section">
-      <h2 class="step"><span>2</span> Período</h2>
+      <h2 class="step"><span>b</span> Período</h2>
       <div class="period-chips" role="group" aria-label="Períodos rápidos">
         <button type="button" class="chip" [class.active]="selectedPreset === 'THIS_MONTH'" (click)="applyPreset('THIS_MONTH')">Este mes</button>
         <button type="button" class="chip" [class.active]="selectedPreset === 'LAST_MONTH'" (click)="applyPreset('LAST_MONTH')">Mes anterior</button>
@@ -103,7 +105,7 @@
 
     <!-- Contenido -->
     <section class="section">
-      <h2 class="step"><span>3</span> Título y textos iniciales</h2>
+      <h2 class="step"><span>c</span> Título y textos iniciales</h2>
       <div class="form-grid">
         <label class="field full">
           <span>Título *</span>
@@ -130,7 +132,7 @@
           ></textarea>
         </label>
       </div>
-      <p class="field-hint">Podrás editar todos los textos después, antes de enviar a revisión.</p>
+      <p class="field-hint">Después revisarás el contenido y podrás guardarlo como borrador o finalizarlo.</p>
     </section>
 
     <div class="form-actions">
@@ -139,7 +141,7 @@
         @if (isSubmitting()) {
           <span class="btn-spinner"></span> Generando…
         } @else {
-          Generar borrador
+          Continuar: revisar contenido
         }
       </button>
     </div>

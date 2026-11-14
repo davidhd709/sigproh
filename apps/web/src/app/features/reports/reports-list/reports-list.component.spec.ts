@@ -113,4 +113,23 @@ describe('ReportsListComponent', () => {
     expect(component.errorMessage()).toBe('Fallo al consultar reportes');
     expect(component.isLoading()).toBe(false);
   });
+
+  it('estados vacíos: borradores, publicados y filtros sin resultados', () => {
+    mockReportService.getReports.mockReturnValue(of([]));
+    const text = () => (fixture.nativeElement as HTMLElement).textContent ?? '';
+
+    component.setStatus('BORRADOR');
+    fixture.detectChanges();
+    expect(text()).toContain('Aún no hay borradores');
+    expect(text()).toContain('Crear informe');
+
+    component.setStatus('APROBADO');
+    fixture.detectChanges();
+    expect(text()).toContain('Aún no hay informes publicados');
+
+    component.searchTerm = 'xyz';
+    component.onFilterChange();
+    fixture.detectChanges();
+    expect(text()).toContain('No encontramos informes con estos filtros');
+  });
 });

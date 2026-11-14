@@ -294,3 +294,182 @@
     grid-template-columns: repeat(5, 1fr);
   }
 }
+
+/* ---------- Ejemplos de urgencia ---------- */
+.priority-option .priority-example {
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-style: italic;
+}
+
+/* ---------- Tipo de ubicación ---------- */
+.scope-fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.field-label {
+  margin-bottom: 0.45rem;
+  padding: 0;
+  color: var(--text-strong);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+/* El teclado del celular y la barra fija de acciones no deben tapar el campo enfocado */
+.issue-form :is(input, select, textarea) {
+  scroll-margin-top: 1rem;
+  scroll-margin-bottom: 7rem;
+}
+
+.file-warnings {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.file-warnings li + li {
+  margin-top: 0.35rem;
+}
+
+/* ---------- Estado del borrador ---------- */
+.draft-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  min-height: 1.2rem;
+  margin: 0.5rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.unconfirmed {
+  margin-top: 1rem;
+}
+
+.draft-offer,
+.result {
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.draft-offer h2,
+.result h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.draft-chip {
+  display: inline-block;
+  margin-bottom: 0.6rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.draft-chip[data-status='PENDIENTE_ENVIO'] {
+  background: var(--warning-100);
+  color: var(--warning-ink);
+}
+
+.draft-title {
+  margin: 0.5rem 0 0.15rem;
+  color: var(--text-strong);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.draft-meta,
+.draft-hint {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.draft-hint .app-icon {
+  vertical-align: -0.15em;
+}
+
+.draft-actions,
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.1rem;
+}
+
+.draft-actions > *,
+.result-actions > * {
+  flex: 1 1 12rem;
+  min-height: 48px;
+}
+
+/* ---------- Novedad registrada ---------- */
+.result-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  outline: none;
+}
+
+.result-icon {
+  display: inline-flex;
+  color: var(--success);
+}
+
+.result-partial .result-icon {
+  color: var(--warning);
+}
+
+.result-code {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.result-note,
+.result-who,
+.result-files,
+.result-uploading {
+  margin: 0.9rem 0 0;
+  color: var(--text-body);
+  line-height: 1.5;
+}
+
+.result-who {
+  font-weight: 600;
+}
+
+.result-uploading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.result .notice {
+  margin: 0.9rem 0 0;
+}
+
+.result-retry {
+  margin-top: 0.6rem;
+  width: 100%;
+}
+
+.btn-spinner.dark {
+  border-color: var(--border-strong);
+  border-top-color: var(--primary);
+}

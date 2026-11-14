@@ -198,12 +198,17 @@ export class IssuesService {
     file: File,
     stage: EvidenceStage = 'SOPORTE',
     activityId?: string,
+    clientFileId?: string,
   ): Observable<IssueAttachment> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('stage', stage);
     if (activityId) {
       formData.append('activityId', activityId);
+    }
+    // Con el mismo identificador, un reintento no duplica el archivo en el servidor
+    if (clientFileId) {
+      formData.append('clientFileId', clientFileId);
     }
 
     return this.http.post<IssueAttachment>(

@@ -14,6 +14,14 @@ import { ScopeAuthorizationService } from '../../organization/application/scope-
 import { AuthenticatedUser } from '../../auth/domain/authenticated-user.type';
 import { DashboardFilterDto } from '../presentation/dto/dashboard-filter.dto';
 import {
+  BOGOTA_TIMEZONE,
+  bogotaDayEnd,
+  bogotaDayStart,
+  bogotaDaysBetween,
+  bogotaYmd,
+  isPlainDate,
+} from '../../shared/domain/bogota-time';
+import {
   CategoryMetricItem,
   DashboardActivitiesSummary,
   DashboardKpiSummary,
@@ -68,7 +76,10 @@ export class DashboardService {
     }
 
     // 3. Establecer fechas de periodo y corte en zona horaria de Colombia (UTC-5)
-    const { startDate, endDate } = this.resolveDateRange(filter.startDate, filter.endDate);
+    const now = new Date();
+    const { startDate, cutoffDate } = DashboardService.resolveDateRange(filter.startDate, filter.endDate, now);
+    // Los indicadores históricos se calculan a la fecha de corte (hoy, si el período no ha terminado)
+    const endDate = cutoffDate;
 
     // 4. Construir filtro base de Prisma para la organización y alcance autorizado
     const baseWhere: any = {
@@ -168,13 +179,16 @@ export class DashboardService {
     );
 
     // 12. Casos que requieren atención gerencial urgente (críticos, bloqueados, atrasados)
-    const attentionRequiredCases = this.extractAttentionRequiredCases(issues, endDate);
+    // La cola operativa mide la antigüedad a hoy, igual que la bandeja de Novedades
+    const attentionRequiredCases = DashboardService.extractAttentionRequiredCases(issues, now);
 
+    const requestedEnd = DashboardService.resolveDateRange(filter.startDate, filter.endDate, now).endDate;
     const periodInfo: DashboardPeriodInfo = {
       startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      cutoffDate: endDate.toISOString(),
-      timezone: 'America/Bogota (UTC-5)',
+      endDate: requestedEnd.toISOString(),
+      cutoffDate: cutoffDate.toISOString(),
+      operationalDate: now.toISOString(),
+      timezone: BOGOTA_TIMEZONE,
     };
 
     return {
@@ -190,46 +204,28 @@ export class DashboardService {
   }
 
   /**
-   * Resuelve el rango de fechas garantizando bordes precisos del día y mes en hora de Colombia.
+   * Resuelve el período en hora de Colombia: "2026-11-01" empieza a las 00:00 de Bogotá y
+   * "2026-11-30" termina a las 23:59:59.999 de Bogotá. El corte nunca es posterior al momento
+   * de la consulta: "Este mes" se mide hasta hoy, no hasta el último día del mes.
    */
-  private resolveDateRange(
-    startStr?: string,
-    endStr?: string,
-  ): { startDate: Date; endDate: Date } {
-    let startDate: Date;
-    let endDate: Date;
+  static resolveDateRange(
+    startStr: string | undefined,
+    endStr: string | undefined,
+    now: Date = new Date(),
+  ): { startDate: Date; endDate: Date; cutoffDate: Date } {
+    let endDate = endStr ? (isPlainDate(endStr) ? bogotaDayEnd(endStr) : new Date(endStr)) : now;
+    let startDate = startStr
+      ? isPlainDate(startStr)
+        ? bogotaDayStart(startStr)
+        : new Date(startStr)
+      : bogotaDayStart(`${bogotaYmd(endDate).slice(0, 7)}-01`);
 
-    const now = new Date();
-
-    if (endStr) {
-      if (endStr.length <= 10) {
-        endDate = new Date(`${endStr}T23:59:59.999Z`);
-      } else {
-        endDate = new Date(endStr);
-      }
-    } else {
-      endDate = now;
-    }
-
-    if (startStr) {
-      if (startStr.length <= 10) {
-        startDate = new Date(`${startStr}T00:00:00.000Z`);
-      } else {
-        startDate = new Date(startStr);
-      }
-    } else {
-      // Por defecto: Primer día del mes corriente en UTC
-      startDate = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), 1, 0, 0, 0, 0));
-    }
-
-    // Asegurar que startDate <= endDate
     if (startDate > endDate) {
-      const temp = startDate;
-      startDate = endDate;
-      endDate = temp;
+      [startDate, endDate] = [endDate, startDate];
     }
 
-    return { startDate, endDate };
+    const cutoffDate = endDate > now ? now : endDate;
+    return { startDate, endDate, cutoffDate };
   }
 
   /**
@@ -599,9 +595,9 @@ export class DashboardService {
    * - Novedades críticas no cerradas
    * - Casos con más de 7 días abiertos
    */
-  private extractAttentionRequiredCases(
+  static extractAttentionRequiredCases(
     issues: any[],
-    cutoffDate: Date,
+    now: Date,
   ): UrgentAttentionCaseItem[] {
     const list: UrgentAttentionCaseItem[] = [];
 
@@ -616,10 +612,7 @@ export class DashboardService {
 
       const isCritical = issue.priority === IssuePriority.CRITICA;
       const createdAt = new Date(issue.createdAt);
-      const daysOpen = Math.max(
-        0,
-        Math.floor((cutoffDate.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24)),
-      );
+      const daysOpen = bogotaDaysBetween(createdAt, now);
 
       // Requiere atención si tiene actividades bloqueadas, es crítica o lleva más de 7 días abierta
       if (hasBlockedActivities || isCritical || daysOpen > 7) {

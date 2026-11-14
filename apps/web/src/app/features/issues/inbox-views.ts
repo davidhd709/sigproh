@@ -1,5 +1,6 @@
 import { Issue } from '../../core/models/issue.model';
 import { Tone } from '../../shared/presentation';
+import { bogotaDaysBetween } from '../../shared/bogota-time';
 
 /** Bandejas por rol (RF-027, sección 11.4 de los documentos). */
 export type InboxView = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'UNASSIGNED' | 'CRITICAL' | 'MINE' | 'STALE';
@@ -10,10 +11,12 @@ export interface InboxViewDef {
   /** Texto para el panel "Tus pendientes" de Inicio. */
   hint: string;
   tone: Tone;
+  /** true si la vista se filtra por la persona (sus pendientes), no por el equipo. */
+  perUser?: boolean;
   match: (issue: Issue, userId: string, now: Date) => boolean;
 }
 
-const STALE_DAYS = 7;
+export const STALE_DAYS = 7;
 const isOpen = (i: Issue) => i.status !== 'CERRADA' && i.status !== 'DESCARTADA';
 const isPending = (i: Issue) => i.status === 'ASIGNADA' || i.status === 'EN_REVISION' || i.status === 'REGISTRADA';
 const isInProgress = (i: Issue) => i.status === 'EN_ATENCION' || i.status === 'PENDIENTE_CIERRE';
@@ -37,7 +40,7 @@ export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
   UNASSIGNED: {
     key: 'UNASSIGNED',
     label: 'Sin responsable',
-    hint: 'El ámbito no tiene coordinador ni director responsable',
+    hint: 'Falta asignar un responsable',
     tone: 'danger',
     match: (i) => isOpen(i) && !i.assignedUserId,
   },
@@ -53,14 +56,16 @@ export const INBOX_VIEWS: Record<InboxView, InboxViewDef> = {
     label: 'A mi cargo',
     hint: 'Novedades que debes atender',
     tone: 'info',
+    perUser: true,
     match: (i, userId) => isOpen(i) && i.assignedUserId === userId,
   },
   STALE: {
     key: 'STALE',
-    label: `Abiertas +${STALE_DAYS} días`,
-    hint: `Llevan más de ${STALE_DAYS} días abiertas`,
+    label: `Abiertas hace más de ${STALE_DAYS} días`,
+    hint: 'Revisa por qué no han avanzado',
     tone: 'warning',
-    match: (i, _u, now) => isOpen(i) && now.getTime() - new Date(i.createdAt).getTime() > STALE_DAYS * 86400000,
+    // Días calendario de Colombia: la misma cuenta que muestran Inicio y cada tarjeta
+    match: (i, _u, now) => isOpen(i) && bogotaDaysBetween(i.createdAt, now) > STALE_DAYS,
   },
 };
 

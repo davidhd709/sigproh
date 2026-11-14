@@ -6,23 +6,48 @@
       }
       <h1 class="page-title dashboard-title">Resumen operativo</h1>
     </div>
+    @if (!authService.isAdmin()) {
+      <a routerLink="/issues/new" class="btn-primary report-cta">
+        <app-icon name="plus" /> Reportar novedad
+      </a>
+    }
   </header>
 
-  <!-- Tus pendientes -->
+  <!-- Casos que requieren atención de la persona o del equipo -->
   @if (pending(); as items) {
-    <section class="pending" aria-label="Tus pendientes">
-      @if (items.length === 0 && reportsInReview() === 0) {
+    @if (items.length === 0 && reportsInReview() === 0) {
+      <section class="pending" aria-label="Pendientes">
         <div class="pending-clear">
           <app-icon name="check-circle" size="22px" />
           <div>
             <strong>Estás al día</strong>
-            <span>No tienes novedades pendientes de atención.</span>
+            <span>No hay novedades pendientes de atención.</span>
           </div>
         </div>
-      } @else {
-        <h2 class="pending-title">Tus pendientes</h2>
+      </section>
+    }
+    @if (myPending().length > 0) {
+      <section class="pending" aria-labelledby="my-pending-title">
+        <h2 class="pending-title" id="my-pending-title">Mis pendientes</h2>
         <div class="pending-grid">
-          @for (p of items; track p.def.key) {
+          @for (p of myPending(); track p.def.key) {
+            <a class="pending-card" [routerLink]="['/issues']" [queryParams]="{ view: p.def.key }" [attr.data-tone]="p.def.tone">
+              <span class="pending-count">{{ p.count }}</span>
+              <span class="pending-text">
+                <strong>{{ p.def.label }}</strong>
+                <span>{{ p.def.hint }}</span>
+              </span>
+              <app-icon name="chevron-right" class="pending-chevron" />
+            </a>
+          }
+        </div>
+      </section>
+    }
+    @if (teamPending().length > 0 || (isDirector() && reportsInReview() > 0)) {
+      <section class="pending" aria-labelledby="team-pending-title">
+        <h2 class="pending-title" id="team-pending-title">Pendientes del equipo</h2>
+        <div class="pending-grid">
+          @for (p of teamPending(); track p.def.key) {
             <a class="pending-card" [routerLink]="['/issues']" [queryParams]="{ view: p.def.key }" [attr.data-tone]="p.def.tone">
               <span class="pending-count">{{ p.count }}</span>
               <span class="pending-text">
@@ -43,8 +68,8 @@
             </a>
           }
         </div>
-      }
-    </section>
+      </section>
+    }
   }
 
   <!-- Período -->
@@ -84,16 +109,16 @@
         <input type="date" [(ngModel)]="filterEndDate" (ngModelChange)="selectedPreset = 'CUSTOM'" />
       </label>
       <label class="field">
-        <span>Ámbito</span>
+        <span>Tipo de ubicación</span>
         <select [(ngModel)]="filterScope" (change)="filterPropertyId = ''; filterInternalAreaId = ''">
           <option value="">Todos</option>
-          <option value="PROPIEDAD">Propiedades</option>
-          <option value="INTERNA">Áreas internas</option>
+          <option value="PROPIEDAD">Conjuntos o edificios</option>
+          <option value="INTERNA">Áreas de la empresa</option>
         </select>
       </label>
       @if (!filterScope || filterScope === 'PROPIEDAD') {
         <label class="field">
-          <span>Propiedad</span>
+          <span>Conjunto o edificio</span>
           <select [(ngModel)]="filterPropertyId">
             <option value="">Todas</option>
             @for (p of properties(); track p.id) {
@@ -104,7 +129,7 @@
       }
       @if (!filterScope || filterScope === 'INTERNA') {
         <label class="field">
-          <span>Área interna</span>
+          <span>Área de la empresa</span>
           <select [(ngModel)]="filterInternalAreaId">
             <option value="">Todas</option>
             @for (a of internalAreas(); track a.id) {
@@ -138,17 +163,17 @@
   } @else if (metrics(); as data) {
     <p class="period-banner">
       <app-icon name="calendar" />
-      {{ data.period.startDate | date: 'd MMM' }} – {{ data.period.endDate | date: 'd MMM y' }}
+      {{ data.period.startDate | date: 'd MMM' : bogotaOffset }} – {{ data.period.endDate | date: 'd MMM y' : bogotaOffset }}
       <span class="sep">·</span>
-      Fecha de corte {{ data.period.cutoffDate | date: "d MMM, h:mm a" }}
+      Fecha de corte: {{ data.period.cutoffDate | date: "d MMM y, h:mm a" : bogotaOffset }} (hora de Colombia)
     </p>
 
     <!-- Indicadores -->
     <section class="kpi-grid" aria-label="Indicadores">
       <div class="kpi kpi-hero">
-        <span class="kpi-label">Abiertas al corte</span>
+        <span class="kpi-label">Abiertas al {{ data.period.cutoffDate | date: 'd MMM' : bogotaOffset }}</span>
         <span class="kpi-value">{{ data.kpis.totalOpenAtCutoff }}</span>
-        <span class="kpi-desc">Incluye casos de periodos anteriores aún en curso</span>
+        <span class="kpi-desc">Incluye casos de períodos anteriores aún en curso</span>
       </div>
       <div class="kpi" [class.kpi-alert]="data.kpis.totalCriticalInPeriod > 0">
         <span class="kpi-icon tone-danger"><app-icon name="alert-octagon" /></span>
@@ -176,10 +201,10 @@
     @if (data.attentionRequiredCases && data.attentionRequiredCases.length > 0) {
       <section class="section attention-box">
         <header class="section-head">
-          <h2>Requieren atención</h2>
+          <h2>Casos que requieren atención</h2>
           <span class="count-badge">{{ data.attentionRequiredCases.length }}</span>
         </header>
-        <p class="section-hint">Críticas sin finalizar o abiertas hace más de 7 días.</p>
+        <p class="section-hint">Críticas sin cerrar o abiertas hace más de 7 días. La antigüedad se cuenta a hoy, igual que en Novedades.</p>
         <ul class="attention-list">
           @for (item of data.attentionRequiredCases; track item.id) {
             <li>
@@ -193,8 +218,12 @@
                   </span>
                 </div>
                 <div class="attention-side">
-                  <span class="days" [class.days-high]="item.daysOpen > 7">
-                    <strong>{{ item.daysOpen }}</strong> {{ item.daysOpen === 1 ? 'día' : 'días' }}
+                  <span class="days" [class.days-high]="item.daysOpen > 7" [attr.aria-label]="'Abierta hace ' + daysOpenLabel(item.daysOpen)">
+                    @if (item.daysOpen === 0) {
+                      <strong>Hoy</strong>
+                    } @else {
+                      <strong>{{ item.daysOpen }}</strong> {{ item.daysOpen === 1 ? 'día' : 'días' }}
+                    }
                   </span>
                   <span class="assignee">{{ item.assignedUserName || 'Sin responsable' }}</span>
                 </div>
@@ -265,11 +294,11 @@
                 <span class="loc-icon"><app-icon [name]="loc.scope === 'PROPIEDAD' ? 'building' : 'landmark'" /></span>
                 <span class="loc-name">
                   {{ loc.name }}
-                  <small>{{ loc.scope === 'PROPIEDAD' ? 'Propiedad' : 'Área interna' }}</small>
+                  <small>{{ loc.scope === 'PROPIEDAD' ? 'Conjunto o edificio' : 'Área de la empresa' }}</small>
                 </span>
                 <span class="loc-stats">
                   <span title="Registradas en el período"><strong>{{ loc.totalRegistered }}</strong> reg.</span>
-                  <span title="Abiertas al corte"><strong>{{ loc.openAtCutoff }}</strong> abiertas</span>
+                  <span title="Abiertas a la fecha de corte"><strong>{{ loc.openAtCutoff }}</strong> abiertas</span>
                   <span title="Finalizadas en el período"><strong>{{ loc.closedInPeriod }}</strong> finalizadas</span>
                   @if (loc.criticalCount > 0) {
                     <span class="pill" data-tone="danger">{{ loc.criticalCount }} {{ loc.criticalCount === 1 ? 'crítica' : 'críticas' }}</span>

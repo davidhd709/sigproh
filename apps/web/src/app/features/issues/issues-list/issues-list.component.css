@@ -307,11 +307,11 @@
 /* ---------- Pantallas amplias ---------- */
 @media (min-width: 720px) {
   .filters-panel {
-    grid-template-columns: 2fr 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: end;
   }
 
-  .filter-field:first-child {
+  .filters-panel .filter-field {
     grid-column: auto;
   }
 
@@ -332,4 +332,116 @@
     padding-top: 0;
     border-top: none;
   }
+}
+
+/* ---------- Encabezado: acción principal ---------- */
+.report-cta {
+  flex-shrink: 0;
+}
+
+@media (max-width: 420px) {
+  .page-head {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .report-cta {
+    width: 100%;
+  }
+}
+
+/* Los textos largos del tipo de ubicación pueden ocupar dos líneas */
+.filters-panel .filter-field:nth-child(-n + 2) {
+  grid-column: 1 / -1;
+}
+
+.segmented button {
+  height: auto;
+  min-height: 40px;
+  padding: 0.35rem 0.5rem;
+  line-height: 1.2;
+}
+
+/* ---------- Resultados, orden y filtros aplicados ---------- */
+.results-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.6rem;
+}
+
+.results-count {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.results-view {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.sort-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.sort-field select {
+  min-height: 40px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.9rem;
+  padding: 0;
+  list-style: none;
+}
+
+.filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--primary-200);
+  border-radius: 999px;
+  background: var(--primary-50);
+  color: var(--primary-strong);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filter-tag span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-tag:hover {
+  background: var(--primary-100);
+}
+
+.active-filters .clear-filters {
+  min-height: 36px;
+}
+
+.issue-title {
+  overflow-wrap: anywhere;
 }
