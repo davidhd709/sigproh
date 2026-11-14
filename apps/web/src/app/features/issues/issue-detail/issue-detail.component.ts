@@ -176,7 +176,7 @@ export class IssueDetailComponent {
     if (this.canClose()) {
       list.push({
         key: 'close',
-        label: 'Resolver',
+        label: 'Cerrar novedad',
         icon: 'check-circle',
         tone: 'success',
         hint: this.hasMissingFinalEvidence() ? 'Con la foto final del trabajo' : 'Cierra la novedad',

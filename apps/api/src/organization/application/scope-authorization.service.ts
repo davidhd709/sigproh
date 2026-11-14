@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Role } from '../../generated/prisma/client';
+import { Prisma, Role } from '../../generated/prisma/client';
 import { PrismaService } from '../../shared/infrastructure/database/prisma.service';
 import { AuthenticatedUser } from '../../auth/domain/authenticated-user.type';
 
@@ -211,6 +211,21 @@ export class ScopeAuthorizationService {
     }
 
     return true;
+  }
+
+  /**
+   * Condición de Prisma con las novedades que el usuario puede ver (RF-049): las de sus
+   * propiedades o áreas con asignación activa; sin restricción para los roles globales.
+   * Novedades y el tablero de Inicio la usan igual, para que nunca muestren casos distintos.
+   * Debe combinarse con AND: si se mezcla en un objeto con otra clave OR, una pisa a la otra.
+   */
+  async getIssueScopeWhere(user: AuthenticatedUser): Promise<Prisma.IssueWhereInput> {
+    const propertyIds = await this.getAccessiblePropertyIds(user);
+    const areaIds = await this.getAccessibleInternalAreaIds(user);
+    if (propertyIds === null && areaIds === null) return {};
+    if (propertyIds === null) return { OR: [{ propertyId: { not: null } }, { internalAreaId: { in: areaIds! } }] };
+    if (areaIds === null) return { OR: [{ propertyId: { in: propertyIds } }, { internalAreaId: { not: null } }] };
+    return { OR: [{ propertyId: { in: propertyIds } }, { internalAreaId: { in: areaIds } }] };
   }
 
   /**

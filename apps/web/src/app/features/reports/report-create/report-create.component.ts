@@ -80,26 +80,58 @@ export class ReportCreateComponent implements OnInit {
     this.updateDefaultTitle();
   }
 
+  /** true cuando la persona escribió su propio título: desde ahí no se reemplaza. */
+  titleEdited = false;
+  private lastAutoTitle = '';
+
+  /** Si la persona cambia el título se respeta; si lo borra, vuelve el sugerido. */
+  onTitleInput(): void {
+    this.titleEdited = this.title.trim() !== '' && this.title !== this.lastAutoTitle;
+    if (!this.titleEdited) this.updateDefaultTitle();
+  }
+
+  /**
+   * Título sugerido según la ubicación y las fechas del período elegido (no el mes actual).
+   * Se recalcula al cambiar período o ubicación, salvo que la persona haya escrito el suyo.
+   */
   updateDefaultTitle(): void {
-    const monthNames = [
-      'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-    ];
-    const now = new Date();
-    const monthName = monthNames[now.getMonth()];
-    const year = now.getFullYear();
+    if (this.titleEdited) return;
+    const period = ReportCreateComponent.periodLabel(this.periodStart, this.periodEnd);
+    const suffix = period ? ` (${period})` : '';
 
     if (this.scope === 'PROPIEDAD') {
       const prop = this.properties().find((p) => p.id === this.propertyId);
-      const name = prop ? prop.name : 'Propiedad';
-      this.title = `Informe Operativo — ${name} (${monthName} ${year})`;
+      this.title = `Informe Operativo — ${prop ? prop.name : 'Propiedad'}${suffix}`;
     } else if (this.scope === 'INTERNA') {
       const area = this.internalAreas().find((a) => a.id === this.internalAreaId);
-      const name = area ? area.name : 'Gestión Interna';
-      this.title = `Informe de Gestión — ${name} (${monthName} ${year})`;
+      this.title = `Informe de Gestión — ${area ? area.name : 'Gestión Interna'}${suffix}`;
     } else {
-      this.title = `Informe Consolidado Gerencial — ${monthName} ${year}`;
+      this.title = `Informe Consolidado Gerencial${period ? ` — ${period}` : ''}`;
     }
+    this.lastAutoTitle = this.title;
+  }
+
+  private static readonly MONTHS = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  ];
+
+  /**
+   * «Octubre 2026», «Octubre – Noviembre 2026», «Diciembre 2025 – Enero 2026» o «2026»
+   * si cubre el año completo. Trabaja con las fechas YYYY-MM-DD tal como se ven.
+   */
+  static periodLabel(start: string, end: string): string {
+    const parse = (ymd: string) => {
+      const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(ymd ?? '');
+      return m ? { year: m[1], month: ReportCreateComponent.MONTHS[Number(m[2]) - 1] } : null;
+    };
+    const from = parse(start);
+    const to = parse(end) ?? from;
+    if (!from || !to) return '';
+    if (from.year === to.year && start.endsWith('-01-01') && end.endsWith('-12-31')) return from.year;
+    if (from.year === to.year && from.month === to.month) return `${from.month} ${from.year}`;
+    if (from.year === to.year) return `${from.month} – ${to.month} ${from.year}`;
+    return `${from.month} ${from.year} – ${to.month} ${to.year}`;
   }
 
   applyPreset(preset: 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30_DAYS' | 'THIS_YEAR' | 'CUSTOM'): void {

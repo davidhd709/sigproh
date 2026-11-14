@@ -61,6 +61,9 @@ describe('DashboardService', () => {
       getAccessiblePropertyIds: vi.fn(),
       getAccessibleInternalAreaIds: vi.fn(),
     };
+    // La condición de alcance real, construida sobre los IDs simulados
+    mockScopeAuth.getIssueScopeWhere = (u: AuthenticatedUser) =>
+      ScopeAuthorizationService.prototype.getIssueScopeWhere.call(mockScopeAuth, u);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -91,6 +94,37 @@ describe('DashboardService', () => {
       await expect(
         service.getMetrics(mockCoordUser, { propertyId: 'prop-unauthorized-99' }),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('Alcance igual al de Novedades', () => {
+    it('un coordinador con propiedades y áreas solo consulta sus novedades, sin perder el filtro del período', async () => {
+      mockPrisma.issue.findMany.mockResolvedValue([]);
+      mockScopeAuth.getAccessiblePropertyIds.mockResolvedValue(['prop-1']);
+      mockScopeAuth.getAccessibleInternalAreaIds.mockResolvedValue(['area-1']);
+
+      await service.getMetrics(mockCoordUser, { startDate: '2026-10-01', endDate: '2026-10-31' });
+
+      const where = mockPrisma.issue.findMany.mock.calls[0][0].where;
+      // El alcance va en AND: ya no lo reemplaza el OR del período
+      expect(where.AND).toEqual(
+        expect.arrayContaining([
+          { OR: [{ propertyId: { in: ['prop-1'] } }, { internalAreaId: { in: ['area-1'] } }] },
+        ]),
+      );
+      expect(where.OR).toHaveLength(3);
+      expect(where.AND[0]).toEqual(expect.objectContaining({ organizationId: mockCoordUser.organizationId }));
+    });
+
+    it('la Gerencia conserva la vista de toda la organización', async () => {
+      mockPrisma.issue.findMany.mockResolvedValue([]);
+      mockScopeAuth.getAccessiblePropertyIds.mockResolvedValue(null);
+      mockScopeAuth.getAccessibleInternalAreaIds.mockResolvedValue(null);
+
+      await service.getMetrics(mockCoordUser, {});
+
+      const where = mockPrisma.issue.findMany.mock.calls[0][0].where;
+      expect(where.AND[1]).toEqual({});
     });
   });
 
