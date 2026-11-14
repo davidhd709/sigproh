@@ -6,7 +6,7 @@
     </div>
     @if (canAuthor()) {
       <button type="button" class="btn-primary" (click)="openCreate()">
-        <app-icon name="plus" /> <span class="hide-sm">Nuevo informe</span>
+        <app-icon name="plus" /> Crear informe
       </button>
     }
   </header>
@@ -39,11 +39,11 @@
       />
     </label>
     <label class="scope-select">
-      <span class="visually-hidden">Ámbito</span>
+      <span class="visually-hidden">Tipo de ubicación</span>
       <select id="scopeFilter" [(ngModel)]="selectedScope" (change)="onFilterChange()">
-        <option value="">Todos los ámbitos</option>
-        <option value="PROPIEDAD">Propiedades</option>
-        <option value="INTERNA">Gestión interna</option>
+        <option value="">Todas las ubicaciones</option>
+        <option value="PROPIEDAD">Conjuntos o edificios</option>
+        <option value="INTERNA">Áreas de la empresa</option>
         @if (currentUser()?.role !== 'COORDINADOR_OPERATIVO') {
           <option value="CONSOLIDADO">Consolidado</option>
         }
@@ -60,15 +60,21 @@
   } @else if (reports().length === 0) {
     <div class="empty-state">
       <span class="empty-icon"><app-icon name="folder" size="28px" /></span>
-      @if (searchTerm || selectedScope || selectedStatus) {
-        <h2>Sin resultados</h2>
-        <p>Ningún informe coincide con la búsqueda o los filtros.</p>
-        <button type="button" class="btn-secondary" (click)="resetFilters()">Limpiar filtros</button>
-      } @else {
-        <h2>Aún no hay informes</h2>
+      @if (searchTerm || selectedScope) {
+        <h2>No encontramos informes con estos filtros</h2>
+        <p>Prueba con otra búsqueda o quita los filtros.</p>
+        <button type="button" class="btn-secondary" (click)="resetFilters()">Quitar filtros</button>
+      } @else if (selectedStatus === 'BORRADOR') {
+        <h2>Aún no hay borradores</h2>
         @if (canAuthor()) {
-          <p>Genera un borrador con los indicadores del período, elige las fotos y finalízalo para publicarlo.</p>
-          <button type="button" class="btn-primary" (click)="openCreate()"><app-icon name="plus" /> Crear el primero</button>
+          <p>Crea un informe: elige el período y la ubicación, revisa el contenido y guárdalo como borrador.</p>
+          <button type="button" class="btn-primary" (click)="openCreate()"><app-icon name="plus" /> Crear informe</button>
+        }
+      } @else {
+        <h2>Aún no hay informes publicados</h2>
+        @if (canAuthor()) {
+          <p>Cuando finalices un informe aparecerá aquí para descargarlo y compartirlo.</p>
+          <button type="button" class="btn-primary" (click)="openCreate()"><app-icon name="plus" /> Crear informe</button>
         } @else {
           <p>Aquí aparecerán los informes cuando sean finalizados.</p>
         }

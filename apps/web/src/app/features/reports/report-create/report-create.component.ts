@@ -1,3 +1,4 @@
+import { ReportFlowStepsComponent } from '../../../shared/report-flow-steps.component';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -14,7 +15,7 @@ import {
 @Component({
   selector: 'app-report-create',
   standalone: true,
-  imports: [IconComponent, CommonModule, FormsModule, RouterModule],
+  imports: [ReportFlowStepsComponent, IconComponent, CommonModule, FormsModule, RouterModule],
   templateUrl: './report-create.component.html',
   styleUrls: ['./report-create.component.css'],
 })

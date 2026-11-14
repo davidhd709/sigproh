@@ -127,7 +127,7 @@
 
       @if (!isAdmin()) {
         <a routerLink="/issues/new" class="sidebar-cta">
-          <app-icon name="plus" /> Nueva novedad
+          <app-icon name="plus" /> Reportar novedad
         </a>
       } @else {
         <div class="sidebar-spacer"></div>
@@ -216,8 +216,8 @@
         <a routerLink="/issues" class="tab" [class.active]="isActive('/issues')">
           <app-icon name="inbox" size="22px" /><span>Novedades</span>
         </a>
-        <a routerLink="/issues/new" class="tab tab-fab" aria-label="Nueva novedad">
-          <span class="fab"><app-icon name="plus" size="26px" /></span>
+        <a routerLink="/issues/new" class="tab tab-report" [class.active]="isActive('/issues/new')">
+          <span class="report-icon"><app-icon name="plus" size="22px" /></span><span>Reportar</span>
         </a>
         <a routerLink="/reports" class="tab" [class.active]="isActive('/reports')">
           <app-icon name="file-text" size="22px" /><span>Informes</span>

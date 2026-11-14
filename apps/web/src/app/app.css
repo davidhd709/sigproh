@@ -341,27 +341,44 @@
   font-weight: 600;
 }
 
-.tab-fab {
-  position: relative;
+.tab {
+  min-width: 48px;
+  min-height: 48px;
 }
 
-.fab {
+.tab > span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -4px;
+  border-radius: 12px;
+}
+
+/* «Reportar»: la acción principal, con texto como las demás pestañas */
+.tab-report {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.report-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 52px;
-  height: 52px;
-  margin-top: -22px;
-  border-radius: 18px;
+  width: 44px;
+  height: 30px;
+  border-radius: 999px;
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
   color: #ffffff;
-  box-shadow:
-    0 10px 20px -8px rgba(45, 104, 196, 0.7),
-    0 0 0 5px var(--page-bg);
+  box-shadow: 0 6px 14px -6px rgba(45, 104, 196, 0.7);
   transition: transform 0.15s ease;
 }
 
-.tab-fab:active .fab {
+.tab-report:active .report-icon {
   transform: scale(0.94);
 }
 

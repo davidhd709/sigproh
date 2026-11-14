@@ -1,3 +1,4 @@
+import { ReportFlowStepsComponent } from '../../../shared/report-flow-steps.component';
 import { IconComponent } from '../../../shared/icon/icon.component';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { priorityLabel, priorityTone, reportStatusLabel, stageLabel, statusLabel, statusTone } from '../../../shared/presentation';
@@ -14,7 +15,7 @@ import {
 @Component({
   selector: 'app-report-detail',
   standalone: true,
-  imports: [IconComponent, CommonModule, FormsModule, RouterModule],
+  imports: [ReportFlowStepsComponent, IconComponent, CommonModule, FormsModule, RouterModule],
   templateUrl: './report-detail.component.html',
   styleUrls: ['./report-detail.component.css'],
 })
