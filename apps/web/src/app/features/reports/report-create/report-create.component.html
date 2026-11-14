@@ -109,7 +109,10 @@
       <div class="form-grid">
         <label class="field full">
           <span>Título *</span>
-          <input id="title" type="text" name="title" [(ngModel)]="title" maxlength="200" required />
+          @if (!titleEdited) {
+            <small class="field-hint">Sugerido según la ubicación y el período. Puedes cambiarlo.</small>
+          }
+          <input id="title" type="text" name="title" [(ngModel)]="title" (input)="onTitleInput()" maxlength="200" required />
         </label>
         <label class="field full">
           <span>Introducción (opcional)</span>

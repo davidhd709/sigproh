@@ -476,7 +476,7 @@ describe('IssueDetailComponent', () => {
       expect(component.primaryAction()?.key).toBe('start');
     });
 
-    it('en proceso: se ven «Registrar avance» y «Resolver», avisando de la foto final si se exige', () => {
+    it('en proceso: se ven «Registrar avance» y «Cerrar novedad», avisando de la foto final si se exige', () => {
       component.issue.set({ ...baseIssue, status: 'EN_ATENCION' });
       expect(component.mainActions().map((a) => a.key)).toEqual(['progress', 'close']);
 
@@ -578,6 +578,39 @@ describe('IssueDetailComponent', () => {
       mockIssuesService.getIssueById.mockReturnValue(of(data));
       component.loadIssue(data.id);
     };
+
+    it('en proceso, el coordinador responsable ve «Cerrar novedad», que abre el diálogo del mismo nombre y exige la foto final', () => {
+      asProfile('coord-1', 'COORDINADOR_OPERATIVO', { coord: true });
+      show({
+        ...issue,
+        status: 'EN_ATENCION',
+        assignedUserId: 'coord-1',
+        assignedUser: juan,
+        category: { name: 'Equipos', requiresEvidence: true },
+      });
+      fixture.detectChanges();
+      const root = fixture.nativeElement as HTMLElement;
+      expect(keys()).toContain('Cerrar novedad');
+      expect(root.textContent).not.toMatch(/\bResolver\b/);
+
+      const button = [...root.querySelectorAll<HTMLButtonElement>('.status-actions .main-action')].find((b) =>
+        b.textContent?.trim().startsWith('Cerrar novedad'),
+      );
+      expect(button).toBeTruthy();
+      button!.click();
+      fixture.detectChanges();
+
+      const dialog = root.querySelector('[role="dialog"]')!;
+      expect(dialog.querySelector('#finalize-title')?.textContent).toBe('Cerrar novedad');
+      const confirm = [...dialog.querySelectorAll<HTMLButtonElement>('.modal-footer button')].find((b) =>
+        b.textContent?.includes('Cerrar novedad'),
+      )!;
+      expect(confirm.disabled).toBe(true);
+
+      component.finalPhoto.set(new File(['x'], 'final.jpg', { type: 'image/jpeg' }));
+      fixture.detectChanges();
+      expect(confirm.disabled).toBe(false);
+    });
 
     it('sin asignar: coordinación ve «Asignar responsable»; quien reporta entiende quién debe actuar', () => {
       asProfile('aux-1', 'AUXILIAR_GERENCIA', { assign: true });

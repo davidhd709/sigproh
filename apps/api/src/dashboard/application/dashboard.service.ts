@@ -81,21 +81,12 @@ export class DashboardService {
     // Los indicadores históricos se calculan a la fecha de corte (hoy, si el período no ha terminado)
     const endDate = cutoffDate;
 
-    // 4. Construir filtro base de Prisma para la organización y alcance autorizado
+    // 4. Construir filtro base de Prisma para la organización y alcance autorizado.
+    // Es el mismo alcance de la bandeja de Novedades: así todo caso del tablero se puede abrir.
     const baseWhere: any = {
       organizationId: user.organizationId,
     };
-
-    if (accessiblePropertyIds !== null && accessibleAreaIds !== null) {
-      baseWhere.OR = [
-        { propertyId: { in: accessiblePropertyIds } },
-        { internalAreaId: { in: accessibleAreaIds } },
-      ];
-    } else if (accessiblePropertyIds !== null) {
-      baseWhere.propertyId = { in: accessiblePropertyIds };
-    } else if (accessibleAreaIds !== null) {
-      baseWhere.internalAreaId = { in: accessibleAreaIds };
-    }
+    const scopeWhere = await this.scopeAuth.getIssueScopeWhere(user);
 
     // Filtros adicionales por parámetros
     if (filter.scope) baseWhere.scope = filter.scope;
@@ -108,9 +99,11 @@ export class DashboardService {
 
     // 5. Consultar los casos relevantes para el periodo y cohortes de corte
     // Para cumplir CP-34, necesitamos los casos registrados en el periodo Y los casos que estaban abiertos al corte
+    // El alcance y el período van en AND: antes el OR del período reemplazaba el OR del alcance
+    // y un coordinador con propiedades y áreas veía casos de toda la organización.
     const issues = await this.prisma.issue.findMany({
       where: {
-        ...baseWhere,
+        AND: [baseWhere, scopeWhere],
         OR: [
           // Novedades registradas en el periodo
           {

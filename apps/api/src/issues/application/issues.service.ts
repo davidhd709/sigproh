@@ -773,24 +773,11 @@ export class IssuesService {
       );
     }
 
-    const accessiblePropertyIds = await this.scopeAuth.getAccessiblePropertyIds(user);
-    const accessibleAreaIds = await this.scopeAuth.getAccessibleInternalAreaIds(user);
-
+    // Aislamiento de ámbito para coordinadores / auxiliares (el mismo que usa el tablero)
     const where: any = {
       organizationId: user.organizationId,
+      AND: [await this.scopeAuth.getIssueScopeWhere(user)],
     };
-
-    // Aislamiento de ámbito para coordinadores / auxiliares
-    if (accessiblePropertyIds !== null && accessibleAreaIds !== null) {
-      where.OR = [
-        { propertyId: { in: accessiblePropertyIds } },
-        { internalAreaId: { in: accessibleAreaIds } },
-      ];
-    } else if (accessiblePropertyIds !== null) {
-      where.propertyId = { in: accessiblePropertyIds };
-    } else if (accessibleAreaIds !== null) {
-      where.internalAreaId = { in: accessibleAreaIds };
-    }
 
     // Filtros opcionales
     if (query.scope) where.scope = query.scope;
