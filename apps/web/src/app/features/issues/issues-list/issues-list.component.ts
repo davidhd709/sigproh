@@ -1,8 +1,8 @@
 import { IconComponent } from '../../../shared/icon/icon.component';
-import { Component, inject, signal, computed, effect } from '@angular/core';
+import { Component, inject, signal, computed, effect, untracked } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { IssuesService } from '../../../core/services/issues.service';
 import { AuthService } from '../../../core/services/auth.service';
@@ -13,9 +13,56 @@ import {
   priorityTone,
   statusLabel,
   statusTone,
-  timeAgo,
 } from '../../../shared/presentation';
+import { attentionState, fullName, humanDate } from '../../../shared/issue-attention';
+import { bogotaDaysBetween, daysOpenLabel } from '../../../shared/bogota-time';
 import { INBOX_VIEWS, InboxView, isInboxView, viewsForRole } from '../inbox-views';
+import { rememberList, takeScroll } from './list-return';
+
+export type IssueSort = 'priority' | 'oldest' | 'updated';
+
+export const SORT_OPTIONS: { value: IssueSort; label: string }[] = [
+  { value: 'priority', label: 'Prioridad' },
+  { value: 'oldest', label: 'Antigüedad' },
+  { value: 'updated', label: 'Última actualización' },
+];
+
+const PRIORITY_RANK: Record<IssuePriority, number> = { CRITICA: 0, ALTA: 1, MEDIA: 2, BAJA: 3 };
+const SCOPES: IssueScope[] = ['PROPIEDAD', 'INTERNA'];
+const PRIORITIES: IssuePriority[] = ['CRITICA', 'ALTA', 'MEDIA', 'BAJA'];
+const STATUSES: IssueStatus[] = ['ASIGNADA', 'EN_ATENCION', 'CERRADA', 'DESCARTADA'];
+
+const isOpen = (i: Issue) => i.status !== 'CERRADA' && i.status !== 'DESCARTADA';
+
+/**
+ * Orden operativo: primero las críticas abiertas, luego por prioridad y, a igual prioridad,
+ * la más antigua (lleva más tiempo esperando). Las cerradas van al final.
+ */
+export function sortIssues(list: Issue[], sort: IssueSort): Issue[] {
+  const created = (i: Issue) => Date.parse(i.createdAt) || 0;
+  const updated = (i: Issue) => Date.parse(i.updatedAt ?? i.createdAt) || 0;
+  const copy = [...list];
+  switch (sort) {
+    case 'oldest':
+      return copy.sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)) || created(a) - created(b));
+    case 'updated':
+      return copy.sort((a, b) => updated(b) - updated(a));
+    default:
+      return copy.sort(
+        (a, b) =>
+          Number(isOpen(b)) - Number(isOpen(a)) ||
+          PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||
+          created(a) - created(b),
+      );
+  }
+}
+
+interface ActiveFilter {
+  key: string;
+  label: string;
+  /** Parámetros de URL que se quitan al eliminar el filtro. */
+  clear: Params;
+}
 
 @Component({
   selector: 'app-issues-list',
@@ -34,39 +81,69 @@ export class IssuesListComponent {
   readonly issues = signal<Issue[]>([]);
   readonly loading = signal<boolean>(true);
   readonly errorMessage = signal<string | null>(null);
-
-  // Filtros interactivos
-  readonly selectedScope = signal<IssueScope | 'ALL'>('ALL');
-  readonly selectedPriority = signal<IssuePriority | 'ALL'>('ALL');
-  readonly selectedStatus = signal<IssueStatus | 'ALL'>('ALL');
-  readonly searchQuery = signal<string>('');
   readonly showFilters = signal<boolean>(false);
+
+  // Catálogos para el filtro de ubicación
+  readonly properties = signal<{ id: string; name: string }[]>([]);
+  readonly internalAreas = signal<{ id: string; name: string }[]>([]);
 
   // Presentación
   readonly statusLabel = statusLabel;
   readonly statusTone = statusTone;
   readonly priorityLabel = priorityLabel;
   readonly priorityTone = priorityTone;
-  readonly timeAgo = timeAgo;
   readonly initials = initialsOf;
+  readonly fullName = fullName;
+  readonly humanDate = humanDate;
+  readonly daysOpenLabel = daysOpenLabel;
+  readonly sortOptions = SORT_OPTIONS;
 
-  // ---------- Bandejas por rol (la vista y la ubicación viven en la URL) ----------
+  // ---------- Estado de la bandeja: vive en la URL para que Atrás y «Volver» lo restauren ----------
+  private param(name: string): string | null {
+    return this.queryParams().get(name);
+  }
+
   readonly views = computed(() => viewsForRole(this.authService.currentUser()?.role).map((k) => INBOX_VIEWS[k]));
   readonly view = computed<InboxView>(() => {
-    const v = this.queryParams().get('view');
+    const v = this.param('view');
     return isInboxView(v) && this.views().some((d) => d.key === v) ? v : 'ALL';
   });
-  /** Nombres de propiedades y áreas, para rotular el filtro aunque la ubicación no tenga novedades. */
-  private readonly locationNames = signal<Record<string, string>>({});
+  readonly searchQuery = computed(() => this.param('q') ?? '');
+  readonly selectedScope = computed<IssueScope | 'ALL'>(() => {
+    const v = this.param('scope') as IssueScope;
+    return SCOPES.includes(v) ? v : 'ALL';
+  });
+  readonly selectedPriority = computed<IssuePriority | 'ALL'>(() => {
+    const v = this.param('priority') as IssuePriority;
+    return PRIORITIES.includes(v) ? v : 'ALL';
+  });
+  readonly selectedStatus = computed<IssueStatus | 'ALL'>(() => {
+    const v = this.param('status') as IssueStatus;
+    return STATUSES.includes(v) ? v : 'ALL';
+  });
+  readonly sort = computed<IssueSort>(() => {
+    const v = this.param('sort') as IssueSort;
+    return SORT_OPTIONS.some((o) => o.value === v) ? v : 'priority';
+  });
+  /** Valor del selector de ubicación: «p:<id>» o «a:<id>». */
+  readonly locationValue = computed(() => {
+    const p = this.param('propertyId');
+    const a = this.param('internalAreaId');
+    return p ? `p:${p}` : a ? `a:${a}` : '';
+  });
+
   readonly locationFilter = computed(() => {
-    const params = this.queryParams();
-    const propertyId = params.get('propertyId');
-    const internalAreaId = params.get('internalAreaId');
+    const propertyId = this.param('propertyId');
+    const internalAreaId = this.param('internalAreaId');
     if (!propertyId && !internalAreaId) return null;
+    const catalog = propertyId ? this.properties() : this.internalAreas();
     const id = (propertyId ?? internalAreaId)!;
     const match = this.issues().find((i) => (propertyId ? i.propertyId === propertyId : i.internalAreaId === internalAreaId));
-    const name = (propertyId ? match?.property?.name : match?.internalArea?.name) ?? this.locationNames()[id];
-    return { propertyId, internalAreaId, name: name ?? 'Ubicación seleccionada' };
+    const name =
+      catalog.find((x) => x.id === id)?.name ??
+      (propertyId ? match?.property?.name : match?.internalArea?.name) ??
+      'Ubicación seleccionada';
+    return { propertyId, internalAreaId, name };
   });
 
   /** Número de novedades en cada vista, respetando el filtro de ubicación. */
@@ -81,22 +158,40 @@ export class IssuesListComponent {
 
   readonly currentViewLabel = computed(() => INBOX_VIEWS[this.view()].label);
 
+  /** Filtros aplicados, visibles como etiquetas que se pueden quitar una por una. */
+  readonly activeFilters = computed<ActiveFilter[]>(() => {
+    const list: ActiveFilter[] = [];
+    const q = this.searchQuery().trim();
+    if (q) list.push({ key: 'q', label: `Búsqueda: «${q}»`, clear: { q: null } });
+    const loc = this.locationFilter();
+    if (loc) list.push({ key: 'loc', label: loc.name, clear: { propertyId: null, internalAreaId: null } });
+    const scope = this.selectedScope();
+    if (scope !== 'ALL')
+      list.push({ key: 'scope', label: scope === 'PROPIEDAD' ? 'Conjuntos o edificios' : 'Áreas de la empresa', clear: { scope: null } });
+    const priority = this.selectedPriority();
+    if (priority !== 'ALL') list.push({ key: 'priority', label: `Prioridad ${priorityLabel(priority).toLowerCase()}`, clear: { priority: null } });
+    const status = this.selectedStatus();
+    if (status !== 'ALL') list.push({ key: 'status', label: `Estado: ${statusLabel(status).toLowerCase()}`, clear: { status: null } });
+    return list;
+  });
+  /** Filtros del panel (sin contar búsqueda ni ubicación, que se ven aparte). */
   readonly activeFilterCount = computed(
     () =>
       Number(this.selectedScope() !== 'ALL') +
       Number(this.selectedPriority() !== 'ALL') +
-      Number(this.selectedStatus() !== 'ALL'),
+      Number(this.selectedStatus() !== 'ALL') +
+      Number(Boolean(this.locationFilter())),
   );
 
   readonly stats = computed(() => {
     const all = this.issues();
     return {
       total: all.length,
-      critical: all.filter((i) => i.priority === 'CRITICA' && i.status !== 'CERRADA' && i.status !== 'DESCARTADA').length,
+      critical: all.filter((i) => i.priority === 'CRITICA' && isOpen(i)).length,
     };
   });
 
-  // Lista filtrada
+  // Lista filtrada y ordenada: el conteo de resultados es exactamente su largo
   readonly filteredIssues = computed(() => {
     const userId = this.authService.currentUser()?.id ?? '';
     const now = new Date();
@@ -107,12 +202,8 @@ export class IssuesListComponent {
     const status = this.selectedStatus();
     const query = this.searchQuery().trim().toLowerCase();
 
-    if (scope !== 'ALL') {
-      list = list.filter((i) => i.scope === scope);
-    }
-    if (priority !== 'ALL') {
-      list = list.filter((i) => i.priority === priority);
-    }
+    if (scope !== 'ALL') list = list.filter((i) => i.scope === scope);
+    if (priority !== 'ALL') list = list.filter((i) => i.priority === priority);
     if (status !== 'ALL') {
       // Varios códigos se muestran como un mismo estado (p. ej. Pendiente)
       list = list.filter((i) => statusLabel(i.status) === statusLabel(status));
@@ -120,68 +211,110 @@ export class IssuesListComponent {
     if (query) {
       list = list.filter(
         (i) =>
-          i.code.toLowerCase().includes(query) ||
-          i.title.toLowerCase().includes(query) ||
-          i.property?.name.toLowerCase().includes(query) ||
-          i.internalArea?.name.toLowerCase().includes(query),
+          i.code?.toLowerCase().includes(query) ||
+          i.title?.toLowerCase().includes(query) ||
+          i.property?.name?.toLowerCase().includes(query) ||
+          i.internalArea?.name?.toLowerCase().includes(query) ||
+          i.propertyZone?.name?.toLowerCase().includes(query),
       );
     }
-
-    return list;
+    return sortIssues(list, this.sort());
   });
 
+  /** Datos de cada tarjeta: misma situación de atención que el detalle y misma antigüedad que Inicio. */
+  cardInfo(issue: Issue) {
+    const now = new Date();
+    return {
+      attention: attentionState(issue, this.authService.currentUser()?.id, now),
+      open: isOpen(issue),
+      daysOpen: bogotaDaysBetween(issue.createdAt, now),
+    };
+  }
+
   constructor() {
-    // Si llega un filtro de ubicación, carga una vez los catálogos para mostrar su nombre
-    effect(() => {
-      const params = this.queryParams();
-      if (!params.get('propertyId') && !params.get('internalAreaId')) return;
-      if (Object.keys(this.locationNames()).length > 0 || !this.authService.currentUser()) return;
-      const add = (items: { id: string; name: string }[]) =>
-        this.locationNames.update((m) => ({ ...m, ...Object.fromEntries(items.map((x) => [x.id, x.name])) }));
-      this.issuesService.getProperties?.().subscribe({ next: add, error: () => {} });
-      this.issuesService.getInternalAreas?.().subscribe({ next: add, error: () => {} });
-    });
     effect(() => {
       const user = this.authService.currentUser();
       // Limpiar inmediatamente la información de la sesión anterior para evitar retención de datos
-      this.issues.set([]);
-      if (user) {
-        this.loadIssues();
-      } else {
-        this.loading.set(false);
-      }
+      untracked(() => {
+        this.issues.set([]);
+        this.properties.set([]);
+        this.internalAreas.set([]);
+        if (user) {
+          this.loadIssues();
+          this.loadCatalogs();
+        } else {
+          this.loading.set(false);
+        }
+      });
     });
+  }
+
+  private loadCatalogs(): void {
+    const pick = (items: any[]) => items.map((x) => ({ id: x.id, name: x.name }));
+    this.issuesService.getProperties?.().subscribe({ next: (x) => this.properties.set(pick(x)), error: () => {} });
+    this.issuesService.getInternalAreas?.().subscribe({ next: (x) => this.internalAreas.set(pick(x)), error: () => {} });
+  }
+
+  /** Cambia parámetros de la bandeja sin crear una entrada nueva en el historial. */
+  private setParams(params: Params): void {
+    this.router.navigate([], { relativeTo: this.route, queryParams: params, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   setView(view: InboxView): void {
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { view: view === 'ALL' ? null : view },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+    this.setParams({ view: view === 'ALL' ? null : view });
+  }
+
+  setSearch(q: string): void {
+    this.setParams({ q: q.trim() ? q : null });
+  }
+
+  setScope(scope: IssueScope | 'ALL'): void {
+    // Una ubicación concreta de otro tipo deja de tener sentido
+    const loc = this.locationValue();
+    const clearLoc =
+      (scope === 'PROPIEDAD' && loc.startsWith('a:')) || (scope === 'INTERNA' && loc.startsWith('p:'))
+        ? { propertyId: null, internalAreaId: null }
+        : {};
+    this.setParams({ scope: scope === 'ALL' ? null : scope, ...clearLoc });
+  }
+
+  setPriority(priority: IssuePriority | 'ALL'): void {
+    this.setParams({ priority: priority === 'ALL' ? null : priority });
+  }
+
+  setStatus(status: IssueStatus | 'ALL'): void {
+    this.setParams({ status: status === 'ALL' ? null : status });
+  }
+
+  setSort(sort: IssueSort): void {
+    this.setParams({ sort: sort === 'priority' ? null : sort });
+  }
+
+  setLocation(value: string): void {
+    const [kind, id] = value.split(':');
+    this.setParams({ propertyId: kind === 'p' ? id : null, internalAreaId: kind === 'a' ? id : null });
+  }
+
+  removeFilter(filter: ActiveFilter): void {
+    this.setParams(filter.clear);
   }
 
   clearLocation(): void {
-    this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { propertyId: null, internalAreaId: null },
-      queryParamsHandling: 'merge',
-      replaceUrl: true,
-    });
+    this.setParams({ propertyId: null, internalAreaId: null });
   }
 
   clearFilters(): void {
-    this.selectedScope.set('ALL');
-    this.selectedPriority.set('ALL');
-    this.selectedStatus.set('ALL');
-    this.searchQuery.set('');
+    this.setParams({ q: null, scope: null, priority: null, status: null, propertyId: null, internalAreaId: null });
+  }
+
+  /** Antes de abrir un caso se recuerda la bandeja y la posición para poder volver igual. */
+  onOpenIssue(): void {
+    rememberList(this.router.url, typeof window !== 'undefined' ? window.scrollY : 0);
   }
 
   private byLocation(list: Issue[]): Issue[] {
-    const params = this.queryParams();
-    const propertyId = params.get('propertyId');
-    const internalAreaId = params.get('internalAreaId');
+    const propertyId = this.param('propertyId');
+    const internalAreaId = this.param('internalAreaId');
     if (propertyId) return list.filter((i) => i.propertyId === propertyId);
     if (internalAreaId) return list.filter((i) => i.internalAreaId === internalAreaId);
     return list;
@@ -195,6 +328,7 @@ export class IssuesListComponent {
       next: (data) => {
         this.issues.set(data);
         this.loading.set(false);
+        this.restoreScroll();
       },
       error: (err) => {
         this.loading.set(false);
@@ -204,11 +338,18 @@ export class IssuesListComponent {
             'Acceso restringido (403): Su rol actual no tiene autorización operativa para consultar la bandeja de novedades (RN-001 / RN-002).',
           );
         } else {
-          this.errorMessage.set(
-            err.error?.message || 'No se pudo conectar con el servidor API.',
-          );
+          this.errorMessage.set(err.error?.message || 'No se pudo conectar con el servidor. Revisa la conexión y reintenta.');
         }
       },
     });
+  }
+
+  /** Al volver de un caso, deja la lista en la posición en que estaba. */
+  private restoreScroll(): void {
+    if (typeof window === 'undefined') return;
+    const y = takeScroll(this.router.url);
+    if (y === null) return;
+    // Espera a que se pinte la lista antes de desplazar
+    requestAnimationFrame(() => setTimeout(() => window.scrollTo({ top: y, behavior: 'instant' as ScrollBehavior })));
   }
 }

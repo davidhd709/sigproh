@@ -10,6 +10,7 @@ import { IssuesService } from '../../core/services/issues.service';
 import { ReportService } from '../../core/services/report.service';
 import { Issue } from '../../core/models/issue.model';
 import { INBOX_VIEWS, InboxView, viewsForRole } from '../issues/inbox-views';
+import { BOGOTA_OFFSET, PeriodPreset, daysOpenLabel, presetRange } from '../../shared/bogota-time';
 import {
   DashboardFilterParams,
   DashboardMetricsResponse,
@@ -55,6 +56,12 @@ export class DashboardComponent {
       .map((k) => ({ def: INBOX_VIEWS[k], count: issues.filter((i) => INBOX_VIEWS[k].match(i, user.id, now)).length }))
       .filter((p) => p.count > 0);
   });
+  /** «Mis pendientes»: vistas filtradas por la persona. */
+  readonly myPending = computed(() => (this.pending() ?? []).filter((p) => p.def.perUser));
+  /** «Pendientes del equipo»: conteos generales de lo que la persona puede ver. */
+  readonly teamPending = computed(() => (this.pending() ?? []).filter((p) => !p.def.perUser));
+  readonly bogotaOffset = BOGOTA_OFFSET;
+  readonly daysOpenLabel = daysOpenLabel;
   readonly isDirector = computed(() => this.authService.currentUser()?.role === 'DIRECTOR_OPERATIVO');
   readonly presets = [
     { value: 'THIS_MONTH', label: 'Este mes' },
@@ -112,33 +119,16 @@ export class DashboardComponent {
     });
   }
 
-  applyPreset(preset: 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30_DAYS' | 'THIS_YEAR' | 'CUSTOM'): void {
+  /**
+   * Fechas visibles del período en hora de Colombia. Los períodos en curso terminan hoy:
+   * antes «Este mes» cortaba el último día del mes y la antigüedad salía inflada.
+   */
+  applyPreset(preset: 'THIS_MONTH' | 'LAST_MONTH' | 'LAST_30_DAYS' | 'THIS_YEAR' | 'CUSTOM', now: Date = new Date()): void {
     this.selectedPreset = preset;
-    const now = new Date();
-
-    if (preset === 'THIS_MONTH') {
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
-      this.filterStartDate = `${year}-${month}-01`;
-      this.filterEndDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-    } else if (preset === 'LAST_MONTH') {
-      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const year = lastMonthDate.getFullYear();
-      const month = String(lastMonthDate.getMonth() + 1).padStart(2, '0');
-      const lastDay = new Date(year, lastMonthDate.getMonth() + 1, 0).getDate();
-      this.filterStartDate = `${year}-${month}-01`;
-      this.filterEndDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-    } else if (preset === 'LAST_30_DAYS') {
-      const past = new Date();
-      past.setDate(now.getDate() - 30);
-      this.filterStartDate = past.toISOString().slice(0, 10);
-      this.filterEndDate = now.toISOString().slice(0, 10);
-    } else if (preset === 'THIS_YEAR') {
-      const year = now.getFullYear();
-      this.filterStartDate = `${year}-01-01`;
-      this.filterEndDate = `${year}-12-31`;
-    }
+    if (preset === 'CUSTOM') return;
+    const range = presetRange(preset as PeriodPreset, now);
+    this.filterStartDate = range.start;
+    this.filterEndDate = range.end;
   }
 
   onPresetChange(preset: any): void {

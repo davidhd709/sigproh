@@ -10,15 +10,16 @@ export const BOGOTA_OFFSET = '-0500';
 const OFFSET_MS = -5 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Fecha calendario (YYYY-MM-DD) que se ve en Colombia en ese instante. */
-export function bogotaYmd(date: Date | string): string {
-  return new Date(new Date(date).getTime() + OFFSET_MS).toISOString().slice(0, 10);
+/** Fecha calendario (YYYY-MM-DD) que se ve en Colombia en ese instante ('' si la fecha no es válida). */
+export function bogotaYmd(date: Date | string | null | undefined): string {
+  const time = date ? new Date(date).getTime() : NaN;
+  return Number.isNaN(time) ? '' : new Date(time + OFFSET_MS).toISOString().slice(0, 10);
 }
 
 /** Días calendario de Colombia entre dos instantes: 0 si es hoy, 1 si fue ayer. */
-export function bogotaDaysBetween(from: Date | string, to: Date = new Date()): number {
+export function bogotaDaysBetween(from: Date | string | null | undefined, to: Date = new Date()): number {
   const days = (Date.parse(bogotaYmd(to)) - Date.parse(bogotaYmd(from))) / DAY_MS;
-  return Math.max(0, Math.round(days));
+  return Number.isNaN(days) ? 0 : Math.max(0, Math.round(days));
 }
 
 /** Suma días a una fecha YYYY-MM-DD sin depender de la zona del equipo. */

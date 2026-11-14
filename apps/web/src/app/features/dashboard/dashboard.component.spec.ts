@@ -18,9 +18,9 @@ describe('DashboardComponent', () => {
 
   const mockMetricsData: any = {
     period: {
-      startDate: '2026-10-01T00:00:00.000Z',
-      endDate: '2026-10-31T23:59:59.999Z',
-      cutoffDate: '2026-10-31T23:59:59.999Z',
+      startDate: '2026-10-01T05:00:00.000Z',
+      endDate: '2026-11-01T04:59:59.999Z',
+      cutoffDate: '2026-11-01T04:59:59.999Z',
       timezone: 'America/Bogota (UTC-5)',
     },
     kpis: {
@@ -107,6 +107,7 @@ describe('DashboardComponent', () => {
         role: 'DIRECTOR_OPERATIVO',
       }),
       isDirector: vi.fn().mockReturnValue(true),
+      isAdmin: vi.fn().mockReturnValue(false),
     };
 
     await TestBed.configureTestingModule({
@@ -157,16 +158,27 @@ describe('DashboardComponent', () => {
     expect(compiled.querySelector('.badge-blocked')).toBeNull();
   });
 
-  it('aplica preajustes de período correctamente (LAST_30_DAYS, THIS_YEAR)', () => {
-    component.applyPreset('LAST_30_DAYS');
-    expect(component.selectedPreset).toBe('LAST_30_DAYS');
-    expect(component.filterStartDate).toBeTruthy();
-    expect(component.filterEndDate).toBeTruthy();
+  it('los períodos en curso terminan hoy en hora de Colombia (no el fin de mes)', () => {
+    // 13 nov 2026, 9:30 p. m. en Bogotá = 14 nov 02:30 UTC
+    const now = new Date('2026-11-14T02:30:00Z');
 
-    component.applyPreset('THIS_YEAR');
+    component.applyPreset('THIS_MONTH', now);
+    expect([component.filterStartDate, component.filterEndDate]).toEqual(['2026-11-01', '2026-11-13']);
+
+    component.applyPreset('LAST_30_DAYS', now);
+    expect([component.filterStartDate, component.filterEndDate]).toEqual(['2026-10-15', '2026-11-13']);
+
+    component.applyPreset('THIS_YEAR', now);
     expect(component.selectedPreset).toBe('THIS_YEAR');
-    expect(component.filterStartDate).toContain('-01-01');
-    expect(component.filterEndDate).toContain('-12-31');
+    expect([component.filterStartDate, component.filterEndDate]).toEqual(['2026-01-01', '2026-11-13']);
+
+    component.applyPreset('LAST_MONTH', now);
+    expect([component.filterStartDate, component.filterEndDate]).toEqual(['2026-10-01', '2026-10-31']);
+  });
+
+  it('el 1 de enero a las 11 p. m. de Colombia todavía es el año anterior', () => {
+    component.applyPreset('THIS_YEAR', new Date('2027-01-01T04:00:00Z'));
+    expect([component.filterStartDate, component.filterEndDate]).toEqual(['2026-01-01', '2026-12-31']);
   });
 
   it('muestra mensaje explicativo ante un 403 Forbidden', () => {
@@ -184,7 +196,7 @@ describe('DashboardComponent', () => {
     expect(component.errorMessage()).toContain('Acceso denegado (403)');
   });
 
-  it('Tus pendientes: el director ve pendientes, en proceso, sin responsable e informes en revisión', () => {
+  it('Pendientes: el director ve pendientes, en proceso, sin responsable e informes en revisión', () => {
     fixture.detectChanges();
     const pending = component.pending() ?? [];
     const byKey = Object.fromEntries(pending.map((p) => [p.def.key, p.count]));
@@ -194,5 +206,14 @@ describe('DashboardComponent', () => {
     expect(byKey['CRITICAL']).toBeUndefined();
     expect(mockReportService.getReports).toHaveBeenCalledWith({ status: 'EN_REVISION' });
     expect(component.reportsInReview()).toBe(2);
+  });
+
+  it('separa «Mis pendientes» (por persona) de «Pendientes del equipo» (conteo general)', () => {
+    fixture.detectChanges();
+    expect(component.myPending().every((p) => p.def.perUser)).toBe(true);
+    expect(component.teamPending().every((p) => !p.def.perUser)).toBe(true);
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).toContain('Pendientes del equipo');
+    expect(text).not.toContain('Tus pendientes');
   });
 });

@@ -5,7 +5,12 @@
   font-size: 0.95rem;
 }
 
-/* ---------- Tus pendientes ---------- */
+.page-head .report-cta {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ---------- Mis pendientes / del equipo ---------- */
 .pending {
   margin-bottom: 1.5rem;
 }

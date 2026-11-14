@@ -304,6 +304,12 @@ export class IssueDetailComponent {
   readonly candidatesLoading = signal<boolean>(false);
 
   constructor() {
+    // Si se llega desde una lista desplazada, el caso se abre desde arriba (donde está la acción)
+    try {
+      if (typeof window !== 'undefined' && !/jsdom/i.test(navigator.userAgent)) window.scrollTo(0, 0);
+    } catch {
+      // Sin ventana desplazable
+    }
     // Descarga las fotos con la sesión del usuario (el almacenamiento es privado)
     effect(() => {
       const current = this.issue();
